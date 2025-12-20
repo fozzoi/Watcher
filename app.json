@@ -1,0 +1,69 @@
+{
+  "expo": {
+    "name": "Watcher",
+    "slug": "Watcher",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "myapp",
+    "jsEngine": "hermes",
+    "newArchEnabled": true,
+    "androidNavigationBar": {
+      "barStyle": "dark-content",
+      "backgroundColor": "#000000"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "jsEngine": "hermes",
+      "package": "com.thewatcher",
+      // // "permissions": [
+      // //   "android.permission.WRITE_SETTINGS",
+      // //   "android.permission.WRITE_SETTINGS"
+      // ],
+      "runtimeVersion": "1.0.0"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "assets/adaptive-icon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-brightness",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#000000"
+        }
+      ],
+      "react-native-edge-to-edge",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "a208162b-f69c-4bc1-969b-d670ee577a01"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.WatcherApp",
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a208162b-f69c-4bc1-969b-d670ee577a01"
+    }
+  }
+}
