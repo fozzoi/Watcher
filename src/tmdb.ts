@@ -4,7 +4,7 @@ import axios from "axios";
 const TMDB_API_KEY = "7d3f7aa3d3623c924b57a28243c4e84e";
 
 // --- URL CONFIGURATION ---
-const DIRECT_URL = "https://api.themoviedb.org/3";
+const DIRECT_URL = "https://dormamu.anuanoopthoppilanu.workers.dev/3";
 const PROXY_URL = "https://dormamu.anuanoopthoppilanu.workers.dev/3"; 
 
 // --- GLOBAL CONFIGURATION ---
@@ -24,7 +24,7 @@ const tmdbApi = axios.create({
   params: {
     api_key: TMDB_API_KEY
   },
-  timeout: 10000, 
+  timeout: 3000, 
 });
 
 // --- AUTO-FAILOVER INTERCEPTOR ---

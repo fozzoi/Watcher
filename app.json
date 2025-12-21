@@ -19,10 +19,6 @@
       },
       "jsEngine": "hermes",
       "package": "com.thewatcher",
-      // // "permissions": [
-      // //   "android.permission.WRITE_SETTINGS",
-      // //   "android.permission.WRITE_SETTINGS"
-      // ],
       "runtimeVersion": "1.0.0"
     },
     "web": {
@@ -31,6 +27,7 @@
       "favicon": "assets/adaptive-icon.png"
     },
     "plugins": [
+      // "./src/withDoh",
       "expo-router",
       "expo-brightness",
       [
