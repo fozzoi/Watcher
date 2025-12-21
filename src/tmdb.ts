@@ -560,3 +560,67 @@ export const getMoviesByGenre = async (genreId: number, page: number = 1): Promi
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
   } catch (error) { return []; }
 };
+
+
+// ... (Your existing code above) ...
+
+// ==========================================
+// 🤖 GEMINI AI RECOMMENDATIONS (Client Side)
+// ==========================================
+
+// ⚠️ REPLACE THIS WITH YOUR NEW KEY
+const GEMINI_API_KEY = "YOUR_NEW_GEMINI_KEY_HERE"; 
+const GEMINI_MODEL = "gemini-1.5-flash"; 
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie' | 'tv' = 'movie'): Promise<TMDBResult[]> => {
+  try {
+    const prompt = `
+      Recommend 10 ${mediaType === 'movie' ? 'movies' : 'TV shows'} similar to "${title}" in terms of tone, plot, and atmosphere.
+      Focus on "Vibe matching" (e.g. if I like "Interstellar", suggest "Arrival" or "Contact").
+      Return ONLY a raw JSON array of strings. Example: ["Movie A", "Movie B"]
+    `;
+
+    const payload = {
+      contents: [{ parts: [{ text: prompt }] }]
+    };
+
+    // 1. Ask AI
+    const response = await axios.post(GEMINI_URL, payload);
+    
+    if (!response.data.candidates || response.data.candidates.length === 0) return [];
+
+    const aiText = response.data.candidates[0].content.parts[0].text;
+    const cleanJson = aiText.replace(/```json|```/g, '').trim(); // Remove Markdown
+    
+    let titles: string[] = [];
+    try {
+        titles = JSON.parse(cleanJson);
+    } catch (e) {
+        console.error("AI JSON Parse Error", e);
+        return [];
+    }
+
+    // 2. Fetch Details for these titles using your existing search function
+    // We run these in parallel for speed
+    const promises = titles.map(async (t) => {
+      // We specifically search for the correct media type to avoid mixups
+      const results = await searchTMDB(t); 
+      // Filter to find exact match or best match with a poster
+      return results.find(r => r.poster_path && r.media_type === mediaType) || results[0] || null;
+    });
+
+    const results = await Promise.all(promises);
+    
+    // Filter out nulls and remove duplicates (by ID)
+    const uniqueMovies = Array.from(new Map(
+      results.filter((m): m is TMDBResult => m !== null).map(m => [m.id, m])
+    ).values());
+
+    return uniqueMovies;
+
+  } catch (error) {
+    console.error("Gemini AI Error:", error);
+    return [];
+  }
+};

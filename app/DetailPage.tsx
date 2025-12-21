@@ -25,7 +25,8 @@ import {
   TMDBEpisode, 
   TMDBImage, 
   getMediaDetails,
-  getExternalIds 
+  getExternalIds,
+  getGeminiMoviesSimilarTo
 } from '../src/tmdb';
 import { getProgress } from '../src/utils/progress'; 
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -36,12 +37,10 @@ import { BlurView } from 'expo-blur';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withTiming,
   interpolate,
   useAnimatedScrollHandler,
   Extrapolate,
   FadeInDown,
-  runOnJS,
 } from 'react-native-reanimated';
 
 const { width, height } = Dimensions.get('window');
@@ -71,6 +70,9 @@ const DetailPage = () => {
   const [movie, setMovie] = useState(initialMovie);
   const [movieImages, setMovieImages] = useState<TMDBImage[]>([]);
   const [externalIds, setExternalIds] = useState<any>({}); 
+
+  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
+  const [loadingAi, setLoadingAi] = useState(false);
   
   const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [showFullOverview, setShowFullOverview] = useState(false);
@@ -87,6 +89,28 @@ const DetailPage = () => {
   const [galleryVisible, setGalleryVisible] = useState(false);
   
   const scrollY = useSharedValue(0);
+
+
+
+
+  useEffect(() => {
+    const fetchAi = async () => {
+      if (!movie.title && !movie.name) return;
+      
+      setLoadingAi(true);
+      // Wait a small delay so we don't block the main UI rendering
+      setTimeout(async () => {
+        const aiData = await getGeminiMoviesSimilarTo(
+          movie.title || movie.name, 
+          movie.media_type
+        );
+        setAiRecommendations(aiData);
+        setLoadingAi(false);
+      }, 500); 
+    };
+
+    fetchAi();
+  }, [movie.id]);
 
   useEffect(() => {
     loadDeepDetails();
@@ -412,11 +436,55 @@ const DetailPage = () => {
                     )}
                 </View>
             )}
+{/* ✨ AI RECOMMENDATIONS SECTION (New) ✨ */}
+            {(loadingAi || aiRecommendations.length > 0) && (
+              <View style={styles.section}>
+                  <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 6}}>
+                    <Ionicons name="sparkles" size={18} color="#FFD700" />
+                    <Text style={[styles.sectionTitle, { marginBottom: 0, color: '#FFD700' }]}>
+                       AI RECOMMENDATIONS SECTION
+                    </Text>
+                  </View>
+                  
+                  {loadingAi ? (
+                    <View style={{height: 180, justifyContent: 'center', alignItems: 'center'}}>
+                      <ActivityIndicator size="small" color="#FFD700" />
+                      <Text style={{color: '#666', fontSize: 10, marginTop: 8}}>Analyzing Vibe...</Text>
+                    </View>
+                  ) : (
+                    <FlatList
+                        horizontal
+                        data={aiRecommendations}
+                        showsHorizontalScrollIndicator={false}
+                        renderItem={({ item, index }) => (
+                            <Animated.View entering={FadeInDown.delay(index * 100)}>
+                              <TouchableOpacity 
+                                style={styles.similarCard} 
+                                onPress={() => navigation.push('Detail', { movie: item })}
+                              >
+                                  <Image 
+                                    source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }} 
+                                    style={[styles.similarImage, { borderColor: 'rgba(255, 215, 0, 0.3)', borderWidth: 1 }]} 
+                                  />
+                                  <View style={styles.ratingBadge}>
+                                      <Ionicons name="star" size={10} color="#FFD700" />
+                                      <Text style={styles.ratingText}>{item.vote_average.toFixed(1)}</Text>
+                                  </View>
+                                  <Text style={styles.similarTitle} numberOfLines={1}>
+                                    {item.title || item.name}
+                                  </Text>
+                              </TouchableOpacity>
+                            </Animated.View>
+                        )}
+                    />
+                  )}
+              </View>
+            )}
 
-            {/* Similar Movies */}
+            {/* Standard Similar Movies (Keep this too!) */}
             {similarMovies.length > 0 && (
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>You might also like</Text>
+                    <Text style={styles.sectionTitle}>More Like This</Text>
                     <FlatList
                         horizontal
                         data={similarMovies}
@@ -434,6 +502,7 @@ const DetailPage = () => {
                     />
                 </View>
             )}
+            
         </View>
         
       </Animated.ScrollView>
