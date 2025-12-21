@@ -4,11 +4,13 @@ import axios from "axios";
 const TMDB_API_KEY = "7d3f7aa3d3623c924b57a28243c4e84e";
 
 // --- URL CONFIGURATION ---
-const DIRECT_URL = "https://dormamu.anuanoopthoppilanu.workers.dev/3";
-const PROXY_URL = "https://dormamu.anuanoopthoppilanu.workers.dev/3"; 
+// ⚠️ IMPORTANT: If "workers.dev" is blocked by Jio/Airtel, 
+// you must replace this string with your custom domain (e.g., "tmdb.yourdomain.com")
+const WORKER_HOST = "dormamu.anuanoopthoppilanu.workers.dev";
+
+const API_BASE_URL = `https://${WORKER_HOST}/3`;
 
 // --- GLOBAL CONFIGURATION ---
-// This acts as the central state for API behavior
 const GLOBAL_CONFIG = {
   nsfwFilterEnabled: true, // Default: Safe Mode is ON
   hiRes: false,            // Default: Standard Quality
@@ -19,28 +21,14 @@ export const setGlobalConfig = (key: 'nsfwFilterEnabled' | 'hiRes', value: boole
   requestCache.clear(); // Clear cache so new settings apply immediately
 };
 
+// We use the Worker directly for everything to avoid ISP blocks
 const tmdbApi = axios.create({
-  baseURL: DIRECT_URL,
+  baseURL: API_BASE_URL,
   params: {
     api_key: TMDB_API_KEY
   },
-  timeout: 3000, 
+  timeout: 10000, // Increased timeout slightly for proxy
 });
-
-// --- AUTO-FAILOVER INTERCEPTOR ---
-tmdbApi.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-    if (!originalRequest._retry && originalRequest.baseURL === DIRECT_URL) {
-      console.log("⚠️ Direct TMDB connection failed. Switching to Cloudflare Proxy...");
-      originalRequest._retry = true;        
-      originalRequest.baseURL = PROXY_URL;  
-      return tmdbApi(originalRequest);
-    }
-    return Promise.reject(error);
-  }
-);
 
 const requestCache = new Map();
 
@@ -190,17 +178,12 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
   
   // --- NSFW & STRICT FILTER LOGIC ---
   if (GLOBAL_CONFIG.nsfwFilterEnabled) {
-    // 1. Explicitly block Adult content flag
     params.include_adult = false;
-
-    // 2. Strict Certification Filter (Only works on 'discover' endpoints)
-    // This hides "A" rated (18+) mainstream movies when filter is ON
     if (endpoint.includes('discover')) {
       params.certification_country = "IN"; 
-      params['certification.lte'] = "UA"; // Hides 'A' rated content
+      params['certification.lte'] = "UA"; 
     }
   } else {
-    // Filter is OFF: Show everything
     params.include_adult = true; 
   }
 
@@ -216,7 +199,7 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
   }
 };
 
-// --- IMAGE URL LOGIC (Hi-Res Support) ---
+// --- IMAGE URL LOGIC (UPDATED FOR DNS FIX) ---
 export const getImageUrl = (path: string | null, size: string = "w500"): string => {
   if (!path) return "https://via.placeholder.com/500x750?text=No+Image";
   
@@ -227,7 +210,9 @@ export const getImageUrl = (path: string | null, size: string = "w500"): string 
     if (size === "w185") finalSize = "w500";     
   }
 
-  return `https://image.tmdb.org/t/p/${finalSize}${path}`;
+  // 🔴 FIX: Using Worker URL for images to bypass ISP blocks
+  // Original: https://image.tmdb.org/t/p/...
+  return `https://${WORKER_HOST}/t/p/${finalSize}${path}`;
 };
 
 

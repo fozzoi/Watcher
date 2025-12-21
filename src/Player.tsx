@@ -1,14 +1,10 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, Platform, AppState, AppStateStatus } from 'react-native';
-import { StatusBar } from 'expo-status-bar'; // Use Expo Status Bar
+import React, { useEffect, useState, useRef } from 'react';
+import { View, StyleSheet, ActivityIndicator, Text, Platform, AppState, AppStateStatus, BackHandler } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import * as Brightness from 'expo-brightness';
-import * as NavigationBar from 'expo-navigation-bar'; // ✅ IMPORT THIS
-import { PanGestureHandler, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, withSequence, withDelay } from 'react-native-reanimated';
+import * as NavigationBar from 'expo-navigation-bar';
 import { saveProgress } from '../src/utils/progress';
 
 const SOURCES = [
@@ -17,36 +13,38 @@ const SOURCES = [
   { name: '2Embed', url: 'https://www.2embed.cc/embed' },
 ];
 
-const TIMEOUT_MS = 15000; 
+const TIMEOUT_MS = 15000;
 
 export default function Player() {
   const route = useRoute();
-  const navigation = useNavigation<any>();
-  const { tmdbId, imdbId, mediaType, season, episode } = route.params as any;
+  const navigation = useNavigation();
+  const { tmdbId, imdbId, mediaType, season, episode } = route.params;
 
   // --- STATE ---
   const [currentSourceIndex, setCurrentSourceIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
-  
-  // --- REANIMATED VALUES ---
-  const brightness = useSharedValue(0.5);
-  const volume = useSharedValue(0.5);
-  const showIndicator = useSharedValue(0);
-  const indicatorType = useSharedValue<'brightness' | 'volume'>('brightness');
 
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const appState = useRef(AppState.currentState); // ✅ Track App State
+  const timeoutRef = useRef(null);
+  const appState = useRef(AppState.currentState);
 
+  // --- AD BLOCKER & STYLE INJECTION ---
   const INJECTED_JS = `
     (function() {
+      // 1. Block Popups
       window.open = function() { return null; };
       window.alert = function() { return null; };
+      
+      // 2. Force Dark Mode & Layout
       const style = document.createElement('style');
       style.innerHTML = \`
-        html, body { background: #000; margin: 0; padding: 0; overflow: hidden; }
-        iframe, video { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; border: none; }
-        .jw-control-bar, .vjs-control-bar, .plyr__controls { z-index: 9999 !important; }
+        html, body { background: #000; margin: 0; padding: 0; overflow: hidden; height: 100%; width: 100%; }
+        iframe, video { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; border: none; outline: none; }
+        
+        /* 3. Hide annoying 3rd party controls if possible */
+        .jw-control-bar, .vjs-control-bar, .plyr__controls { display: none !important; }
+        
+        /* 4. Aggressive Ad Removal */
         #ads, .ad, .advert, div[id^="ad"], iframe[src*="google"], iframe[src*="doubleclick"] { display: none !important; }
       \`;
       document.head.appendChild(style);
@@ -55,56 +53,45 @@ export default function Player() {
   `;
 
   useEffect(() => {
-    // 1. Initial Setup
+    // 1. Enter Landscape
     enterFullScreen();
-    
-    // 2. Listen for App Background/Foreground changes
+
+    // 2. Handle App State (Background/Foreground)
     const subscription = AppState.addEventListener('change', handleAppStateChange);
 
+    // 3. Handle Back Button (Exit Fullscreen before going back)
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      exitFullScreen().then(() => navigation.goBack());
+      return true;
+    });
+
     return () => {
-      // 3. Cleanup on exit
       exitFullScreen();
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       subscription.remove();
+      backHandler.remove();
     };
   }, []);
 
-  // ✅ FORCE IMMERSIVE MODE FUNCTION
   const enterFullScreen = async () => {
-    // 1. Lock Landscape
     await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-    
-    // 2. Android: Hide Bottom Gesture Bar & Top Status Bar
     if (Platform.OS === 'android') {
       await NavigationBar.setVisibilityAsync("hidden");
-      await NavigationBar.setBehaviorAsync("overlay-swipe"); // Swipe up to see bars temporarily
-    }
-
-    // 3. Restore Brightness settings if needed
-    const { status } = await Brightness.requestPermissionsAsync();
-    if (status === 'granted') {
-        const cur = await Brightness.getBrightnessAsync();
-        brightness.value = cur;
+      await NavigationBar.setBehaviorAsync("overlay-swipe");
     }
     handleSaveProgress();
   };
 
-  // ✅ EXIT IMMERSIVE MODE FUNCTION
   const exitFullScreen = async () => {
     await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     if (Platform.OS === 'android') {
       await NavigationBar.setVisibilityAsync("visible");
     }
-    await Brightness.restoreSystemBrightnessAsync();
   };
 
-  // ✅ HANDLE APP SWITCHING (WhatsApp -> Player)
-  const handleAppStateChange = (nextAppState: AppStateStatus) => {
-    if (
-      appState.current.match(/inactive|background/) &&
-      nextAppState === 'active'
-    ) {
-      // App has come to the foreground! Force hide bars again.
+  const handleAppStateChange = (nextAppState) => {
+    if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+      // Re-hide bars when returning to app
       if (Platform.OS === 'android') {
          NavigationBar.setVisibilityAsync("hidden");
       }
@@ -119,7 +106,7 @@ export default function Player() {
     });
   };
 
-  const getStreamUrl = (sourceUrl: string) => {
+  const getStreamUrl = (sourceUrl) => {
     const type = mediaType === 'movie' ? 'movie' : 'tv';
     const id = imdbId || tmdbId;
     const query = mediaType === 'tv' ? `/${season}/${episode}` : '';
@@ -129,41 +116,9 @@ export default function Player() {
     return `${sourceUrl}/${type}/${id}${query}`;
   };
 
-  // --- GESTURE LOGIC (Unchanged) ---
-  const updateSystemBrightness = (val: number) => { Brightness.setBrightnessAsync(val); };
-
-  const onGestureEvent = (type: 'brightness' | 'volume') => (event: any) => {
-    'worklet';
-    const delta = -event.velocityY / 10000;
-    if (type === 'brightness') {
-        const newVal = Math.min(1, Math.max(0, brightness.value + delta));
-        brightness.value = newVal;
-        indicatorType.value = 'brightness';
-        runOnJS(updateSystemBrightness)(newVal);
-    } else {
-        const newVal = Math.min(1, Math.max(0, volume.value + delta));
-        volume.value = newVal;
-        indicatorType.value = 'volume';
-    }
-    showIndicator.value = 1;
-    showIndicator.value = withSequence(withTiming(1, { duration: 100 }), withDelay(1500, withTiming(0)));
-  };
-
-  const indicatorStyle = useAnimatedStyle(() => ({
-    opacity: showIndicator.value,
-    transform: [{ scale: withTiming(showIndicator.value ? 1 : 0.8) }]
-  }));
-
-  const onShouldStartLoadWithRequest = (request: any) => {
-    if (request.url.startsWith('http') && !request.url.includes('google') && !request.url.includes('facebook')) {
-        return true;
-    }
-    return false;
-  };
-
   return (
-    <GestureHandlerRootView style={styles.container}>
-      {/* ✅ Expo Status Bar Component - Force Hidden */}
+    <View style={styles.container}>
+      {/* Force Status Bar Hidden */}
       <StatusBar hidden={true} />
       
       <WebView
@@ -177,18 +132,25 @@ export default function Player() {
         setSupportMultipleWindows={false} 
         mediaPlaybackRequiresUserAction={false}
         allowsInlineMediaPlayback={true}
-        userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
+        userAgent="Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Mobile Safari/537.36"
+        onShouldStartLoadWithRequest={(request) => {
+            // Block ads/popups that try to open new windows
+            const isStreamSource = SOURCES.some(s => request.url.includes(s.url.split('/')[2]));
+            if (request.url.startsWith('http') && !request.url.includes('google') && !request.url.includes('facebook')) {
+                return true;
+            }
+            return false;
+        }}
         onLoadStart={() => {
             setLoading(true);
+            // Auto-switch source if loading takes too long
             timeoutRef.current = setTimeout(() => {
-                if(loading) {
-                    if (currentSourceIndex < SOURCES.length - 1) {
-                        setCurrentSourceIndex(i => i + 1);
-                    } else {
-                        setErrorMsg('No sources found');
-                        setLoading(false);
-                    }
+                if (loading && currentSourceIndex < SOURCES.length - 1) {
+                    console.log("Timeout: Switching Source");
+                    setCurrentSourceIndex(prev => prev + 1);
+                } else if (loading) {
+                    setErrorMsg('Connection timed out');
+                    setLoading(false);
                 }
             }, TIMEOUT_MS);
         }}
@@ -196,15 +158,9 @@ export default function Player() {
             setLoading(false);
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
         }}
+        // Important: Transparent background to avoid white flashes
+        containerStyle={{ backgroundColor: 'black' }} 
       />
-
-      <PanGestureHandler onGestureEvent={onGestureEvent('brightness')}>
-        <Animated.View style={styles.gestureZoneLeft} />
-      </PanGestureHandler>
-
-      <PanGestureHandler onGestureEvent={onGestureEvent('volume')}>
-        <Animated.View style={styles.gestureZoneRight} />
-      </PanGestureHandler>
 
       {loading && (
         <View style={styles.loader}>
@@ -214,62 +170,29 @@ export default function Player() {
           </Text>
         </View>
       )}
-
-      <Animated.View style={[styles.feedbackContainer, indicatorStyle]} pointerEvents="none">
-         <IndicatorIcon type={indicatorType} brightness={brightness} volume={volume} />
-      </Animated.View>
-
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
-// ... Keep your IndicatorIcon, AnimatedIcon, AnimatedBar and styles exactly as they were ...
-const IndicatorIcon = ({ type, brightness, volume }: any) => {
-    return (
-        <View style={{ alignItems: 'center' }}>
-             <AnimatedIcon type={type} />
-             <AnimatedBar type={type} brightness={brightness} volume={volume} />
-        </View>
-    );
-};
-
-const AnimatedIcon = ({ type }: any) => {
-    return <MaterialCommunityIcons name="brightness-6" size={40} color="#E50914" />;
-};
-
-const AnimatedBar = ({ type, brightness, volume }: any) => {
-    const style = useAnimatedStyle(() => {
-        const val = type.value === 'brightness' ? brightness.value : volume.value;
-        return { width: `${Math.round(val * 100)}%` };
-    });
-    return (
-        <View style={{ width: 100, alignItems: 'center' }}>
-            <View style={styles.progressBarBg}>
-                <Animated.View style={[styles.progressBarFill, style]} />
-            </View>
-        </View>
-    );
-};
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'black' },
-  webview: { flex: 1, backgroundColor: 'black' },
-  gestureZoneLeft: { position: 'absolute', left: 0, top: 50, bottom: 50, width: 80, zIndex: 99, backgroundColor: 'transparent' },
-  gestureZoneRight: { position: 'absolute', right: 0, top: 50, bottom: 50, width: 80, zIndex: 99, backgroundColor: 'transparent' },
-  loader: { ...StyleSheet.absoluteFillObject, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
-  loadingText: { color: 'white', marginTop: 15, fontWeight: '600', fontFamily: 'GoogleSansFlex-Medium' },
-  feedbackContainer: { 
-      position: 'absolute', 
-      alignSelf: 'center', 
-      top: '40%', 
-      backgroundColor: 'rgba(0,0,0,0.85)', 
-      padding: 25, 
-      borderRadius: 16, 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      zIndex: 200, 
-      minWidth: 140 
+  container: { 
+      flex: 1, 
+      backgroundColor: 'black' 
   },
-  progressBarBg: { width: 100, height: 6, backgroundColor: '#333', borderRadius: 3, marginTop: 15, overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: '#E50914', borderRadius: 3 }
+  webview: { 
+      flex: 1, 
+      backgroundColor: 'black',
+  },
+  loader: { 
+      ...StyleSheet.absoluteFillObject, 
+      backgroundColor: 'black', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      zIndex: 100 
+  },
+  loadingText: { 
+      color: 'white', 
+      marginTop: 15, 
+      fontWeight: '600' 
+  },
 });
