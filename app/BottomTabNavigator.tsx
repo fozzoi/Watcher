@@ -4,14 +4,15 @@ import { createBottomTabNavigator, BottomTabBarProps } from '@react-navigation/b
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform, Dimensions, View, StyleSheet, TouchableOpacity } from 'react-native';
-
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 
 // Import your existing tab screens
 import History from '../app/history';
 import Explore from './Explore';
 import Index from '../app/index';
 import WatchListPage from '../app/WatchListPage';
+import SettingsPage from '../app/Settings'; // <--- IMPORTED SETTINGS
 
 // Import your detail screens
 import DetailPage from './DetailPage';
@@ -20,18 +21,16 @@ import ViewAllPage from './ViewAllPage';
 import ListDetails from './ListDetails';
 import SimilarMoviesPage from './SimilarMoviesPage';
 
+
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
 // --- CONFIGURATION ---
 const DOCK_MARGIN_BOTTOM = Platform.OS === 'ios' ? 30 : 20;
-const TAB_BAR_HEIGHT = 70; // Fixed height for the pill
-
-
-
-// --- STACK OPTIONS ---
+const TAB_BAR_HEIGHT = 70; 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
+// --- STACK OPTIONS ---
 const stackScreenOptions = {
     headerShown: false,
     cardStyle: { backgroundColor: '#000' },
@@ -42,18 +41,16 @@ const stackScreenOptions = {
     animationEnabled: true,
     gestureDirection: 'horizontal',
     contentStyle: { backgroundColor: '#000' },
-    // animationDuration: 222000,
     freezeOnBlur: true,
     detachPreviousScreen: false,
     cardOverlayEnabled: true,
-    // Fade + slide in from right smoothly
-    cardStyleInterpolator: ({ current, layouts }) => {
+    cardStyleInterpolator: ({ current, layouts }: any) => {
         const width = layouts?.screen?.width ?? SCREEN_WIDTH;
         const progress = current.progress;
 
         const translateX = progress.interpolate({
             inputRange: [0, 1],
-            outputRange: [width * 0.25, 0], // start a bit from the right for a subtle slide
+            outputRange: [width * 0.25, 0], 
         });
 
         const opacity = progress.interpolate({
@@ -67,7 +64,7 @@ const stackScreenOptions = {
                 opacity,
             },
             overlayStyle: {
-                backgroundColor: '#000',
+                backgroundColor: '#000000ff',
                 opacity: progress.interpolate({
                     inputRange: [0, 1],
                     outputRange: [0, 0.5],
@@ -111,6 +108,18 @@ const ExploreStack = () => (
         <Stack.Screen name="ListDetails" component={ListDetails} />
         <Stack.Screen name="SimilarMovies" component={SimilarMoviesPage} />
         <Stack.Screen name="history" component={History} />
+        <Stack.Screen name="Settings" component={SettingsStack} />
+        <Stack.Screen name="AiSearch" component={require('../app/AiSearch').default} />
+    </Stack.Navigator>
+);
+
+// ✅ NEW SETTINGS STACK
+const SettingsStack = () => (
+    <Stack.Navigator screenOptions={stackScreenOptions}>
+        <Stack.Screen name="SettingsMain" component={SettingsPage} />
+        <Stack.Screen name="Detail" component={DetailPage} />
+        <Stack.Screen name="CastDetails" component={CastDetails} />
+        <Stack.Screen name="history" component={History} />
     </Stack.Navigator>
 );
 
@@ -119,90 +128,126 @@ const CustomTabBar: React.FC<BottomTabBarProps> = (props) => {
   const { state, navigation, descriptors } = props;
 
   return (
-    <View style={localStyles.container}>
-        {/* Blur Background */}
-        <BlurView 
-          intensity={60}
-          tint='dark'
-          experimentalBlurMethod="dimezisBlurView"
-          style={{
-            ...StyleSheet.absoluteFillObject,
-            borderRadius: 40,
-          }}
-        />
+    <View style={localStyles.overlayContainer} pointerEvents="box-none">
         
-        {/* Icons Container */}
-        <View style={localStyles.tabBarInner}>
-            {state.routes.map((route, index) => {
-                const { options } = descriptors[route.key];
-                const isFocused = state.index === index;
+        {/* THE SPOTIFY GRADIENT FADE */}
+        <LinearGradient
+            colors={['transparent', 'rgba(0, 0, 0, 0.23)', 'rgba(0, 0, 0, 0.56)', '#000000f8']}
+            locations={[0, 0.3, 0.7, 1]}
+            style={localStyles.bottomGradient}
+            pointerEvents="none" 
+        />
 
-                const onPress = () => {
-                    const event = navigation.emit({
-                        type: 'tabPress',
-                        target: route.key,
-                        canPreventDefault: true,
-                    });
+        {/* THE PILL TAB BAR */}
+        <View style={localStyles.pillContainer}>
+            {/* Blur Background of Pill */}
+            <BlurView 
+              intensity={25}
+              tint='dark'
+              experimentalBlurMethod="dimezisBlurView"
+              style={StyleSheet.absoluteFillObject}
+            />
+            
+            {/* Icons Container */}
+            <View style={localStyles.tabBarInner}>
+                {state.routes.map((route, index) => {
+                    const { options } = descriptors[route.key];
+                    const isFocused = state.index === index;
 
-                    if (!isFocused && !event.defaultPrevented) {
-                        navigation.navigate(route.name);
-                    }
-                };
+                    const onPress = () => {
+                        const event = navigation.emit({
+                            type: 'tabPress',
+                            target: route.key,
+                            canPreventDefault: true,
+                        });
 
-                const iconComponent = options.tabBarIcon 
-                    ? options.tabBarIcon({ 
-                        focused: isFocused, 
-                        color: isFocused ? '#E50914' : '#888888', 
-                        size: 26 
-                    })
-                    : null;
+                        if (!isFocused && !event.defaultPrevented) {
+                            navigation.navigate(route.name);
+                        }
+                    };
 
-                return (
-                    <TouchableOpacity
-                        key={route.key}
-                        accessibilityRole="button"
-                        accessibilityState={isFocused ? { selected: true } : {}}
-                        onPress={onPress}
-                        style={localStyles.tabButton} 
-                    >
-                        {iconComponent}
-                    </TouchableOpacity>
-                );
-            })}
+                    const iconComponent = options.tabBarIcon 
+                        ? options.tabBarIcon({ 
+                            focused: isFocused, 
+                            color: isFocused ? '#E50914' : 'rgba(255,255,255,0.6)', 
+                            size: 26 
+                        })
+                        : null;
+
+                    return (
+                        <TouchableOpacity
+                            key={route.key}
+                            accessibilityRole="button"
+                            accessibilityState={isFocused ? { selected: true } : {}}
+                            onPress={onPress}
+                            style={localStyles.tabButton} 
+                            activeOpacity={0.7}
+                        >
+                            {iconComponent}
+                            {/* Optional Active Dot Indicator */}
+                            {isFocused && <View style={localStyles.activeDot} />}
+                        </TouchableOpacity>
+                    );
+                })}
+            </View>
         </View>
     </View>
   );
 };
 
-// --- 3. STYLES (SIMPLIFIED) ---
+// --- 3. STYLES ---
 const localStyles = StyleSheet.create({
-    container: {
+    overlayContainer: {
         position: 'absolute',
-        bottom: DOCK_MARGIN_BOTTOM,
-        left: 50,
-        right: 50,
+        bottom: 0,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+    },
+    bottomGradient: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 140, // Height of the fade effect
+    },
+    pillContainer: {
+        width: Math.min(SCREEN_WIDTH - 60, 350), // Responsive width
         height: TAB_BAR_HEIGHT,
-        borderRadius: 40, // Pill shape
-        justifyContent: 'center', // Centers the inner view vertically
+        marginBottom: DOCK_MARGIN_BOTTOM,
+        borderRadius: 35, // Fully rounded ends
         overflow: 'hidden',
-        borderColor: 'rgba(255, 255, 255, 0.3)',
-        borderLeftWidth: 0.5,
-        borderTopWidth: 0.5,
-        borderRightWidth: 0.5,
-        borderBottomWidth: 0.5,
+        // Glassmorphism Border
+        borderColor: 'rgba(255, 255, 255, 0.15)',
+        borderWidth: 1,
+        // Shadow for depth
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
+        elevation: 10,
+        backgroundColor: 'rgba(255, 255, 255, 0.04)', // Slight dark tint base
     },
     tabBarInner: {
         flexDirection: 'row',
         width: '100%',
         height: '100%',
         justifyContent: 'space-evenly',
-        alignItems: 'center', // This forces icons to vertical center
+        alignItems: 'center',
     },
     tabButton: {
         flex: 1,
         height: '100%',
-        justifyContent: 'center', // Centers icon inside button
-        alignItems: 'center',     // Centers icon inside button
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    activeDot: {
+        position: 'absolute',
+        bottom: 12, // Adjusted position for pill height
+        width: 4,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: '#E50914',
     }
 });
 
@@ -222,7 +267,6 @@ const RootTabNavigator = () => {
                         } else if (route.name === 'Explore') {
                             iconName = focused ? 'compass' : 'compass-outline';
                         }
-
                         return <Ionicons name={iconName} size={size} color={color} />;
                     },
                     headerShown: false,
@@ -232,6 +276,7 @@ const RootTabNavigator = () => {
                 <Tab.Screen name="Explore" component={ExploreStack} />
                 <Tab.Screen name="Watchlist" component={WatchlistStack} />
                 <Tab.Screen name="Search" component={SearchStack} />
+        
             </Tab.Navigator>
     );
 };

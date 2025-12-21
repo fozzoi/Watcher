@@ -7,6 +7,18 @@ const TMDB_API_KEY = "7d3f7aa3d3623c924b57a28243c4e84e";
 const DIRECT_URL = "https://api.themoviedb.org/3";
 const PROXY_URL = "https://dormamu.anuanoopthoppilanu.workers.dev/3"; 
 
+// --- GLOBAL CONFIGURATION ---
+// This acts as the central state for API behavior
+const GLOBAL_CONFIG = {
+  nsfwFilterEnabled: true, // Default: Safe Mode is ON
+  hiRes: false,            // Default: Standard Quality
+};
+
+export const setGlobalConfig = (key: 'nsfwFilterEnabled' | 'hiRes', value: boolean) => {
+  GLOBAL_CONFIG[key] = value;
+  requestCache.clear(); // Clear cache so new settings apply immediately
+};
+
 const tmdbApi = axios.create({
   baseURL: DIRECT_URL,
   params: {
@@ -20,23 +32,16 @@ tmdbApi.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-
-    // Check if we haven't retried yet AND we are currently using Direct URL
     if (!originalRequest._retry && originalRequest.baseURL === DIRECT_URL) {
       console.log("⚠️ Direct TMDB connection failed. Switching to Cloudflare Proxy...");
-      
-      originalRequest._retry = true;        // Mark as retried
-      originalRequest.baseURL = PROXY_URL;  // Switch URL
-      
-      // Retry the request
+      originalRequest._retry = true;        
+      originalRequest.baseURL = PROXY_URL;  
       return tmdbApi(originalRequest);
     }
-
     return Promise.reject(error);
   }
 );
 
-// Request cache
 const requestCache = new Map();
 
 export const clearCache = (keyPrefix: string = "") => {
@@ -50,7 +55,6 @@ export const clearCache = (keyPrefix: string = "") => {
 };
 
 // --- INTERFACES ---
-
 export interface TMDBImage {
   file_path: string;
   aspect_ratio: number;
@@ -73,7 +77,6 @@ export interface TMDBCrewMember {
   job: string;
 }
 
-// ✅ NEW: Interface for External IDs (IMDb)
 export interface TMDBExternalIds {
   imdb_id?: string;
   facebook_id?: string;
@@ -81,7 +84,6 @@ export interface TMDBExternalIds {
   twitter_id?: string;
 }
 
-// ✅ NEW: Interface for Videos/Trailers
 export interface TMDBVideo {
   id: string;
   key: string;
@@ -103,11 +105,11 @@ export interface TMDBResult {
   release_date?: string;
   first_air_date?: string;
   certification?: string;
-  status?: string; // ✅ Status (Released/Ended)
-  budget?: number; // ✅ Budget
-  revenue?: number; // ✅ Revenue
-  runtime?: number; // ✅ Runtime in minutes
-  tagline?: string; // ✅ Tagline
+  status?: string; 
+  budget?: number; 
+  revenue?: number; 
+  runtime?: number; 
+  tagline?: string; 
   genre_ids?: number[];
   original_language?: string;
   
@@ -116,8 +118,8 @@ export interface TMDBResult {
   character?: string; 
   number_of_seasons?: number; 
   seasons?: TMDBSeason[];
-  external_ids?: TMDBExternalIds; // ✅ Include External IDs
-  videos?: TMDBVideo[]; // ✅ Include Videos
+  external_ids?: TMDBExternalIds; 
+  videos?: TMDBVideo[]; 
 }
 
 export interface TMDBSeason {
@@ -172,8 +174,6 @@ const formatBasicItemData = (item: any): Omit<TMDBResult, 'certification' | 'cas
   first_air_date: item.first_air_date,
   number_of_seasons: item.number_of_seasons,
   genre_ids: item.genre_ids || [],
-  
-  // Extra Details fields (may be undefined in list view)
   status: item.status,
   budget: item.budget,
   revenue: item.revenue,
@@ -187,8 +187,26 @@ const createCacheKey = (endpoint: string, params: Record<string, any> = {}) => {
 };
 
 const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}) => {
+  
+  // --- NSFW & STRICT FILTER LOGIC ---
+  if (GLOBAL_CONFIG.nsfwFilterEnabled) {
+    // 1. Explicitly block Adult content flag
+    params.include_adult = false;
+
+    // 2. Strict Certification Filter (Only works on 'discover' endpoints)
+    // This hides "A" rated (18+) mainstream movies when filter is ON
+    if (endpoint.includes('discover')) {
+      params.certification_country = "IN"; 
+      params['certification.lte'] = "UA"; // Hides 'A' rated content
+    }
+  } else {
+    // Filter is OFF: Show everything
+    params.include_adult = true; 
+  }
+
   const cacheKey = createCacheKey(endpoint, params);
   if (requestCache.has(cacheKey)) return requestCache.get(cacheKey);
+  
   try {
     const response = await tmdbApi.get(endpoint, { params });
     requestCache.set(cacheKey, response.data);
@@ -198,41 +216,53 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
   }
 };
 
-// --- UPDATED FETCH FUNCTIONS ---
+// --- IMAGE URL LOGIC (Hi-Res Support) ---
+export const getImageUrl = (path: string | null, size: string = "w500"): string => {
+  if (!path) return "https://via.placeholder.com/500x750?text=No+Image";
+  
+  let finalSize = size;
+  if (GLOBAL_CONFIG.hiRes) {
+    if (size === "w500") finalSize = "original"; 
+    if (size === "w780") finalSize = "original"; 
+    if (size === "w185") finalSize = "w500";     
+  }
 
-// 1. Trending
+  return `https://image.tmdb.org/t/p/${finalSize}${path}`;
+};
+
+
+// --- FETCH FUNCTIONS ---
+
 export const getTrendingMovies = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
+  const endpoint = genreId ? "/discover/movie" : "/trending/movie/week";
+  const params: any = { page };
+  if (genreId) { params.with_genres = genreId; params.sort_by = "popularity.desc"; }
   try {
-    const endpoint = genreId ? "/discover/movie" : "/trending/movie/week";
-    const params: any = { page };
-    if (genreId) { params.with_genres = genreId; params.sort_by = "popularity.desc"; }
     const data = await fetchWithCache(endpoint, params);
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
   } catch (error) { return []; }
 };
 
 export const getTrendingTV = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
+  const endpoint = genreId ? "/discover/tv" : "/trending/tv/week";
+  const params: any = { page };
+  if (genreId) { params.with_genres = genreId; params.sort_by = "popularity.desc"; }
   try {
-    const endpoint = genreId ? "/discover/tv" : "/trending/tv/week";
-    const params: any = { page };
-    if (genreId) { params.with_genres = genreId; params.sort_by = "popularity.desc"; }
     const data = await fetchWithCache(endpoint, params);
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "tv" }));
   } catch (error) { return []; }
 };
 
-// 2. Top Rated
 export const getTopRated = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
+  const endpoint = genreId ? "/discover/movie" : "/movie/top_rated";
+  const params: any = { page };
+  if (genreId) { params.with_genres = genreId; params.sort_by = "vote_average.desc"; params["vote_count.gte"] = 300; }
   try {
-    const endpoint = genreId ? "/discover/movie" : "/movie/top_rated";
-    const params: any = { page };
-    if (genreId) { params.with_genres = genreId; params.sort_by = "vote_average.desc"; params["vote_count.gte"] = 300; }
     const data = await fetchWithCache(endpoint, params);
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
   } catch (error) { return []; }
 };
 
-// 3. Regional & Language
 export const getRegionalMovies = async (region: string = 'IN', page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
   const params: any = { region, sort_by: "popularity.desc", page };
   if (genreId) params.with_genres = genreId;
@@ -260,13 +290,13 @@ export const getLanguageTV = async (language: string, page: number = 1, genreId?
   } catch (error) { return []; }
 };
 
-// 4. Anime
+// Anime
 const ANIME_GENRE_ID = 16;
 const ANIME_KEYWORD_ID = 210024;
 export const getAnimeContent = async (page: number = 1, isMovie: boolean = true, genreId?: number): Promise<TMDBResult[]> => {
+  const mediaType = isMovie ? 'movie' : 'tv';
+  const genres = genreId ? `${ANIME_GENRE_ID},${genreId}` : `${ANIME_GENRE_ID}`;
   try {
-    const mediaType = isMovie ? 'movie' : 'tv';
-    const genres = genreId ? `${ANIME_GENRE_ID},${genreId}` : `${ANIME_GENRE_ID}`;
     const data = await fetchWithCache(`/discover/${mediaType}`, {
       with_genres: genres,
       with_keywords: ANIME_KEYWORD_ID,
@@ -286,6 +316,42 @@ export const getAnimatedMovies = async (page: number = 1, genreId?: number): Pro
   } catch (error) { return []; }
 };
 
+export const getUpcomingMovies = async (page: number = 1): Promise<TMDBResult[]> => {
+  try {
+    const data = await fetchWithCache("/movie/upcoming", { page, region: 'IN' });
+    return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
+  } catch (error) { return []; }
+};
+
+export const getHiddenGems = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
+  const params: any = { 
+    page, 
+    "vote_average.gte": 7.5, 
+    "vote_count.gte": 100, 
+    "vote_count.lte": 3000, 
+    sort_by: "vote_average.desc" 
+  };
+  if (genreId) params.with_genres = genreId;
+  try {
+    const data = await fetchWithCache("/discover/movie", params);
+    return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
+  } catch (error) { return []; }
+};
+
+export const getNostalgicMovies = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
+  const params: any = { 
+    page, 
+    "primary_release_date.gte": "1990-01-01", 
+    "primary_release_date.lte": "2005-12-31", 
+    sort_by: "popularity.desc" 
+  };
+  if (genreId) params.with_genres = genreId;
+  try {
+    const data = await fetchWithCache("/discover/movie", params);
+    return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
+  } catch (error) { return []; }
+};
+
 // --- BATCH FETCH ---
 export const fetchAllDiscoveryContent = async (genreId?: number) => {
   const gId = genreId === 0 ? undefined : genreId;
@@ -297,7 +363,8 @@ export const fetchAllDiscoveryContent = async (genreId?: number) => {
       getLanguageTV('hi', 1, gId), getLanguageTV('ml', 1, gId),
       getLanguageMovies('ko', 1, gId), getLanguageTV('ko', 1, gId),
       getLanguageMovies('ja', 1, gId), getLanguageTV('ja', 1, gId),
-      getAnimeContent(1, true, gId), getAnimeContent(1, false, gId), getAnimatedMovies(1, gId)
+      getAnimeContent(1, true, gId), getAnimeContent(1, false, gId), getAnimatedMovies(1, gId),
+      getUpcomingMovies(1), getHiddenGems(1, gId), getNostalgicMovies(1, gId)
     ]);
     
     return {
@@ -306,15 +373,16 @@ export const fetchAllDiscoveryContent = async (genreId?: number) => {
       hindiTV: results[7], malayalamTV: results[8],
       koreanMovies: results[9], koreanTV: results[10],
       japaneseMovies: results[11], japaneseTV: results[12],
-      animeMovies: results[13], animeShows: results[14], animatedMovies: results[15]
+      animeMovies: results[13], animeShows: results[14], animatedMovies: results[15],
+      upcoming: results[16], hiddenGems: results[17], nostalgia: results[18]
     };
   } catch (error) {
     console.error("Error fetching discovery content:", error);
-    return { trendingMovies: [], trendingTV: [], topRated: [], regional: [], hindiMovies: [], malayalamMovies: [], tamilMovies: [], hindiTV: [], malayalamTV: [], koreanMovies: [], koreanTV: [], japaneseMovies: [], japaneseTV: [], animeMovies: [], animeShows: [], animatedMovies: [] };
+    return { trendingMovies: [], trendingTV: [], topRated: [], regional: [], hindiMovies: [], malayalamMovies: [], tamilMovies: [], hindiTV: [], malayalamTV: [], koreanMovies: [], koreanTV: [], japaneseMovies: [], japaneseTV: [], animeMovies: [], animeShows: [], animatedMovies: [], upcoming: [], hiddenGems: [], nostalgia: [] };
   }
 };
 
-// --- GENRES, SIMILAR, IMAGES ---
+// --- DETAILS & OTHERS ---
 
 export const getMovieGenres = async (id: number, mediaType: "movie" | "tv" = "movie"): Promise<{ id: number; name: string }[]> => {
   try {
@@ -373,7 +441,6 @@ export const getMovieImages = async (movieId: number, mediaType: "movie" | "tv")
   } catch (error) { return []; }
 };
 
-// ✅ NEW: Fetch External IDs (IMDb) - Needed for Streaming
 export const getExternalIds = async (id: number, mediaType: "movie" | "tv"): Promise<TMDBExternalIds> => {
   try {
     const data = await fetchWithCache(`/${mediaType}/${id}/external_ids`);
@@ -381,7 +448,6 @@ export const getExternalIds = async (id: number, mediaType: "movie" | "tv"): Pro
   } catch (error) { return {}; }
 };
 
-// ✅ NEW: Fetch Trailers
 export const getTrailers = async (id: number, mediaType: "movie" | "tv"): Promise<TMDBVideo[]> => {
   try {
     const data = await fetchWithCache(`/${mediaType}/${id}/videos`);
@@ -419,16 +485,11 @@ export const searchGenres = async (query: string): Promise<{ id: number; name: s
   } catch (error) { return []; }
 };
 
-// --- OPTIMIZED DETAILS FETCHING ---
-
 export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
   try {
-    // ✅ OPTIMIZATION: Use 'append_to_response' to get everything in ONE request
-    // This fetches credits, release dates (for certification), external_ids (for IMDb), and videos
     const append = "credits,release_dates,content_ratings,external_ids,videos";
     const data = await fetchWithCache(`/${item.media_type}/${item.id}`, { append_to_response: append });
 
-    // 1. Parse Certification
     let certification = null;
     if (item.media_type === "movie") {
       const usRelease = data.release_dates?.results?.find((r: any) => r.iso_3166_1 === "US");
@@ -438,7 +499,6 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
       certification = usRating?.rating || null;
     }
 
-    // 2. Parse Cast & Director
     const cast = data.credits?.cast?.slice(0, 10).map((member: any) => ({
       id: member.id,
       name: member.name || "Unknown Actor",
@@ -453,35 +513,26 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
       job: "Director"
     } : null;
 
-    // 3. Seasons (if TV)
     let seasonsData = [];
     if (item.media_type === "tv") {
-      // NOTE: Seasons usually require a separate call to get episode details per season, 
-      // but the main TV endpoint gives the season list summary.
       seasonsData = data.seasons || []; 
     }
 
     return {
       ...item,
-      ...formatBasicItemData(data), // Update with more detailed fields (runtime, budget etc)
+      ...formatBasicItemData(data), 
       certification,
       cast,
       director,
       seasons: seasonsData,
-      external_ids: data.external_ids, // ✅ Return IDs
-      videos: data.videos?.results || [] // ✅ Return Trailers
+      external_ids: data.external_ids, 
+      videos: data.videos?.results || [] 
     };
   } catch (error) { return item; }
 };
 
-export const getImageUrl = (path: string | null, size: string = "w500"): string => {
-  if (!path) return "https://via.placeholder.com/500x750?text=No+Image";
-  return `https://image.tmdb.org/t/p/${size}${path}`;
-};
-
 export const getMediaDetails = async (id: number, mediaType: "movie" | "tv"): Promise<TMDBResult> => {
   try {
-    // We can call getFullDetails directly with a minimal object to trigger the optimized fetch
     return await getFullDetails({ id, media_type: mediaType } as TMDBResult);
   } catch (error) {
     throw error;
@@ -509,6 +560,9 @@ export const fetchMoreContentByType = async (type: string, page: number = 1): Pr
     case 'animemovies': return await getAnimeContent(page, true);
     case 'animeshows': return await getAnimeContent(page, false);
     case 'animatedmovies': return await getAnimatedMovies(page);
+    case 'upcoming': return await getUpcomingMovies(page);
+    case 'hiddengems': return await getHiddenGems(page);
+    case 'nostalgia': return await getNostalgicMovies(page);
     default:
       if (type.startsWith('search:')) { return await searchTMDB(type.substring(7), page); }
       return await getTrendingMovies(page);
