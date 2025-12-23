@@ -11,8 +11,8 @@ import {
   Modal,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import moment from "moment";
+import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from "expo-router"; // Use expo-router instead of @react-navigation
 
 interface HistoryItem {
   query: string;
@@ -22,9 +22,22 @@ interface HistoryItem {
 const { width } = Dimensions.get("window");
 const SWIPE_THRESHOLD = -80;
 
+// Native Date Formatter (Replaces Moment)
+const formatDate = (dateStr: string) => {
+  const date = new Date(dateStr);
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).format(date);
+};
+
 const HistoryPage = () => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const navigation = useNavigation();
+  const router = useRouter(); // Expo Router hook
   const [currentlyOpenSwipeable, setCurrentlyOpenSwipeable] = useState<number | null>(null);
   const animatedValues = useRef<{[key: string]: Animated.Value}>({}).current;
   const [isAlertVisible, setIsAlertVisible] = useState(false);
@@ -33,12 +46,8 @@ const HistoryPage = () => {
     const jsonValue = await AsyncStorage.getItem("searchHistory");
     if (jsonValue) {
       const parsed = JSON.parse(jsonValue);
-      setHistory(parsed.reverse()); // Latest first
+      setHistory(parsed.reverse());
     }
-  };
-
-  const clearHistory = () => {
-    setIsAlertVisible(true);
   };
 
   const handleClearHistory = async () => {
@@ -48,13 +57,9 @@ const HistoryPage = () => {
   };
 
   const deleteHistoryItem = async (itemIndex: number) => {
-    const itemToDelete = history[itemIndex];
-    const updatedHistory = history.filter(
-      (item, index) => index !== itemIndex
-    );
+    const updatedHistory = history.filter((_, index) => index !== itemIndex);
     setHistory(updatedHistory);
     await AsyncStorage.setItem("searchHistory", JSON.stringify(updatedHistory));
-    // Reset the animation for the deleted item
     if (animatedValues[`item-${itemIndex}`]) {
       animatedValues[`item-${itemIndex}`].setValue(0);
     }
@@ -62,17 +67,22 @@ const HistoryPage = () => {
 
   const groupHistoryByDate = () => {
     const grouped: { Today: HistoryItem[]; Yesterday: HistoryItem[]; Older: HistoryItem[] } = {
-      Today: [],
-      Yesterday: [],
-      Older: [],
+      Today: [], Yesterday: [], Older: [],
     };
 
+    const now = new Date();
+    const todayStr = now.toDateString();
+    const yesterday = new Date();
+    yesterday.setDate(now.getDate() - 1);
+    const yesterdayStr = yesterday.toDateString();
+
     history.forEach((item) => {
-      const itemDate = moment(item.date);
-      const today = moment();
-      if (itemDate.isSame(today, "day")) {
+      const itemDate = new Date(item.date);
+      const itemDateStr = itemDate.toDateString();
+
+      if (itemDateStr === todayStr) {
         grouped.Today.push(item);
-      } else if (itemDate.isSame(today.clone().subtract(1, "day"), "day")) {
+      } else if (itemDateStr === yesterdayStr) {
         grouped.Yesterday.push(item);
       } else {
         grouped.Older.push(item);
@@ -82,11 +92,7 @@ const HistoryPage = () => {
     return grouped;
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      loadHistory();
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { loadHistory(); }, []));
 
   const getSwipeableItemProps = (itemIndex: number) => {
     if (!animatedValues[`item-${itemIndex}`]) {
@@ -95,53 +101,31 @@ const HistoryPage = () => {
     
     const panResponder = PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        // Only respond to horizontal swipes
-        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
-      },
+      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > Math.abs(gesture.dy),
       onPanResponderGrant: () => {
-        // When a new swipe starts, close any currently open swipeable
         if (currentlyOpenSwipeable !== null && currentlyOpenSwipeable !== itemIndex) {
           Animated.spring(animatedValues[`item-${currentlyOpenSwipeable}`], {
-            toValue: 0,
-            useNativeDriver: false,
+            toValue: 0, useNativeDriver: false,
           }).start();
         }
         setCurrentlyOpenSwipeable(itemIndex);
       },
-      onPanResponderMove: (_, gestureState) => {
-        // Limit movement to only left swipes and no more than -100
-        const newValue = Math.max(gestureState.dx, -100);
-        animatedValues[`item-${itemIndex}`].setValue(newValue);
+      onPanResponderMove: (_, gesture) => {
+        animatedValues[`item-${itemIndex}`].setValue(Math.max(gesture.dx, -100));
       },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx < SWIPE_THRESHOLD) {
-          // If swiped far enough, keep open
-          Animated.spring(animatedValues[`item-${itemIndex}`], {
-            toValue: -100,
-            useNativeDriver: false,
-          }).start();
-        } else {
-          // Otherwise, close
-          Animated.spring(animatedValues[`item-${itemIndex}`], {
-            toValue: 0,
-            useNativeDriver: false,
-          }).start();
-          setCurrentlyOpenSwipeable(null);
-        }
+      onPanResponderRelease: (_, gesture) => {
+        const toValue = gesture.dx < SWIPE_THRESHOLD ? -100 : 0;
+        Animated.spring(animatedValues[`item-${itemIndex}`], {
+          toValue, useNativeDriver: false,
+        }).start();
+        if (toValue === 0) setCurrentlyOpenSwipeable(null);
       },
     });
     
-    return {
-      panHandlers: panResponder.panHandlers,
-      animatedStyle: {
-        transform: [{ translateX: animatedValues[`item-${itemIndex}`] }],
-      },
-    };
+    return { panHandlers: panResponder.panHandlers, animatedStyle: { transform: [{ translateX: animatedValues[`item-${itemIndex}`] }] } };
   };
 
   const groupedHistory = groupHistoryByDate();
-  console.log("Grouped History:", groupedHistory);
 
   const renderHistoryItem = (item: HistoryItem, index: number, groupOffset: number) => {
     const itemIndex = index + groupOffset;
@@ -152,65 +136,43 @@ const HistoryPage = () => {
         <Animated.View style={[styles.historyItemContainer, animatedStyle]} {...panHandlers}>
           <TouchableOpacity
             style={styles.historyItem}
-            onPress={() => navigation.navigate("Search", { prefillQuery: item.query })}
+            // Expo Router navigation
+            onPress={() => router.push({ pathname: "/search", params: { prefillQuery: item.query } })}
           >
-            <Text style={styles.queryText} numberOfLines={1} ellipsizeMode="tail">
-              {item.query}
-            </Text>
-            <Text style={styles.dateText}>
-              {moment(item.date).format("MMM D, YYYY h:mm A")}
-            </Text>
+            <Text style={styles.queryText} numberOfLines={1}>{item.query}</Text>
+            <Text style={styles.dateText}>{formatDate(item.date)}</Text>
           </TouchableOpacity>
         </Animated.View>
-        <TouchableOpacity 
-          style={styles.deleteButton}
-          onPress={() => deleteHistoryItem(itemIndex)}
-        >
+        <TouchableOpacity style={styles.deleteButton} onPress={() => deleteHistoryItem(itemIndex)}>
           <Text style={styles.deleteButtonText}>Delete</Text>
         </TouchableOpacity>
       </View>
     );
   };
 
-  const renderCustomAlert = () => (
-    <Modal
-      animationType="fade"
-      transparent={true}
-      visible={isAlertVisible}
-      onRequestClose={() => setIsAlertVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>Clear History</Text>
-          <Text style={styles.modalMessage}>Are you sure you want to clear all search history?</Text>
-          <View style={styles.modalButtons}>
-            <TouchableOpacity 
-              style={styles.modalButton} 
-              onPress={() => setIsAlertVisible(false)}
-            >
-              <Text style={styles.modalButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.modalButton, styles.modalButtonDanger]}
-              onPress={handleClearHistory}
-            >
-              <Text style={[styles.modalButtonText, styles.modalButtonTextDanger]}>Clear</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-
   return (
     <ScrollView style={styles.container}>
-      {renderCustomAlert()}
+      {/* --- Alert Modal --- */}
+      <Modal animationType="fade" transparent visible={isAlertVisible}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Clear History</Text>
+            <Text style={styles.modalMessage}>Clear all search history?</Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.modalButton} onPress={() => setIsAlertVisible(false)}>
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, styles.modalButtonDanger]} onPress={handleClearHistory}>
+                <Text style={[styles.modalButtonText, { fontWeight: 'bold' }]}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <View style={styles.header}>
         <Text style={styles.title}>Search History</Text>
-        <TouchableOpacity 
-          style={styles.clearButtonContainer}
-          onPress={clearHistory}
-        >
+        <TouchableOpacity onPress={() => setIsAlertVisible(true)} style={styles.clearButtonContainer}>
           <Text style={styles.clearButton}>Clear</Text>
         </TouchableOpacity>
       </View>
@@ -221,11 +183,9 @@ const HistoryPage = () => {
             <Text style={styles.groupTitle}>{group}</Text>
             <View style={styles.itemsContainer}>
               {items.map((item, index) => {
-                // Calculate the offset for item indices based on previous groups
                 let groupOffset = 0;
                 for (let i = 0; i < groupIndex; i++) {
-                  const prevGroup = Object.values(groupedHistory)[i];
-                  groupOffset += prevGroup.length;
+                  groupOffset += Object.values(groupedHistory)[i].length;
                 }
                 return renderHistoryItem(item, index, groupOffset);
               })}
@@ -237,12 +197,12 @@ const HistoryPage = () => {
       {history.length === 0 && (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>No search history yet.</Text>
-          <Text style={styles.emptySubText}>Your search history will appear here</Text>
         </View>
       )}
     </ScrollView>
   );
 };
+
 
 export default HistoryPage;
 

@@ -569,8 +569,8 @@ export const getMoviesByGenre = async (genreId: number, page: number = 1): Promi
 // ==========================================
 
 // ⚠️ REPLACE THIS WITH YOUR NEW KEY
-const GEMINI_API_KEY = "YOUR_NEW_GEMINI_KEY_HERE"; 
-const GEMINI_MODEL = "gemini-1.5-flash"; 
+const GEMINI_API_KEY = "AIzaSyBcSSG5lcIn1XascRuhNoipQjzWr4ZnkGc"; 
+const GEMINI_MODEL = "gemini-flash-latest"; 
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
 export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie' | 'tv' = 'movie'): Promise<TMDBResult[]> => {

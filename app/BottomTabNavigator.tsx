@@ -141,12 +141,12 @@ const CustomTabBar: React.FC<BottomTabBarProps> = (props) => {
         {/* THE PILL TAB BAR */}
         <View style={localStyles.pillContainer}>
             {/* Blur Background of Pill */}
-            <BlurView 
+            {/* <BlurView 
               intensity={25}
               tint='dark'
               experimentalBlurMethod="dimezisBlurView"
               style={StyleSheet.absoluteFillObject}
-            />
+            /> */}
             
             {/* Icons Container */}
             <View style={localStyles.tabBarInner}>
