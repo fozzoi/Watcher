@@ -1,7 +1,6 @@
 #!/usr/bin/env ts-node
 import axios from 'axios';
-import { Buffer } from 'buffer';
-import { DOMParser } from '@xmldom/xmldom';
+
 
 export interface TorrentResult {
   id: number | string;

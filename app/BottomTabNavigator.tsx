@@ -18,7 +18,7 @@ import SettingsPage from '../app/Settings'; // <--- IMPORTED SETTINGS
 import DetailPage from './DetailPage';
 import CastDetails from './CastDetails';
 import ViewAllPage from './ViewAllPage';
-import ListDetails from './ListDetails';
+// import ListDetails from './ListDetails';
 import SimilarMoviesPage from './SimilarMoviesPage';
 
 
@@ -81,7 +81,7 @@ const SearchStack = () => (
         <Stack.Screen name="Detail" component={DetailPage} />
         <Stack.Screen name="CastDetails" component={CastDetails} />
         <Stack.Screen name="ViewAll" component={ViewAllPage} />
-        <Stack.Screen name="ListDetails" component={ListDetails} />
+        {/* <Stack.Screen name="ListDetails" component={ListDetails} /> */}
         <Stack.Screen name="SimilarMovies" component={SimilarMoviesPage} />
         <Stack.Screen name="history" component={History} />
     </Stack.Navigator>
@@ -93,7 +93,7 @@ const WatchlistStack = () => (
         <Stack.Screen name="Detail" component={DetailPage} />
         <Stack.Screen name="CastDetails" component={CastDetails} />
         <Stack.Screen name="ViewAll" component={ViewAllPage} />
-        <Stack.Screen name="ListDetails" component={ListDetails} />
+        {/* <Stack.Screen name="ListDetails" component={ListDetails} /> */}
         <Stack.Screen name="SimilarMovies" component={SimilarMoviesPage} />
         <Stack.Screen name="history" component={History} />
     </Stack.Navigator>
@@ -105,7 +105,7 @@ const ExploreStack = () => (
         <Stack.Screen name="Detail" component={DetailPage} />
         <Stack.Screen name="CastDetails" component={CastDetails} />
         <Stack.Screen name="ViewAll" component={ViewAllPage} />
-        <Stack.Screen name="ListDetails" component={ListDetails} />
+        {/* <Stack.Screen name="ListDetails" component={ListDetails} /> */}
         <Stack.Screen name="SimilarMovies" component={SimilarMoviesPage} />
         <Stack.Screen name="history" component={History} />
         <Stack.Screen name="Settings" component={SettingsStack} />
