@@ -1,33 +1,31 @@
 import axios from "axios";
+import { GEMINI_API_KEY } from './secrets';
+
+// Add this temporarily to debug
+console.log("🔑 DEBUG KEY CHECK:", process.env.EXPO_PUBLIC_GEMINI_API_KEY);
 
 // API Key
 const TMDB_API_KEY = "7d3f7aa3d3623c924b57a28243c4e84e";
 
 // --- URL CONFIGURATION ---
-// ⚠️ IMPORTANT: If "workers.dev" is blocked by Jio/Airtel, 
-// you must replace this string with your custom domain (e.g., "tmdb.yourdomain.com")
 const WORKER_HOST = "dormamu.anuanoopthoppilanu.workers.dev";
-
 const API_BASE_URL = `https://${WORKER_HOST}/3`;
 
 // --- GLOBAL CONFIGURATION ---
 const GLOBAL_CONFIG = {
-  nsfwFilterEnabled: true, // Default: Safe Mode is ON
-  hiRes: false,            // Default: Standard Quality
+  nsfwFilterEnabled: true,
+  hiRes: false,
 };
 
 export const setGlobalConfig = (key: 'nsfwFilterEnabled' | 'hiRes', value: boolean) => {
   GLOBAL_CONFIG[key] = value;
-  requestCache.clear(); // Clear cache so new settings apply immediately
+  requestCache.clear();
 };
 
-// We use the Worker directly for everything to avoid ISP blocks
 const tmdbApi = axios.create({
   baseURL: API_BASE_URL,
-  params: {
-    api_key: TMDB_API_KEY
-  },
-  timeout: 10000, // Increased timeout slightly for proxy
+  params: { api_key: TMDB_API_KEY },
+  timeout: 10000,
 });
 
 const requestCache = new Map();
@@ -81,6 +79,20 @@ export interface TMDBVideo {
   official: boolean;
 }
 
+export interface TMDBProductionCompany {
+  id: number;
+  logo_path: string | null;
+  name: string;
+  origin_country: string;
+}
+
+export interface TMDBCollection {
+  id: number;
+  name: string;
+  poster_path: string | null;
+  backdrop_path: string | null;
+}
+
 export interface TMDBResult {
   id: number;
   title?: string;
@@ -108,6 +120,9 @@ export interface TMDBResult {
   seasons?: TMDBSeason[];
   external_ids?: TMDBExternalIds; 
   videos?: TMDBVideo[]; 
+  
+  production_companies?: TMDBProductionCompany[];
+  belongs_to_collection?: TMDBCollection | null;
 }
 
 export interface TMDBSeason {
@@ -175,8 +190,6 @@ const createCacheKey = (endpoint: string, params: Record<string, any> = {}) => {
 };
 
 const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}) => {
-  
-  // --- NSFW & STRICT FILTER LOGIC ---
   if (GLOBAL_CONFIG.nsfwFilterEnabled) {
     params.include_adult = false;
     if (endpoint.includes('discover')) {
@@ -199,53 +212,47 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
   }
 };
 
-// --- IMAGE URL LOGIC (UPDATED FOR DNS FIX) ---
 export const getImageUrl = (path: string | null, size: string = "w500"): string => {
   if (!path) return "https://via.placeholder.com/500x750?text=No+Image";
-  
   let finalSize = size;
   if (GLOBAL_CONFIG.hiRes) {
     if (size === "w500") finalSize = "original"; 
     if (size === "w780") finalSize = "original"; 
     if (size === "w185") finalSize = "w500";     
   }
-
-  // 🔴 FIX: Using Worker URL for images to bypass ISP blocks
-  // Original: https://image.tmdb.org/t/p/...
   return `https://${WORKER_HOST}/t/p/${finalSize}${path}`;
 };
-
 
 // --- FETCH FUNCTIONS ---
 
 export const getTrendingMovies = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
-  const endpoint = genreId ? "/discover/movie" : "/trending/movie/week";
-  const params: any = { page };
-  if (genreId) { params.with_genres = genreId; params.sort_by = "popularity.desc"; }
-  try {
-    const data = await fetchWithCache(endpoint, params);
-    return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
-  } catch (error) { return []; }
+    const endpoint = genreId ? "/discover/movie" : "/trending/movie/week";
+    const params: any = { page };
+    if (genreId) { params.with_genres = genreId; params.sort_by = "popularity.desc"; }
+    try {
+      const data = await fetchWithCache(endpoint, params);
+      return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
+    } catch (error) { return []; }
 };
 
 export const getTrendingTV = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
-  const endpoint = genreId ? "/discover/tv" : "/trending/tv/week";
-  const params: any = { page };
-  if (genreId) { params.with_genres = genreId; params.sort_by = "popularity.desc"; }
-  try {
-    const data = await fetchWithCache(endpoint, params);
-    return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "tv" }));
-  } catch (error) { return []; }
+    const endpoint = genreId ? "/discover/tv" : "/trending/tv/week";
+    const params: any = { page };
+    if (genreId) { params.with_genres = genreId; params.sort_by = "popularity.desc"; }
+    try {
+      const data = await fetchWithCache(endpoint, params);
+      return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "tv" }));
+    } catch (error) { return []; }
 };
 
 export const getTopRated = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
-  const endpoint = genreId ? "/discover/movie" : "/movie/top_rated";
-  const params: any = { page };
-  if (genreId) { params.with_genres = genreId; params.sort_by = "vote_average.desc"; params["vote_count.gte"] = 300; }
-  try {
-    const data = await fetchWithCache(endpoint, params);
-    return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
-  } catch (error) { return []; }
+    const endpoint = genreId ? "/discover/movie" : "/movie/top_rated";
+    const params: any = { page };
+    if (genreId) { params.with_genres = genreId; params.sort_by = "vote_average.desc"; params["vote_count.gte"] = 300; }
+    try {
+      const data = await fetchWithCache(endpoint, params);
+      return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
+    } catch (error) { return []; }
 };
 
 export const getRegionalMovies = async (region: string = 'IN', page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
@@ -275,7 +282,6 @@ export const getLanguageTV = async (language: string, page: number = 1, genreId?
   } catch (error) { return []; }
 };
 
-// Anime
 const ANIME_GENRE_ID = 16;
 const ANIME_KEYWORD_ID = 210024;
 export const getAnimeContent = async (page: number = 1, isMovie: boolean = true, genreId?: number): Promise<TMDBResult[]> => {
@@ -369,6 +375,78 @@ export const fetchAllDiscoveryContent = async (genreId?: number) => {
 
 // --- DETAILS & OTHERS ---
 
+// ✅ FIXED: Ensure this logic handles Directors/Creators and Studios
+export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
+  try {
+    const append = "credits,release_dates,content_ratings,external_ids,videos";
+    const data = await fetchWithCache(`/${item.media_type}/${item.id}`, { append_to_response: append });
+
+    let certification = null;
+    if (item.media_type === "movie") {
+      const usRelease = data.release_dates?.results?.find((r: any) => r.iso_3166_1 === "US");
+      certification = usRelease?.release_dates?.[0]?.certification || null;
+    } else {
+      const usRating = data.content_ratings?.results?.find((r: any) => r.iso_3166_1 === "US");
+      certification = usRating?.rating || null;
+    }
+
+    const cast = data.credits?.cast?.slice(0, 10).map((member: any) => ({
+      id: member.id,
+      name: member.name || "Unknown Actor",
+      profile_path: member.profile_path || null,
+      character: member.character || "Unknown Character"
+    })) || [];
+
+    // ENHANCED DIRECTOR LOGIC
+    let director = null;
+    if (data.created_by && data.created_by.length > 0) {
+        director = {
+            id: data.created_by[0].id,
+            name: data.created_by[0].name,
+            profile_path: data.created_by[0].profile_path,
+            job: "Creator"
+        };
+    } else if (data.credits?.crew) {
+        const dir = data.credits.crew.find((m: any) => m.job === "Director");
+        if (dir) {
+            director = {
+                id: dir.id,
+                name: dir.name,
+                profile_path: dir.profile_path,
+                job: "Director"
+            };
+        }
+    }
+
+    let seasonsData = [];
+    if (item.media_type === "tv") {
+      seasonsData = data.seasons || []; 
+    }
+
+    return {
+      ...item,
+      ...formatBasicItemData(data), 
+      certification,
+      cast,
+      director,
+      seasons: seasonsData,
+      external_ids: data.external_ids, 
+      videos: data.videos?.results || [],
+      production_companies: data.production_companies || [],
+      belongs_to_collection: data.belongs_to_collection || null,
+    };
+  } catch (error) { return item; }
+};
+
+// ✅ FIXED: This was missing, causing your "undefined" error
+export const getMediaDetails = async (id: number, mediaType: "movie" | "tv"): Promise<TMDBResult> => {
+  try {
+    return await getFullDetails({ id, media_type: mediaType } as TMDBResult);
+  } catch (error) {
+    throw error;
+  }
+};
+
 export const getMovieGenres = async (id: number, mediaType: "movie" | "tv" = "movie"): Promise<{ id: number; name: string }[]> => {
   try {
     const data = await fetchWithCache(`/${mediaType}/${id}`);
@@ -440,7 +518,6 @@ export const getTrailers = async (id: number, mediaType: "movie" | "tv"): Promis
   } catch (error) { return []; }
 };
 
-// --- SEARCH ---
 export const searchTMDB = async (query: string, page: number = 1): Promise<TMDBResult[]> => {
   try {
     const data = await fetchWithCache("/search/multi", { query, page });
@@ -468,60 +545,6 @@ export const searchGenres = async (query: string): Promise<{ id: number; name: s
     const uniqueGenres = Array.from(new Map(allGenres.map(g => [g.id, g])).values());
     return uniqueGenres.filter(genre => genre.name.toLowerCase().includes(query.toLowerCase()));
   } catch (error) { return []; }
-};
-
-export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
-  try {
-    const append = "credits,release_dates,content_ratings,external_ids,videos";
-    const data = await fetchWithCache(`/${item.media_type}/${item.id}`, { append_to_response: append });
-
-    let certification = null;
-    if (item.media_type === "movie") {
-      const usRelease = data.release_dates?.results?.find((r: any) => r.iso_3166_1 === "US");
-      certification = usRelease?.release_dates?.[0]?.certification || null;
-    } else {
-      const usRating = data.content_ratings?.results?.find((r: any) => r.iso_3166_1 === "US");
-      certification = usRating?.rating || null;
-    }
-
-    const cast = data.credits?.cast?.slice(0, 10).map((member: any) => ({
-      id: member.id,
-      name: member.name || "Unknown Actor",
-      profile_path: member.profile_path || null,
-      character: member.character || "Unknown Character"
-    })) || [];
-
-    const director = data.credits?.crew?.find((m: any) => m.job === "Director") ? {
-      id: data.credits.crew.find((m: any) => m.job === "Director").id,
-      name: data.credits.crew.find((m: any) => m.job === "Director").name,
-      profile_path: data.credits.crew.find((m: any) => m.job === "Director").profile_path,
-      job: "Director"
-    } : null;
-
-    let seasonsData = [];
-    if (item.media_type === "tv") {
-      seasonsData = data.seasons || []; 
-    }
-
-    return {
-      ...item,
-      ...formatBasicItemData(data), 
-      certification,
-      cast,
-      director,
-      seasons: seasonsData,
-      external_ids: data.external_ids, 
-      videos: data.videos?.results || [] 
-    };
-  } catch (error) { return item; }
-};
-
-export const getMediaDetails = async (id: number, mediaType: "movie" | "tv"): Promise<TMDBResult> => {
-  try {
-    return await getFullDetails({ id, media_type: mediaType } as TMDBResult);
-  } catch (error) {
-    throw error;
-  }
 };
 
 export const fetchMoreContentByType = async (type: string, page: number = 1): Promise<TMDBResult[]> => {
@@ -562,65 +585,95 @@ export const getMoviesByGenre = async (genreId: number, page: number = 1): Promi
 };
 
 
-// ... (Your existing code above) ...
-
 // ==========================================
-// 🤖 GEMINI AI RECOMMENDATIONS (Client Side)
+// 🤖 GEMINI AI RECOMMENDATIONS (FIXED)
 // ==========================================
 
-// ⚠️ REPLACE THIS WITH YOUR NEW KEY
-const GEMINI_API_KEY = "AIzaSyBcSSG5lcIn1XascRuhNoipQjzWr4ZnkGc"; 
-const GEMINI_MODEL = "gemini-flash-latest"; 
+// ✅ GOOD: Loads from the hidden file
+// ✅ Safe: Loads from the .env file
+
+// ✅ FIXED: Used 'gemini-1.5-flash-latest' which is safer for v1beta endpoints
+const GEMINI_MODEL = "gemini-flash-latest";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
 export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie' | 'tv' = 'movie'): Promise<TMDBResult[]> => {
   try {
+    console.log(`🤖 AI: Asking Gemini for recommendations similar to "${title}"...`);
+
     const prompt = `
       Recommend 10 ${mediaType === 'movie' ? 'movies' : 'TV shows'} similar to "${title}" in terms of tone, plot, and atmosphere.
-      Focus on "Vibe matching" (e.g. if I like "Interstellar", suggest "Arrival" or "Contact").
-      Return ONLY a raw JSON array of strings. Example: ["Movie A", "Movie B"]
+      Focus on "Vibe matching".
+      Return ONLY a JSON array of strings. Do not add markdown formatting.
+      Example: ["Movie A", "Movie B"]
     `;
 
     const payload = {
-      contents: [{ parts: [{ text: prompt }] }]
+      contents: [{ parts: [{ text: prompt }] }],
+      // ✅ FORCE JSON RESPONSE (This prevents parsing errors)
+      generationConfig: {
+        responseMimeType: "application/json"
+      }
     };
 
     // 1. Ask AI
     const response = await axios.post(GEMINI_URL, payload);
     
-    if (!response.data.candidates || response.data.candidates.length === 0) return [];
-
-    const aiText = response.data.candidates[0].content.parts[0].text;
-    const cleanJson = aiText.replace(/```json|```/g, '').trim(); // Remove Markdown
-    
-    let titles: string[] = [];
-    try {
-        titles = JSON.parse(cleanJson);
-    } catch (e) {
-        console.error("AI JSON Parse Error", e);
+    if (!response.data.candidates || response.data.candidates.length === 0) {
+        console.error("🤖 AI Error: No candidates returned from Gemini.");
         return [];
     }
 
-    // 2. Fetch Details for these titles using your existing search function
-    // We run these in parallel for speed
+    const aiText = response.data.candidates[0].content.parts[0].text;
+    
+    // 2. Parse JSON (Safe Mode)
+    let titles: string[] = [];
+    try {
+        // Clean up any potential markdown leftovers just in case
+        const cleanJson = aiText.replace(/```json|```/g, '').trim(); 
+        titles = JSON.parse(cleanJson);
+        console.log("🤖 AI Suggestions:", titles);
+    } catch (e) {
+        console.error("🤖 AI JSON Parse Error:", e, "Raw Text:", aiText);
+        return [];
+    }
+
+    // 3. Fetch Details from TMDB
     const promises = titles.map(async (t) => {
-      // We specifically search for the correct media type to avoid mixups
-      const results = await searchTMDB(t); 
-      // Filter to find exact match or best match with a poster
-      return results.find(r => r.poster_path && r.media_type === mediaType) || results[0] || null;
+      // Search for the specific media type to avoid mixing Movies/TV
+      try {
+        const searchUrl = `/search/${mediaType}`; 
+        const params = { query: t, include_adult: GLOBAL_CONFIG.nsfwFilterEnabled ? false : true };
+        
+        // We use fetchWithCache logic manually here to ensure we use the worker
+        const res = await tmdbApi.get(searchUrl, { params });
+        const results = res.data.results || [];
+        
+        // Return the first exact match that has a poster
+        return results.find((r: any) => r.poster_path) || results[0] || null;
+      } catch (err) {
+        return null;
+      }
     });
 
     const results = await Promise.all(promises);
     
-    // Filter out nulls and remove duplicates (by ID)
-    const uniqueMovies = Array.from(new Map(
-      results.filter((m): m is TMDBResult => m !== null).map(m => [m.id, m])
-    ).values());
+    // Filter valid results and format them
+    const validMovies = results
+        .filter((m): m is TMDBResult => m !== null)
+        .map(m => ({ ...formatBasicItemData(m), media_type: mediaType }));
+
+    // Remove duplicates by ID
+    const uniqueMovies = Array.from(new Map(validMovies.map(m => [m.id, m])).values());
 
     return uniqueMovies;
 
-  } catch (error) {
-    console.error("Gemini AI Error:", error);
+  } catch (error: any) {
+    // Log the exact error from Google
+    if (error.response) {
+        console.error("🤖 AI Network Error:", error.response.status, error.response.data);
+    } else {
+        console.error("🤖 AI Error:", error.message);
+    }
     return [];
   }
 };

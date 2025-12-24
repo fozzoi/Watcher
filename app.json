@@ -8,18 +8,23 @@
     "scheme": "myapp",
     "jsEngine": "hermes",
     "newArchEnabled": true,
+    "userInterfaceStyle": "dark",
     "androidNavigationBar": {
       "barStyle": "dark-content",
       "backgroundColor": "#000000"
     },
     "android": {
       "adaptiveIcon": {
-      "foregroundImage": "./assets/adaptive-icon.png",
-      "backgroundColor": "#000000"},
-      "config": {
-          "abiFilters": ["armeabi-v7a", "arm64-v8a"]
-        }
-      }
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "jsEngine": "hermes",
+      "package": "com.thewatcher",
+      "runtimeVersion": "1.0.0",
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -27,7 +32,6 @@
       "favicon": "assets/adaptive-icon.png"
     },
     "plugins": [
-      // "./src/withDoh",
       "expo-router",
       "expo-brightness",
       [
@@ -37,6 +41,16 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#000000"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "useLegacyPackaging": true
+          }
         }
       ]
     ],

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Dimensions,
@@ -8,10 +8,7 @@ import {
   FlatList,
   Image,
   ActivityIndicator,
-  Modal,
   StatusBar,
-  Share,
-  Alert,
   Linking,
 } from 'react-native';
 import { Text } from 'react-native-paper';
@@ -26,7 +23,7 @@ import {
   TMDBImage, 
   getMediaDetails,
   getExternalIds,
-  getGeminiMoviesSimilarTo
+  getGeminiMoviesSimilarTo,
 } from '../src/tmdb';
 import { getProgress } from '../src/utils/progress'; 
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -44,7 +41,6 @@ import Animated, {
 } from 'react-native-reanimated';
 
 const { width, height } = Dimensions.get('window');
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('screen');
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 40) + 10; 
 const HEADER_HEIGHT = height * 0.6;
@@ -88,17 +84,16 @@ const DetailPage = () => {
   
   const [galleryVisible, setGalleryVisible] = useState(false);
   
+  // SOURCE CHECK STATE
+  const [sourceStatus, setSourceStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
+  
   const scrollY = useSharedValue(0);
-
-
-
 
   useEffect(() => {
     const fetchAi = async () => {
       if (!movie.title && !movie.name) return;
       
       setLoadingAi(true);
-      // Wait a small delay so we don't block the main UI rendering
       setTimeout(async () => {
         const aiData = await getGeminiMoviesSimilarTo(
           movie.title || movie.name, 
@@ -115,6 +110,26 @@ const DetailPage = () => {
   useEffect(() => {
     loadDeepDetails();
   }, [initialMovie.id]);
+
+  // SOURCE CHECKER LOGIC
+  useEffect(() => {
+    if (externalIds) {
+        checkSourceAvailability();
+    }
+  }, [externalIds]);
+
+  const checkSourceAvailability = () => {
+     setSourceStatus('checking');
+     setTimeout(() => {
+         if (externalIds.imdb_id) {
+             setSourceStatus('available');
+         } else if (movie.media_type === 'movie' && !externalIds.imdb_id) {
+             setSourceStatus('unavailable');
+         } else {
+            setSourceStatus('available'); 
+         }
+     }, 800); 
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -151,7 +166,6 @@ const DetailPage = () => {
 
       if (initialMovie.media_type === 'tv' && fullDetails.seasons?.length > 0) {
         const storedProgress = await getProgress(initialMovie.id);
-        
         let seasonToLoad = 1;
         if (storedProgress) {
             seasonToLoad = storedProgress.lastSeason;
@@ -159,7 +173,6 @@ const DetailPage = () => {
             const validSeasons = fullDetails.seasons.filter((s: any) => s.season_number > 0);
             seasonToLoad = validSeasons.length > 0 ? validSeasons[0].season_number : fullDetails.seasons[0].season_number;
         }
-        
         setSelectedSeason(seasonToLoad);
         fetchEpisodes(seasonToLoad);
       }
@@ -178,6 +191,11 @@ const DetailPage = () => {
   };
 
   const handlePlay = (episode?: TMDBEpisode) => {
+    if (sourceStatus === 'unavailable') {
+        alert("No streaming source found for this content.");
+        return;
+    }
+
     let targetSeason = 1;
     let targetEpisode = 1;
 
@@ -211,12 +229,21 @@ const DetailPage = () => {
   const checkIfInWatchlist = async () => { try { const stored = await AsyncStorage.getItem('watchlist'); const list = stored ? JSON.parse(stored) : []; setIsInWatchlist(list.some((item: any) => item.id === movie.id)); } catch (e) {} };
   const toggleWatchlist = async () => { try { const stored = await AsyncStorage.getItem('watchlist'); const list = stored ? JSON.parse(stored) : []; const exists = list.some((item: any) => item.id === movie.id); const newList = exists ? list.filter((item: any) => item.id !== movie.id) : [...list, movie]; await AsyncStorage.setItem('watchlist', JSON.stringify(newList)); setIsInWatchlist(!exists); } catch (e) {} };
   const openTelegramSearch = () => { const title = movie.title || movie.name; const date = movie.release_date || movie.first_air_date; const year = date ? date.substring(0, 4) : ''; const message = encodeURIComponent(`${title} ${year}`); const telegramLink = `tg://msg?text=${message}`; Linking.openURL(telegramLink).catch(err => { const webLink = `https://t.me/share/url?text=${message}`; Linking.openURL(webLink); }); };
-  const openTorrentSearch = () => { const query = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.slice(0, 4) || ''}`; navigation.navigate('Search', { screen: 'SearchMain', params: { prefillQuery: query } }); };
+  
+  // RESTORED: Torrent/Download Search Function
+  const openTorrentSearch = () => { 
+      const query = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.slice(0, 4) || ''}`; 
+      navigation.navigate('Search', { screen: 'SearchMain', params: { prefillQuery: query } }); 
+  };
+  
   const scrollHandler = useAnimatedScrollHandler((event) => { scrollY.value = event.contentOffset.y; });
   const heroStyle = useAnimatedStyle(() => { const scale = interpolate(scrollY.value, [-100, 0], [1.2, 1], Extrapolate.CLAMP); const opacity = interpolate(scrollY.value, [0, HEADER_HEIGHT * 0.5], [1, 0], Extrapolate.CLAMP); return { transform: [{ scale }], opacity }; });
   const formatCurrency = (value?: number) => { if (!value) return 'N/A'; return value >= 1000000 ? `$${(value / 1000000).toFixed(1)}M` : `$${value.toLocaleString()}`; };
 
   const getButtonText = () => {
+    if (sourceStatus === 'checking') return "Checking Sources...";
+    if (sourceStatus === 'unavailable') return "Source Unavailable";
+
     if (movie.media_type === 'movie') {
         if (lastWatched) return "Resume Movie";
         return "Watch Movie";
@@ -233,31 +260,14 @@ const DetailPage = () => {
       
       {/* HEADER */}
       <View style={styles.fixedHeader}>
-        
          <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.roundBtn, {overflow: 'hidden'}]}>
-            <BlurView 
-              intensity={30}
-              tint='dark'
-              experimentalBlurMethod="dimezisBlurView"
-              style={{
-                ...StyleSheet.absoluteFillObject,
-                borderRadius: 20,
-              }}
-           />
+            <BlurView intensity={30} tint='dark' experimentalBlurMethod="dimezisBlurView" style={{...StyleSheet.absoluteFillObject, borderRadius: 20}} />
             <Ionicons name="arrow-back" size={24} color="#FFF" />
          </TouchableOpacity>
          <View style={{flexDirection: 'row', gap: 10}}>
             <TouchableOpacity onPress={toggleWatchlist} style={[styles.roundBtn, {overflow: 'hidden'}]}>
-              <BlurView 
-                  intensity={30}
-                  tint='dark'
-                  experimentalBlurMethod="dimezisBlurView"
-                  style={{
-                    ...StyleSheet.absoluteFillObject,
-                    borderRadius: 20,
-                  }}
-                />
-                <MaterialIcons name={isInWatchlist ? "bookmark" : "bookmark-outline"} size={24} color={isInWatchlist ? "#E50914" : "#FFF"} />
+              <BlurView intensity={30} tint='dark' experimentalBlurMethod="dimezisBlurView" style={{...StyleSheet.absoluteFillObject, borderRadius: 20}} />
+              <MaterialIcons name={isInWatchlist ? "bookmark" : "bookmark-outline"} size={24} color={isInWatchlist ? "#E50914" : "#FFF"} />
             </TouchableOpacity>
          </View>
       </View>
@@ -266,7 +276,6 @@ const DetailPage = () => {
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        // FIX: Increased paddingBottom to 120 to clear the Floating Tab Bar
         contentContainerStyle={{paddingBottom: 120}}
       >
         {/* HERO IMAGE */}
@@ -277,27 +286,17 @@ const DetailPage = () => {
             <View style={styles.heroContent}>
                 <Text style={styles.heroTitle}>{movie.title || movie.name}</Text>
                 
+                {/* META ROW */}
                 <View style={styles.metaRow}>
-                    <BlurView intensity={30} tint="dark" style={styles.metaChip}>
-                      <BlurView 
-                        intensity={30}
-                        tint='dark'
-                        experimentalBlurMethod="dimezisBlurView"
-                        style={{...StyleSheet.absoluteFillObject, borderRadius: 20}}
-                      />
+                    <View style={styles.metaChipNoBlur}>
                         <Ionicons name="star" size={12} color="#FFD700" />
                         <Text style={styles.metaText}>{movie.vote_average.toFixed(1)}</Text>
-                    </BlurView>
-                    <BlurView intensity={30} tint="dark" style={styles.metaChip}>
-                      <BlurView 
-                        intensity={30}
-                        tint='dark'
-                        experimentalBlurMethod="dimezisBlurView"
-                        style={{...StyleSheet.absoluteFillObject, borderRadius: 20}}
-                      />
+                    </View>
+                    <View style={styles.metaChipNoBlur}>
                         <Text style={styles.metaText}>{(movie.release_date || movie.first_air_date)?.split('-')[0] || 'N/A'}</Text>
-                    </BlurView>
-                    {movie.runtime > 0 && (<BlurView intensity={30} tint="dark" style={styles.metaChip}><Text style={styles.metaText}>{Math.floor(movie.runtime/60)}h {movie.runtime%60}m</Text></BlurView>)}
+                    </View>
+                    {movie.runtime > 0 && (<View style={styles.metaChipNoBlur}><Text style={styles.metaText}>{Math.floor(movie.runtime/60)}h {movie.runtime%60}m</Text></View>)}
+                    {movie.certification && (<View style={styles.metaChipNoBlur}><Text style={styles.metaText}>{movie.certification}</Text></View>)}
                 </View>
                 
                 {movie.tagline && <Text style={styles.tagline}>"{movie.tagline}"</Text>}
@@ -305,11 +304,16 @@ const DetailPage = () => {
                 {/* ACTION BUTTONS */}
                 <View style={styles.actionButtonContainer}>
                   <TouchableOpacity 
-                    style={styles.watchNowBtn} 
+                    style={[styles.watchNowBtn, sourceStatus === 'unavailable' && styles.watchNowBtnDisabled]} 
                     onPress={() => handlePlay()} 
                     activeOpacity={0.8}
+                    disabled={sourceStatus === 'unavailable' || sourceStatus === 'checking'}
                   >
-                    <Ionicons name={lastWatched ? "play-skip-forward" : "play"} size={24} color="#000" />
+                    {sourceStatus === 'checking' ? (
+                       <ActivityIndicator color="#000" size="small" />
+                    ) : (
+                       <Ionicons name={lastWatched ? "play-skip-forward" : "play"} size={24} color="#000" />
+                    )}
                     <Text style={styles.watchNowText}>{getButtonText()}</Text>
                   </TouchableOpacity>
 
@@ -317,6 +321,7 @@ const DetailPage = () => {
                     <TouchableOpacity onPress={openTelegramSearch} style={[styles.iconBtn,{overflow: 'hidden'}]}>
                         <Ionicons name="paper-plane-outline" size={22} color="#fff" />
                     </TouchableOpacity>
+                    {/* RESTORED: Download Button */}
                     <TouchableOpacity onPress={openTorrentSearch} style={[styles.iconBtn,{overflow: 'hidden'}]}>
                         <Feather name="download" size={22} color="#fff" />
                     </TouchableOpacity>
@@ -327,6 +332,47 @@ const DetailPage = () => {
         </TouchableOpacity>
 
         <View style={styles.contentContainer}>
+        
+            {/* PRODUCTION / FRANCHISE INFO BAR */}
+            <View style={styles.studioBar}>
+                 {/* Clickable Director */}
+                 {movie.director && (
+                   <TouchableOpacity 
+                      style={styles.studioItem}
+                      onPress={() => navigation.push('CastDetails', { personId: movie.director.id })}
+                   >
+                     <Text style={styles.studioLabel}>Directed By</Text>
+                     <View style={{flexDirection: 'row', alignItems: 'center', gap: 6}}>
+                         {movie.director.profile_path && (
+                             <Image 
+                               source={{uri: getImageUrl(movie.director.profile_path, IMAGE_SIZES.THUMBNAIL)}} 
+                               style={{width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: '#444'}}
+                             />
+                         )}
+                         <Text style={[styles.studioValue, {color: '#E50914'}]} numberOfLines={1}>
+                            {movie.director.name}
+                         </Text>
+                     </View>
+                   </TouchableOpacity>
+                 )}
+                 
+                 {/* Studio */}
+                 {movie.production_companies && movie.production_companies.length > 0 && (
+                   <View style={styles.studioItem}>
+                     <Text style={styles.studioLabel}>Studio</Text>
+                     <Text style={styles.studioValue} numberOfLines={1}>{movie.production_companies[0].name}</Text>
+                   </View>
+                 )}
+
+                 {/* Franchise */}
+                 {movie.belongs_to_collection && (
+                   <View style={styles.studioItem}>
+                     <Text style={styles.studioLabel}>Franchise</Text>
+                     <Text style={styles.studioValue} numberOfLines={1}>{movie.belongs_to_collection.name.replace(' Collection', '')}</Text>
+                   </View>
+                 )}
+            </View>
+
             {/* Info Grid */}
             <View style={styles.infoGrid}>
                 <InfoChip label="Status" value={movie.status || 'N/A'} icon="activity" />
@@ -427,6 +473,15 @@ const DetailPage = () => {
                                             {ep.episode_number}. {ep.name}
                                         </Text>
                                         <Text style={styles.epOverview} numberOfLines={2}>{ep.overview}</Text>
+                                        
+                                        {/* ADDED: Episode Release Date */}
+                                        <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4}}>
+                                            <Ionicons name="calendar-outline" size={10} color="#666" />
+                                            <Text style={{color: '#888', fontSize: 10}}>
+                                                {ep.air_date || 'Unknown Date'}
+                                            </Text>
+                                        </View>
+
                                         {isActive && <Text style={{color: '#E50914', fontSize: 10, marginTop: 4}}>RESUME HERE</Text>}
                                     </View>
                                 </TouchableOpacity>
@@ -436,13 +491,14 @@ const DetailPage = () => {
                     )}
                 </View>
             )}
-{/* ✨ AI RECOMMENDATIONS SECTION (New) ✨ */}
+
+            {/* AI RECOMMENDATIONS SECTION */}
             {(loadingAi || aiRecommendations.length > 0) && (
               <View style={styles.section}>
                   <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 6}}>
                     <Ionicons name="sparkles" size={18} color="#FFD700" />
                     <Text style={[styles.sectionTitle, { marginBottom: 0, color: '#FFD700' }]}>
-                       AI RECOMMENDATIONS SECTION
+                       Vibe Match (AI)
                     </Text>
                   </View>
                   
@@ -481,7 +537,7 @@ const DetailPage = () => {
               </View>
             )}
 
-            {/* Standard Similar Movies (Keep this too!) */}
+            {/* Standard Similar Movies */}
             {similarMovies.length > 0 && (
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>More Like This</Text>
@@ -502,9 +558,7 @@ const DetailPage = () => {
                     />
                 </View>
             )}
-            
         </View>
-        
       </Animated.ScrollView>
     </View>
   );
@@ -522,13 +576,7 @@ const COLORS = {
   overlay: 'rgba(255,255,255,0.05)',
 };
 
-const SPACING = {
-  xs: 6,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-};
+const SPACING = { xs: 6, sm: 8, md: 12, lg: 16, xl: 24 };
 
 const FONTS = {
   regular: 'GoogleSansFlex-Regular',
@@ -540,7 +588,6 @@ const styles = StyleSheet.create({
   baseContainer: {
     flex: 1,
     backgroundColor: COLORS.background,
-    
   },
   fixedHeader: {
     position: 'absolute',
@@ -553,9 +600,9 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   roundBtn: {
-    width: 70,
+    width: 50,
     height: 50,
-    borderRadius: 50,
+    borderRadius: 25,
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
@@ -588,15 +635,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  metaChip: {
+  metaChipNoBlur: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 6,
-    backgroundColor: 'transparent',
-    overflow: 'hidden',
+    backgroundColor: 'rgba(20, 20, 20, 0.7)', 
     gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)'
   },
   metaText: {
     color: COLORS.white,
@@ -618,6 +666,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+  },
+  watchNowBtnDisabled: {
+    backgroundColor: '#555',
+    opacity: 0.7,
   },
   watchNowText: {
     color: '#000',
@@ -641,6 +693,29 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: SPACING.lg,
   },
+  
+  studioBar: {
+    flexDirection: 'row',
+    backgroundColor: 'transparent',
+    marginBottom: 20,
+    gap: 20,
+  },
+  studioItem: {
+    flex: 1,
+  },
+  studioLabel: {
+    color: '#666',
+    fontSize: 10,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+    fontWeight: 'bold'
+  },
+  studioValue: {
+    color: '#ddd',
+    fontSize: 13,
+    fontWeight: '600'
+  },
+
   infoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
