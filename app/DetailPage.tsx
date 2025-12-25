@@ -39,6 +39,7 @@ import Animated, {
   Extrapolate,
   FadeInDown,
 } from 'react-native-reanimated';
+import { STREAM_SOURCES, makeStreamUrl } from '../src/utils/sources';
 
 const { width, height } = Dimensions.get('window');
 
@@ -69,6 +70,10 @@ const DetailPage = () => {
 
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   const [loadingAi, setLoadingAi] = useState(false);
+
+  // ... existing state ...
+  // New state to track which source actually works
+  const [workingSourceIndex, setWorkingSourceIndex] = useState(0);
   
   const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [showFullOverview, setShowFullOverview] = useState(false);
@@ -89,6 +94,62 @@ const DetailPage = () => {
   
   const scrollY = useSharedValue(0);
 
+  // --- PREFETCH SOURCE LOGIC ---
+  useEffect(() => {
+    // Only start checking when we have the IDs needed
+    if (externalIds && (externalIds.imdb_id || movie.id)) {
+        prefetchSources();
+    }
+  }, [externalIds, movie.id]);
+
+  const prefetchSources = async () => {
+     setSourceStatus('checking');
+     
+     const tmdbId = movie.id;
+     const imdbId = externalIds?.imdb_id;
+     let foundWorking = false;
+
+     // Loop through sources to find the first one that replies "OK"
+     for (let i = 0; i < STREAM_SOURCES.length; i++) {
+         const source = STREAM_SOURCES[i];
+         // Test S1E1 for TV shows, or just the movie ID
+         const testUrl = makeStreamUrl(source.url, movie.media_type, tmdbId, imdbId, 1, 1);
+         
+         try {
+             // HEAD request checks if link exists without downloading video
+             const controller = new AbortController();
+             const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+             
+             const response = await fetch(testUrl, { 
+                 method: 'HEAD', 
+                 signal: controller.signal,
+                 headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+             });
+             clearTimeout(timeoutId);
+
+             if (response.status === 200 || response.status === 302) {
+                 console.log(`✅ Pre-check passed: ${source.name}`);
+                 setWorkingSourceIndex(i); // Save this index!
+                 setSourceStatus('available');
+                 foundWorking = true;
+                 break; // Stop checking, we found a winner
+             }
+         } catch (e) {
+             // connection failed, try next one
+         }
+     }
+
+     if (!foundWorking) {
+         // Fallback logic
+         if (movie.media_type === 'movie' && !externalIds.imdb_id) {
+             setSourceStatus('unavailable');
+         } else {
+             setSourceStatus('available');
+             setWorkingSourceIndex(0); // Default to first source
+         }
+     }
+  };
+
   useEffect(() => {
     const fetchAi = async () => {
       if (!movie.title && !movie.name) return;
@@ -97,7 +158,8 @@ const DetailPage = () => {
       setTimeout(async () => {
         const aiData = await getGeminiMoviesSimilarTo(
           movie.title || movie.name, 
-          movie.media_type
+          movie.media_type,
+          movie.id // <--- ADD THIS
         );
         setAiRecommendations(aiData);
         setLoadingAi(false);
@@ -191,27 +253,33 @@ const DetailPage = () => {
   };
 
   const handlePlay = (episode?: TMDBEpisode) => {
+    // 1. Check if source is valid
     if (sourceStatus === 'unavailable') {
         alert("No streaming source found for this content.");
         return;
     }
 
+    // 2. Calculate the Season and Episode logic
     let targetSeason = 1;
     let targetEpisode = 1;
 
     if (episode) {
+        // Case A: User clicked a specific episode
         targetSeason = episode.season_number;
         targetEpisode = episode.episode_number;
     } else if (lastWatched && movie.media_type === 'tv') {
+        // Case B: User clicked "Resume" (load from memory)
         targetSeason = lastWatched.lastSeason;
         targetEpisode = lastWatched.lastEpisode;
     } else if (movie.media_type === 'tv') {
+        // Case C: User clicked "Start Series" (default to S1 E1)
         if(episodes.length > 0) {
             targetSeason = episodes[0].season_number;
             targetEpisode = episodes[0].episode_number;
         }
     }
 
+    // 3. Construct the data object (Now targetSeason exists!)
     const mediaData = {
       tmdbId: movie.id,
       imdbId: externalIds.imdb_id, 
@@ -220,9 +288,11 @@ const DetailPage = () => {
       season: targetSeason,
       episode: targetEpisode,
       poster: movie.poster_path,
-      episodeName: episode ? episode.name : `Episode ${targetEpisode}`
+      episodeName: episode ? episode.name : `Episode ${targetEpisode}`,
+      startIndex: workingSourceIndex // The pre-checked source
     };
 
+    // 4. Navigate
     navigation.navigate('Player', { ...mediaData });
   };
 
@@ -241,7 +311,7 @@ const DetailPage = () => {
   const formatCurrency = (value?: number) => { if (!value) return 'N/A'; return value >= 1000000 ? `$${(value / 1000000).toFixed(1)}M` : `$${value.toLocaleString()}`; };
 
   const getButtonText = () => {
-    if (sourceStatus === 'checking') return "Checking Sources...";
+    if (sourceStatus === 'checking') return "Finding Best Stream..."; // Updated text
     if (sourceStatus === 'unavailable') return "Source Unavailable";
 
     if (movie.media_type === 'movie') {

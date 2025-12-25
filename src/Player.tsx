@@ -1,50 +1,49 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, Platform, AppState, AppStateStatus, BackHandler } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text, Platform, AppState, BackHandler } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
 import { saveProgress } from '../src/utils/progress';
+import { STREAM_SOURCES, makeStreamUrl } from '../src/utils/sources';
 
-const SOURCES = [
-  { name: 'VidSrc CC', url: 'https://vidsrc.cc/v2/embed' },
-  { name: 'VidSrc TO', url: 'https://vidsrc.to/embed' },
-  { name: '2Embed', url: 'https://www.2embed.cc/embed' },
-];
-
-const TIMEOUT_MS = 15000;
+// --- CUSTOM TOAST COMPONENT ---
+const SourceToast = ({ sourceName, visible }: { sourceName: string, visible: boolean }) => {
+  if (!visible) return null;
+  return (
+    <View style={styles.toastContainer}>
+      <Text style={styles.toastText}>Playing from: {sourceName}</Text>
+    </View>
+  );
+};
 
 export default function Player() {
   const route = useRoute();
   const navigation = useNavigation();
-  const { tmdbId, imdbId, mediaType, season, episode } = route.params;
+  const { tmdbId, imdbId, mediaType, season, episode, startIndex = 0 } = route.params as any;
 
-  // --- STATE ---
-  const [currentSourceIndex, setCurrentSourceIndex] = useState(0);
+  const [currentSourceIndex, setCurrentSourceIndex] = useState(startIndex);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState('');
-
-  const timeoutRef = useRef(null);
+  
+  // Toast State
+  const [showToast, setShowToast] = useState(false);
+  
   const appState = useRef(AppState.currentState);
 
-  // --- AD BLOCKER & STYLE INJECTION ---
+  // --- STRICT AD BLOCKER ---
   const INJECTED_JS = `
     (function() {
-      // 1. Block Popups
       window.open = function() { return null; };
       window.alert = function() { return null; };
+      window.confirm = function() { return null; };
       
-      // 2. Force Dark Mode & Layout
       const style = document.createElement('style');
       style.innerHTML = \`
-        html, body { background: #000; margin: 0; padding: 0; overflow: hidden; height: 100%; width: 100%; }
-        iframe, video { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; border: none; outline: none; }
+        html, body { background: #000; margin: 0; padding: 0; overflow: hidden; height: 100vh; width: 100vw; }
+        iframe, video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; border: none; z-index: 1; }
         
-        /* 3. Hide annoying 3rd party controls if possible */
-        .jw-control-bar, .vjs-control-bar, .plyr__controls { display: none !important; }
-        
-        /* 4. Aggressive Ad Removal */
+        /* Hide Garbage & Ads */
         #ads, .ad, .advert, div[id^="ad"], iframe[src*="google"], iframe[src*="doubleclick"] { display: none !important; }
       \`;
       document.head.appendChild(style);
@@ -53,21 +52,14 @@ export default function Player() {
   `;
 
   useEffect(() => {
-    // 1. Enter Landscape
     enterFullScreen();
-
-    // 2. Handle App State (Background/Foreground)
     const subscription = AppState.addEventListener('change', handleAppStateChange);
-
-    // 3. Handle Back Button (Exit Fullscreen before going back)
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
       exitFullScreen().then(() => navigation.goBack());
       return true;
     });
-
     return () => {
       exitFullScreen();
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
       subscription.remove();
       backHandler.remove();
     };
@@ -89,12 +81,9 @@ export default function Player() {
     }
   };
 
-  const handleAppStateChange = (nextAppState) => {
+  const handleAppStateChange = (nextAppState: any) => {
     if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-      // Re-hide bars when returning to app
-      if (Platform.OS === 'android') {
-         NavigationBar.setVisibilityAsync("hidden");
-      }
+      if (Platform.OS === 'android') NavigationBar.setVisibilityAsync("hidden");
     }
     appState.current = nextAppState;
   };
@@ -106,67 +95,76 @@ export default function Player() {
     });
   };
 
-  const getStreamUrl = (sourceUrl) => {
-    const type = mediaType === 'movie' ? 'movie' : 'tv';
-    const id = imdbId || tmdbId;
-    const query = mediaType === 'tv' ? `/${season}/${episode}` : '';
-    if (sourceUrl.includes('vidsrc')) {
-        return mediaType === 'movie' ? `${sourceUrl}/movie/${id}` : `${sourceUrl}/tv/${id}/${season}/${episode}`;
-    }
-    return `${sourceUrl}/${type}/${id}${query}`;
+  const handleSourceFailure = () => {
+      if (currentSourceIndex < STREAM_SOURCES.length - 1) {
+          console.log(`❌ Source Failed: ${STREAM_SOURCES[currentSourceIndex].name}. Switching...`);
+          setCurrentSourceIndex(prev => prev + 1);
+          setLoading(true);
+      } else {
+          console.warn("All sources failed.");
+          setLoading(false);
+      }
   };
+
+  const currentUrl = makeStreamUrl(STREAM_SOURCES[currentSourceIndex].url, mediaType, tmdbId, imdbId, season, episode);
+
+  // --- SHOW TOAST ON SOURCE CHANGE ---
+  useEffect(() => {
+      console.log(`▶️ PLAYING:`, currentUrl);
+      setShowToast(true);
+      // Hide toast after 3 seconds
+      const timer = setTimeout(() => setShowToast(false), 3000);
+      return () => clearTimeout(timer);
+  }, [currentSourceIndex]);
 
   return (
     <View style={styles.container}>
-      {/* Force Status Bar Hidden */}
       <StatusBar hidden={true} />
       
       <WebView
         key={currentSourceIndex}
-        source={{ uri: getStreamUrl(SOURCES[currentSourceIndex].url) }}
+        source={{ uri: currentUrl }}
         style={styles.webview}
         injectedJavaScript={INJECTED_JS}
         javaScriptEnabled={true}
         domStorageEnabled={true}
         allowsFullscreenVideo={true}
-        setSupportMultipleWindows={false} 
         mediaPlaybackRequiresUserAction={false}
         allowsInlineMediaPlayback={true}
-        userAgent="Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Mobile Safari/537.36"
+        
+        // Strict Lock
+        setSupportMultipleWindows={false} 
+        javaScriptCanOpenWindowsAutomatically={false}
+        onOpenWindow={(e) => e.preventDefault()}
+        
         onShouldStartLoadWithRequest={(request) => {
-            // Block ads/popups that try to open new windows
-            const isStreamSource = SOURCES.some(s => request.url.includes(s.url.split('/')[2]));
-            if (request.url.startsWith('http') && !request.url.includes('google') && !request.url.includes('facebook')) {
+            const isMainUrl = request.url === currentUrl;
+            const isStreamProvider = STREAM_SOURCES.some(s => request.url.includes(s.url.split('/')[2]));
+            if (isMainUrl || isStreamProvider || request.url.endsWith('.mp4') || request.url.includes('cdn')) {
                 return true;
             }
-            return false;
+            return false; 
         }}
-        onLoadStart={() => {
-            setLoading(true);
-            // Auto-switch source if loading takes too long
-            timeoutRef.current = setTimeout(() => {
-                if (loading && currentSourceIndex < SOURCES.length - 1) {
-                    console.log("Timeout: Switching Source");
-                    setCurrentSourceIndex(prev => prev + 1);
-                } else if (loading) {
-                    setErrorMsg('Connection timed out');
-                    setLoading(false);
-                }
-            }, TIMEOUT_MS);
-        }}
-        onLoadEnd={() => {
-            setLoading(false);
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        }}
-        // Important: Transparent background to avoid white flashes
+
+        onError={() => handleSourceFailure()}
+        onHttpError={(e) => { if (e.nativeEvent.statusCode >= 400) handleSourceFailure(); }}
+
+        onLoadStart={() => setLoading(true)}
+        onLoadEnd={() => setLoading(false)}
         containerStyle={{ backgroundColor: 'black' }} 
+      />
+
+      {/* TOAST NOTIFICATION */}
+      <SourceToast 
+         sourceName={STREAM_SOURCES[currentSourceIndex].name} 
+         visible={showToast} 
       />
 
       {loading && (
         <View style={styles.loader}>
           <ActivityIndicator size="large" color="#E50914" />
           <Text style={styles.loadingText}>
-             {errorMsg || `Loading Source ${currentSourceIndex + 1}...`}
+             Loading {STREAM_SOURCES[currentSourceIndex].name}...
           </Text>
         </View>
       )}
@@ -175,24 +173,33 @@ export default function Player() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-      flex: 1, 
-      backgroundColor: 'black' 
-  },
-  webview: { 
-      flex: 1, 
-      backgroundColor: 'black',
-  },
+  container: { flex: 1, backgroundColor: 'black' },
+  webview: { flex: 1, backgroundColor: 'black' },
   loader: { 
-      ...StyleSheet.absoluteFillObject, 
-      backgroundColor: 'black', 
-      justifyContent: 'center', 
-      alignItems: 'center', 
-      zIndex: 100 
+    ...StyleSheet.absoluteFillObject, 
+    backgroundColor: 'black', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    zIndex: 100 
   },
-  loadingText: { 
-      color: 'white', 
-      marginTop: 15, 
-      fontWeight: '600' 
+  loadingText: { color: 'white', marginTop: 15, fontWeight: '600' },
+  
+  // Toast Styles
+  toastContainer: {
+    position: 'absolute',
+    bottom: 30,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(20, 20, 20, 0.9)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+    zIndex: 9999,
   },
+  toastText: {
+    color: '#E50914', // Netflix Red for contrast
+    fontWeight: 'bold',
+    fontSize: 14,
+  }
 });

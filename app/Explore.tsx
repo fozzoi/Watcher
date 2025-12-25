@@ -18,6 +18,8 @@ import {
   ScrollView,
   FlatList,
   TouchableOpacity,
+  BackHandler,
+  Keyboard,
 } from 'react-native';
 import { ActivityIndicator, TextInput } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -37,7 +39,6 @@ import {
   TMDBResult,
   searchTMDB,
   searchPeople,
-  TMDBPerson
 } from '../src/tmdb';
 import { FlashList } from '@shopify/flash-list';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -262,6 +263,26 @@ const ExplorePage = () => {
   const navigation = useNavigation<any>();
   const searchTimeout = useRef<any>(null);
 
+  // --- FAST BACK HANDLER ---
+  const queryRef = useRef(query);
+  useEffect(() => { queryRef.current = query; }, [query]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        // Instant check: are we searching?
+        if (queryRef.current.trim() !== '') {
+          Keyboard.dismiss();
+          setQuery(''); // This state update is now cheap because Explore is already mounted
+          return true;
+        }
+        return false;
+      };
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => subscription.remove();
+    }, [])
+  );
+
   const loadFavorites = useCallback(async () => {
     try {
       const mStr = await AsyncStorage.getItem('watchlist');
@@ -327,22 +348,24 @@ const ExplorePage = () => {
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
       <AtmosphericBackground />
 
-      <View style={styles.searchBarContainer}>
-        {/* Added a Row Wrapper here */}
+      {/* --- HEADER (Search Bar + Buttons) --- */}
+      {/* We add zIndex: 100 to ensure the header stays ON TOP of everything */}
+      <View style={[styles.searchBarContainer, { zIndex: 100 }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}> 
-          
-          {/* Added flex: 1 to searchInputContainer so it takes available space */}
           <View style={[styles.searchInputContainer, { flex: 1 }]}>
             <TextInput
-              textColor="white"
               placeholder="Search movies, cast..."
+              placeholderTextColor="#8C8C8C"
               value={query}
               onChangeText={setQuery}
-              underlineColor="transparent"
-              activeUnderlineColor="transparent"
-              cursorColor="#E50914"
-              placeholderTextColor="#8C8C8C"
               style={styles.searchInput}
+              selectionColor="#E50914"
+              returnKeyType="search"
+              keyboardAppearance="light"
+               underlineColor="transparent"
+               cursorColor="#E50914"
+               activeUnderlineColor="transparent"
+               textColor='white'
             />
             <View style={styles.searchIconContainer}>
               {searchLoading ? (
@@ -356,91 +379,101 @@ const ExplorePage = () => {
               )}
             </View>
           </View>
+
+          {/* AI Button */}
           <TouchableOpacity onPress={() => navigation.navigate('AiSearch')}
               style={{
                 width: 48, height: 48, borderRadius: 14, backgroundColor: '#222', 
-                justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#A962FF' // Purple border for AI
+                justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#A962FF'
               }}
             >
               <Ionicons name="sparkles" size={20} color="#A962FF" />
           </TouchableOpacity>
 
-          {/* --- SETTINGS BUTTON --- */}
+          {/* Settings Button */}
           <TouchableOpacity 
             onPress={() => navigation.navigate('Settings')}
             style={{
-              width: 48, 
-              height: 48, 
-              borderRadius: 14, 
-              backgroundColor: '#222', 
-              justifyContent: 'center', 
-              alignItems: 'center',
-              borderWidth: 1, 
-              borderColor: 'rgba(255, 255, 255, 0.1)'
+              width: 48, height: 48, borderRadius: 14, backgroundColor: '#222', 
+              justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)'
             }}
           >
             <Ionicons name="settings-outline" size={24} color="#FFFFFF" />
           </TouchableOpacity>
-          
-
         </View>
       </View>
 
-      {inSearchMode ? (
-        <ScrollView contentContainerStyle={styles.searchScrollContent} removeClippedSubviews={true}>
-          {peopleResults.length > 0 && (
-            <View style={{ marginBottom: 24 }}>
-              <Text style={styles.searchHeading}>People</Text>
-              <FlatList
-                horizontal data={peopleResults} keyExtractor={item => `person-${item.id}`} showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 4 }}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.personItem} onPress={() => navigation.navigate('CastDetails', { personId: item.id })}>
-                    <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.personImage} />
-                    <Text style={styles.personName} numberOfLines={1}>{item.name}</Text>
-                  </TouchableOpacity>
-                )}
-              />
-            </View>
-          )}
+      {/* --- CONTENT AREA (Fills the rest of the screen) --- */}
+      <View style={{ flex: 1, position: 'relative' }}>
+        
+        {/* A. SEARCH RESULTS LAYER */}
+        {/* Position absolute fills THIS container, not the whole screen. So it starts below header. */}
+        {inSearchMode && (
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#141414', zIndex: 20 }}>
+            <ScrollView 
+                contentContainerStyle={styles.searchScrollContent} 
+                keyboardShouldPersistTaps="handled"
+            >
+              {peopleResults.length > 0 && (
+                <View style={{ marginBottom: 24 }}>
+                  <Text style={styles.searchHeading}>People</Text>
+                  <FlatList
+                    horizontal data={peopleResults} keyExtractor={item => `person-${item.id}`} showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 4 }}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity style={styles.personItem} onPress={() => navigation.navigate('CastDetails', { personId: item.id })}>
+                        <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.personImage} />
+                        <Text style={styles.personName} numberOfLines={1}>{item.name}</Text>
+                      </TouchableOpacity>
+                    )}
+                  />
+                </View>
+              )}
 
-          <Text style={styles.searchHeading}>Movies & Shows</Text>
-          <View style={styles.searchResultsGrid}>
-            {tmdbResults.map((result: any) => (
-              <MovieCard
-                key={result.id} item={result} isSearchMode={true} isAdded={savedIds.has(result.id)} toggleWatchlist={toggleWatchlist}
-                onPress={async () => { const fullDetails = await getFullDetails(result); navigation.navigate('Detail', { movie: fullDetails }); }}
-              />
-            ))}
+              <Text style={styles.searchHeading}>Movies & Shows</Text>
+              <View style={styles.searchResultsGrid}>
+                {tmdbResults.map((result: any) => (
+                  <MovieCard
+                    key={result.id} item={result} isSearchMode={true} isAdded={savedIds.has(result.id)} toggleWatchlist={toggleWatchlist}
+                    onPress={async () => { const fullDetails = await getFullDetails(result); navigation.navigate('Detail', { movie: fullDetails }); }}
+                  />
+                ))}
+              </View>
+            </ScrollView>
           </View>
-        </ScrollView>
-      ) : (
-        <AnimatedScrollView scrollEventThrottle={16} removeClippedSubviews={true} contentContainerStyle={styles.scrollContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />}>
-          {contentLoading ? <SkeletonHero /> : (
-            <>
-              <FeaturedHero items={allContent.trendingMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-              <GenreFilter selectedGenre={selectedGenre} onSelectGenre={setSelectedGenre} />
-            </>
-          )}
+        )}
 
-          <MediaCarousel title="🗓️ Coming Soon" data={allContent.upcoming} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="💎 Hidden Gems" data={allContent.hiddenGems} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Trending TV Shows" data={allContent.trendingTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Top Rated Movies" data={allContent.topRated} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Popular in Your Region" data={allContent.regional} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Animated Movies" data={allContent.animatedMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Anime Series" data={allContent.animeShows} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Anime Movies" data={allContent.animeMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Korean TV Shows" data={allContent.koreanTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Korean Movies" data={allContent.koreanMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Japanese TV Shows" data={allContent.japaneseTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Japanese Movies" data={allContent.japaneseMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Hindi Movies" data={allContent.hindiMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Hindi Web Series" data={allContent.hindiTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Malayalam Movies" data={allContent.malayalamMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Malayalam Web Series" data={allContent.malayalamTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-          <MediaCarousel title="Tamil Movies" data={allContent.tamilMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-        </AnimatedScrollView>
-      )}
+        {/* B. EXPLORE LAYER */}
+        {/* We hide it with opacity/display so it doesn't unmount, keeping it fast */}
+        <View style={{ flex: 1, display: inSearchMode ? 'none' : 'flex' }}>
+          <AnimatedScrollView scrollEventThrottle={16} removeClippedSubviews={true} contentContainerStyle={styles.scrollContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />}>
+            {contentLoading ? <SkeletonHero /> : (
+              <>
+                <FeaturedHero items={allContent.trendingMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                <GenreFilter selectedGenre={selectedGenre} onSelectGenre={setSelectedGenre} />
+              </>
+            )}
+
+            <MediaCarousel title="🗓️ Coming Soon" data={allContent.upcoming} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="💎 Hidden Gems" data={allContent.hiddenGems} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Trending TV Shows" data={allContent.trendingTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Top Rated Movies" data={allContent.topRated} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Popular in Your Region" data={allContent.regional} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Animated Movies" data={allContent.animatedMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Anime Series" data={allContent.animeShows} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Anime Movies" data={allContent.animeMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Korean TV Shows" data={allContent.koreanTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Korean Movies" data={allContent.koreanMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Japanese TV Shows" data={allContent.japaneseTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Japanese Movies" data={allContent.japaneseMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Hindi Movies" data={allContent.hindiMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Hindi Web Series" data={allContent.hindiTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Malayalam Movies" data={allContent.malayalamMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Malayalam Web Series" data={allContent.malayalamTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+            <MediaCarousel title="Tamil Movies" data={allContent.tamilMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+          </AnimatedScrollView>
+        </View>
+
+      </View>
     </View>
   );
 };

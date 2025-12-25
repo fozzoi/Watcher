@@ -1,8 +1,6 @@
 import axios from 'axios';
 import { searchTMDB, TMDBResult } from './tmdb';
-
-// 🟢 YOUR KEY
-const GEMINI_API_KEY = "AIzaSyBcSSG5lcIn1XascRuhNoipQjzWr4ZnkGc"; 
+import { GEMINI_API_KEY,TMDB_API_KEY } from './secrets';
 
 // ✅ FIX: Use 'gemini-flash-latest' 
 // This is the stable alias for the high-speed, free-tier model.

@@ -1,25 +1,24 @@
 import axios from "axios";
-import { GEMINI_API_KEY } from './secrets';
+import { GEMINI_API_KEY, TMDB_API_KEY, WORKER_HOST } from './secrets'; // Ensure you have this file created
 
-// Add this temporarily to debug
-console.log("🔑 DEBUG KEY CHECK:", process.env.EXPO_PUBLIC_GEMINI_API_KEY);
-
-// API Key
-const TMDB_API_KEY = "7d3f7aa3d3623c924b57a28243c4e84e";
-
-// --- URL CONFIGURATION ---
-const WORKER_HOST = "dormamu.anuanoopthoppilanu.workers.dev";
 const API_BASE_URL = `https://${WORKER_HOST}/3`;
 
 // --- GLOBAL CONFIGURATION ---
-const GLOBAL_CONFIG = {
-  nsfwFilterEnabled: true,
+// This acts as the single source of truth for app settings
+export let GLOBAL_CONFIG = {
   hiRes: false,
+  nsfwFilterEnabled: true,
+  aiEnabled: true,         // Default: AI On
+  customApiKey: ""         // Default: Use shared key
 };
 
-export const setGlobalConfig = (key: 'nsfwFilterEnabled' | 'hiRes', value: boolean) => {
+export const setGlobalConfig = (key: keyof typeof GLOBAL_CONFIG, value: any) => {
+  // @ts-ignore
   GLOBAL_CONFIG[key] = value;
-  requestCache.clear();
+  // Clear cache if content settings change to force refresh
+  if (key === 'nsfwFilterEnabled' || key === 'hiRes') {
+      requestCache.clear();
+  }
 };
 
 const tmdbApi = axios.create({
@@ -374,8 +373,6 @@ export const fetchAllDiscoveryContent = async (genreId?: number) => {
 };
 
 // --- DETAILS & OTHERS ---
-
-// ✅ FIXED: Ensure this logic handles Directors/Creators and Studios
 export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
   try {
     const append = "credits,release_dates,content_ratings,external_ids,videos";
@@ -438,7 +435,6 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
   } catch (error) { return item; }
 };
 
-// ✅ FIXED: This was missing, causing your "undefined" error
 export const getMediaDetails = async (id: number, mediaType: "movie" | "tv"): Promise<TMDBResult> => {
   try {
     return await getFullDetails({ id, media_type: mediaType } as TMDBResult);
@@ -586,91 +582,86 @@ export const getMoviesByGenre = async (genreId: number, page: number = 1): Promi
 
 
 // ==========================================
-// 🤖 GEMINI AI RECOMMENDATIONS (FIXED)
+// 🤖 GEMINI AI RECOMMENDATIONS (FINAL)
 // ==========================================
 
-// ✅ GOOD: Loads from the hidden file
-// ✅ Safe: Loads from the .env file
+// 🧠 MEMORY CACHE
+const aiCache = new Map<string, TMDBResult[]>();
 
-// ✅ FIXED: Used 'gemini-1.5-flash-latest' which is safer for v1beta endpoints
-const GEMINI_MODEL = "gemini-flash-latest";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie' | 'tv' = 'movie', tmdbId: number): Promise<TMDBResult[]> => {
+  
+  // A. CHECK SETTINGS: Is AI Enabled?
+  if (!GLOBAL_CONFIG.aiEnabled) {
+      console.log("🤖 AI: Feature is disabled in settings.");
+      return [];
+  }
 
-export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie' | 'tv' = 'movie'): Promise<TMDBResult[]> => {
+  // B. CHECK MEMORY CACHE (Free & Instant)
+  const cacheKey = `${mediaType}-${tmdbId}`;
+  if (aiCache.has(cacheKey)) {
+      console.log(`🧠 AI: Loaded "${title}" from cache (0 Cost)`);
+      return aiCache.get(cacheKey) || [];
+  }
+
+  // C. SELECT API KEY (Custom vs Shared)
+  const activeKey = GLOBAL_CONFIG.customApiKey && GLOBAL_CONFIG.customApiKey.length > 20 
+      ? GLOBAL_CONFIG.customApiKey 
+      : GEMINI_API_KEY;
+
+  // D. PREPARE REQUEST
+  const GEMINI_MODEL = "gemini-flash-latest"; 
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${activeKey}`;
+
   try {
-    console.log(`🤖 AI: Asking Gemini for recommendations similar to "${title}"...`);
+    console.log(`🤖 AI: Asking Gemini for "${title}"...`);
 
     const prompt = `
-      Recommend 10 ${mediaType === 'movie' ? 'movies' : 'TV shows'} similar to "${title}" in terms of tone, plot, and atmosphere.
-      Focus on "Vibe matching".
-      Return ONLY a JSON array of strings. Do not add markdown formatting.
+      Recommend 10 ${mediaType === 'movie' ? 'movies' : 'TV shows'} similar to "${title}" in terms of tone, plot, and vibe.
+      Return ONLY a JSON array of strings. Do not add markdown or explanations.
       Example: ["Movie A", "Movie B"]
     `;
 
     const payload = {
       contents: [{ parts: [{ text: prompt }] }],
-      // ✅ FORCE JSON RESPONSE (This prevents parsing errors)
-      generationConfig: {
-        responseMimeType: "application/json"
-      }
+      generationConfig: { responseMimeType: "application/json" }
     };
 
-    // 1. Ask AI
     const response = await axios.post(GEMINI_URL, payload);
     
-    if (!response.data.candidates || response.data.candidates.length === 0) {
-        console.error("🤖 AI Error: No candidates returned from Gemini.");
-        return [];
-    }
+    if (!response.data.candidates || response.data.candidates.length === 0) return [];
 
     const aiText = response.data.candidates[0].content.parts[0].text;
-    
-    // 2. Parse JSON (Safe Mode)
-    let titles: string[] = [];
-    try {
-        // Clean up any potential markdown leftovers just in case
-        const cleanJson = aiText.replace(/```json|```/g, '').trim(); 
-        titles = JSON.parse(cleanJson);
-        console.log("🤖 AI Suggestions:", titles);
-    } catch (e) {
-        console.error("🤖 AI JSON Parse Error:", e, "Raw Text:", aiText);
-        return [];
-    }
+    const cleanJson = aiText.replace(/```json|```/g, '').trim(); 
+    const titles = JSON.parse(cleanJson);
 
-    // 3. Fetch Details from TMDB
-    const promises = titles.map(async (t) => {
-      // Search for the specific media type to avoid mixing Movies/TV
+    // E. PARALLEL FETCH DETAILS FROM TMDB
+    const promises = titles.map(async (t: string) => {
       try {
         const searchUrl = `/search/${mediaType}`; 
-        const params = { query: t, include_adult: GLOBAL_CONFIG.nsfwFilterEnabled ? false : true };
-        
-        // We use fetchWithCache logic manually here to ensure we use the worker
+        const params = { query: t, include_adult: !GLOBAL_CONFIG.nsfwFilterEnabled };
         const res = await tmdbApi.get(searchUrl, { params });
-        const results = res.data.results || [];
-        
-        // Return the first exact match that has a poster
-        return results.find((r: any) => r.poster_path) || results[0] || null;
-      } catch (err) {
-        return null;
-      }
+        return res.data.results?.[0] || null; // Just grab first match
+      } catch (err) { return null; }
     });
 
     const results = await Promise.all(promises);
     
-    // Filter valid results and format them
     const validMovies = results
         .filter((m): m is TMDBResult => m !== null)
         .map(m => ({ ...formatBasicItemData(m), media_type: mediaType }));
 
-    // Remove duplicates by ID
     const uniqueMovies = Array.from(new Map(validMovies.map(m => [m.id, m])).values());
+
+    // F. SAVE TO CACHE
+    aiCache.set(cacheKey, uniqueMovies);
 
     return uniqueMovies;
 
   } catch (error: any) {
-    // Log the exact error from Google
-    if (error.response) {
-        console.error("🤖 AI Network Error:", error.response.status, error.response.data);
+    if (error.response?.status === 429) {
+        console.warn("🤖 AI Quota Exceeded (429). Slow down!");
+    } else if (error.response?.status === 400 || error.response?.status === 403) {
+         console.error("🤖 AI Key Error: Invalid Key.");
     } else {
         console.error("🤖 AI Error:", error.message);
     }

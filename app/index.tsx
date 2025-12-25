@@ -15,7 +15,6 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
   Easing,
-  runOnJS, // <--- Ensure this is imported
 } from 'react-native-reanimated';
 
 // --- TYPES ---
