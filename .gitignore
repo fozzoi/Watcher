@@ -81,4 +81,4 @@ yarn-error.*
 
 android/
 
-secrets.ts
+# secrets.ts

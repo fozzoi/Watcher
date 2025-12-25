@@ -1,84 +1,78 @@
-import React, { useState, useRef, useEffect } from "react";
-import { View, StyleSheet, Alert, Linking, useColorScheme, StatusBar, ScrollView, Platform, TouchableOpacity, Share } from "react-native";
-import { Provider as PaperProvider, TextInput, Button, Card, Text, ActivityIndicator, MD3DarkTheme, MD3LightTheme, Chip } from "react-native-paper";
-import axios from "axios";
-import * as FileSystem from "expo-file-system";
-import * as IntentLauncher from "expo-intent-launcher"; 
+import React, { useState, useEffect } from "react";
+import { 
+  View, StyleSheet, Alert, Linking, StatusBar, 
+  ScrollView, TouchableOpacity, TextInput, 
+  Keyboard, ActivityIndicator, Text, BackHandler,
+  LayoutAnimation, Platform, UIManager, Dimensions
+} from "react-native";
+import { LinearGradient } from 'expo-linear-gradient';
+
+// Legacy import for Expo 50+ (fixes deprecation warning)
+import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing"; 
-import { useNavigation, useRouter, Link } from "expo-router";
+import { useNavigation } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { RouteProp, useRoute } from "@react-navigation/native";
-import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { torrentScraper } from '../src/Scraper';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  Easing,
-} from 'react-native-reanimated';
+import Animated, { FadeInUp } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// --- TYPES ---
+// Enable LayoutAnimation for Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const { width } = Dimensions.get('window');
+
 interface Result {
   id: number | string;
   name: string;
   size: string;
   source: string;
-  url: string;
+  url: string; 
   seeds?: number;
   peers?: number;
-}
-
-interface QualityScore {
-  resolution: number;
-  score: number;
 }
 
 type SearchRouteParamList = {
   Search: { prefillQuery?: string };
 };
 
-const SCROLL_THRESHOLD = 50;
-const SPARE_BOTTOM_SPACE = 20;
-
-// ✅ FIXED: Create the Animated Component
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
-
-
 
 export default function Index() {
   const navigation = useNavigation<any>();
-  const router = useRouter();
-
+  const insets = useSafeAreaInsets();
   const route = useRoute<RouteProp<SearchRouteParamList, 'Search'>>();
+  
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [showMore, setShowMore] = useState(false);
-  
-  const colorScheme = useColorScheme();
-  const theme = {
-    ...MD3DarkTheme,
-    colors: { ...MD3DarkTheme.colors, background: "#121212", primary: "#E50914" },
-  };
+  const [hasSearched, setHasSearched] = useState(false);
+  const [downloadingFile, setDownloadingFile] = useState(false);
+
+  // --- BACK HANDLER ---
+  useEffect(() => {
+    const onBackPress = () => {
+      if (hasSearched || searchQuery.trim() !== '') {
+        handleClear();
+        return true; 
+      }
+      return false;
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [hasSearched, searchQuery]);
 
   // --- HELPERS ---
-  const getQualityInfo = (name: string): { score: number; label: string; color: string } => {
+  const getQualityInfo = (name: string): { label: string; color: string } => {
     const lowerName = name.toLowerCase();
-    if (lowerName.includes('2160p') || lowerName.includes('4k')) return { score: 5, label: '4K', color: '#00ff08' };
-    if (lowerName.includes('1080p')) return { score: 4, label: '1080p', color: '#1500ff' };
-    if (lowerName.includes('720p')) return { score: 3, label: '720p', color: '#ff6e00' };
-    return { score: 0, label: 'SD', color: '#9E9E9E' };
-  };
-
-  const saveToHistory = async (query: string) => {
-    try {
-      const existing = await AsyncStorage.getItem("searchHistory");
-      const parsed = existing ? JSON.parse(existing) : [];
-      const newEntry = { query, date: new Date().toISOString() };
-      const filtered = parsed.filter((item:any) => item.query.toLowerCase() !== query.toLowerCase());
-      filtered.push(newEntry);
-      await AsyncStorage.setItem("searchHistory", JSON.stringify(filtered));
-    } catch (error) {}
+    if (lowerName.includes('2160p') || lowerName.includes('4k')) return { label: '4K', color: '#00ff08' };
+    if (lowerName.includes('1080p')) return { label: '1080p', color: '#1500ff' };
+    if (lowerName.includes('720p')) return { label: '720p', color: '#ff6e00' };
+    return { label: 'SD', color: '#666' };
   };
 
   useEffect(() => {
@@ -88,23 +82,21 @@ export default function Index() {
     }
   }, [route.params?.prefillQuery]); 
 
-  // --- SEARCH LOGIC ---
+  const configureAnimation = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  };
+
   const handleSearch = async (query: string = searchQuery) => {
-    if (!query.trim()) {
-      Alert.alert("Error", "Please enter a search term.");
-      return;
-    }
+    if (!query.trim()) return;
+    Keyboard.dismiss();
+    configureAnimation();
+    setHasSearched(true);
     setLoading(true);
+    setResults([]); 
+    
     try {
-      await saveToHistory(query);
       const scrapedResults = await torrentScraper.searchAll(query);
-      
-      const sortedResults = scrapedResults.sort((a, b) => {
-        const seedsA = a.seeds || 0;
-        const seedsB = b.seeds || 0;
-        return seedsB - seedsA; 
-      });
-      
+      const sortedResults = scrapedResults.sort((a, b) => (b.seeds || 0) - (a.seeds || 0));
       setResults(sortedResults);
     } catch (error) {
       Alert.alert("Error", "Failed to fetch search results.");
@@ -113,107 +105,124 @@ export default function Index() {
     }
   };
 
-  // --- ACTIONS ---
-  const handleOpenMagnet = async (url: string) => {
-    try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert("No App Found", "Please install a torrent client (e.g., Flud, LibreTorrent) to open magnet links.");
-      }
-    } catch (err) {
-      Alert.alert("Error", "Could not open the link.");
-    }
+  const handleClear = () => {
+      configureAnimation();
+      setSearchQuery('');
+      setResults([]);
+      setHasSearched(false);
+      Keyboard.dismiss();
   };
 
-  const handleShareFile = async (url: string, name: string) => {
-    if (!url.startsWith('magnet:')) {
-      try {
-        const fileUri = FileSystem.documentDirectory + `${name}.torrent`;
-        const { uri } = await FileSystem.downloadAsync(url, fileUri);
-        if (await Sharing.isAvailableAsync()) {
-            await Sharing.shareAsync(uri);
-        } else {
-            Alert.alert("Error", "Sharing is not available on this device");
+  // --- SMART FILE DOWNLOADER (.torrent) ---
+  const handleShareAsFile = async (url: string, fileName: string) => {
+    setDownloadingFile(true);
+    try {
+        const cleanName = fileName.replace(/[^a-z0-9]/gi, '_').substring(0, 50);
+        const fileUri = FileSystem.documentDirectory + cleanName + '.torrent';
+        
+        let success = false;
+
+        // 1. Try Cache if Magnet
+        if (url.startsWith('magnet:')) {
+            const match = url.match(/xt=urn:btih:([a-zA-Z0-9]+)/);
+            if (match && match[1]) {
+                const hash = match[1].toUpperCase();
+                const cacheUrl = `https://itorrents.org/torrent/${hash}.torrent`;
+                try {
+                    const downloadRes = await FileSystem.downloadAsync(cacheUrl, fileUri);
+                    if (downloadRes.status === 200) success = true; 
+                } catch (e) { /* ignore cache miss */ }
+            }
         }
-      } catch (e) {
-        Alert.alert("Error", "Could not download torrent file.");
-      }
-      return;
-    }
 
-    try {
-      const fileName = `${name.replace(/[^a-z0-9]/gi, '_').substring(0, 50)}.magnet`;
-      const fileUri = FileSystem.documentDirectory + fileName;
-      await FileSystem.writeAsStringAsync(fileUri, url);
-      
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, { mimeType: 'text/plain', dialogTitle: 'Share Magnet Link' });
-      } else {
-        Alert.alert("Error", "Sharing is not available on this device");
-      }
+        // 2. Fallback: Download direct URL or write Text
+        if (!success) {
+            if (!url.startsWith('magnet:')) {
+                try {
+                    await FileSystem.downloadAsync(url, fileUri);
+                    success = true;
+                } catch(e) {}
+            }
+            if (!success) {
+                await FileSystem.writeAsStringAsync(fileUri, url);
+            }
+        }
+
+        // 3. Share
+        if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(fileUri, { 
+                mimeType: 'application/x-bittorrent', 
+                dialogTitle: 'Share Torrent File' 
+            });
+        } else {
+            Alert.alert("Saved", `File saved to: ${fileUri}`);
+        }
+
     } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "Failed to share file.");
+        Alert.alert("Error", "Failed to create file.");
+    } finally {
+        setDownloadingFile(false);
     }
   };
 
-  const lastScrollY = useRef(0);
-
-  // --- RENDER CARD ---
   const renderResults = () => {
     const visibleResults = showMore ? results : results.slice(0, 5);
     
     return visibleResults.map((item, index) => {
       const quality = getQualityInfo(item.name);
       const seedsCount = item.seeds || 0;
-      let healthColor = '#E50914'; // Red (Poor)
-      if (seedsCount > 50) healthColor = '#46d369'; // Green (Good)
-      else if (seedsCount > 10) healthColor = '#ffb700'; // Yellow (Okay)
+      let healthColor = '#EF4444'; 
+      if (seedsCount > 50) healthColor = '#22C55E'; 
+      else if (seedsCount > 10) healthColor = '#EAB308'; 
 
       return (
-        <Animated.View 
-          key={index} 
-          style={styles.cardContainer}
-        >
-          <View style={styles.cardHeader}>
-            <View style={{flex: 1}}>
+        <Animated.View key={index} entering={FadeInUp.delay(index * 100).springify()} style={styles.card}>
+          <View style={styles.cardInner}>
+            <View style={styles.iconContainer}>
+               <MaterialCommunityIcons name="file-video-outline" size={32} color="#666" />
+            </View>
+            <View style={styles.cardContent}>
                 <Text style={styles.cardTitle} numberOfLines={2}>{item.name}</Text>
-                <View style={styles.metaRow}>
-                    <View style={[styles.qualityTag, { borderColor: quality.color }]}>
-                        <Text style={[styles.qualityText, { color: quality.color }]}>{quality.label}</Text>
+                <View style={styles.tagsRow}>
+                    <View style={[styles.tag, { borderColor: quality.color, borderWidth: 1 }]}>
+                        <Text style={[styles.tagText, { color: quality.color }]}>{quality.label}</Text>
                     </View>
-                    <Text style={styles.fileSize}>{item.size}</Text>
-                    <Text style={styles.sourceText}>{item.source}</Text>
+                    <View style={styles.tag}><Text style={styles.tagText}>{item.size}</Text></View>
+                    <View style={[styles.tag, { backgroundColor: '#333' }]}><Text style={[styles.tagText, { color: '#AAA' }]}>{item.source}</Text></View>
+                </View>
+                <View style={styles.seedRow}>
+                    <View style={{flexDirection: 'row', alignItems: 'center', gap: 4}}>
+                         <Feather name="arrow-up" size={12} color={healthColor} />
+                         <Text style={{color: healthColor, fontSize: 12, fontWeight:'bold'}}>{item.seeds} Seeds</Text>
+                    </View>
+                    <View style={{flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 12}}>
+                         <Feather name="arrow-down" size={12} color="#888" />
+                         <Text style={{color: '#888', fontSize: 12}}>{item.peers} Peers</Text>
+                    </View>
                 </View>
             </View>
           </View>
-
-          <View style={styles.cardFooter}>
-             <View style={styles.seedRow}>
-                <Feather name="arrow-up-circle" size={16} color={healthColor} />
-                <Text style={[styles.seedText, {color: healthColor}]}>{item.seeds}</Text>
-                <Feather name="arrow-down-circle" size={16} color="#888" style={{marginLeft: 10}} />
-                <Text style={styles.peerText}>{item.peers}</Text>
-             </View>
-
-             <View style={styles.actionRow}>
+          
+          <View style={styles.actionRow}>
                 <TouchableOpacity 
-                    style={styles.iconBtn} 
-                    onPress={() => handleShareFile(item.url, item.name)}
+                    style={styles.shareBtn} 
+                    onPress={() => handleShareAsFile(item.url, item.name)}
+                    disabled={downloadingFile}
                 >
-                    <Feather name="share-2" size={20} color="#ccc" />
+                    {downloadingFile ? <ActivityIndicator size="small" color="#AAA" /> : <Feather name="share-2" size={18} color="#AAA" />}
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity 
                     style={styles.downloadBtn} 
-                    onPress={() => handleOpenMagnet(item.url)}
+                    onPress={async () => {
+                         const supported = await Linking.canOpenURL(item.url);
+                         if(supported) await Linking.openURL(item.url);
+                         else Alert.alert("No App", "Install a torrent client like Flud.");
+                    }}
                 >
-                    <Feather name="download" size={18} color="#fff" />
-                    <Text style={styles.downloadText}>Download</Text>
+                    <MaterialCommunityIcons name="magnet" size={18} color="white" />
+                    <Text style={styles.downloadText}>Open Magnet</Text>
                 </TouchableOpacity>
-             </View>
           </View>
         </Animated.View>
       );
@@ -221,244 +230,151 @@ export default function Index() {
   };
 
   return (
-    <View style={styles.mainContainer}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor="#121212"
-      />
-      
-      {/* Header */}
-      <View style={styles.header}>
-          <Text style={styles.pageTitle}>Search</Text>
-          <TouchableOpacity
-            style={styles.historyBtn}
-            onPress={() => navigation.navigate("history")}
-          >
-            <MaterialIcons name="history" size={26} color="#ccc" />
-          </TouchableOpacity>
-      </View>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <LinearGradient colors={['#0F0F0F', '#000']} style={StyleSheet.absoluteFillObject} />
 
-      <AnimatedScrollView 
-        contentContainerStyle={styles.scrollContent}
-        scrollEventThrottle={16}
-        keyboardShouldPersistTaps="handled"
-      >
-          {/* Search Bar */}
-          <View style={styles.searchBoxContainer}>
-            <Feather name="search" size={20} color="#888" style={styles.searchIcon} />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              underlineColor="transparent"
-              activeUnderlineColor="transparent"
-              selectionColor="#E50914"
-              textColor="white"
-              placeholder="Search movies, series..."
-              placeholderTextColor="#666"
-              style={styles.searchInput}
-              onSubmitEditing={() => handleSearch(searchQuery)}
-              returnKeyType="search"
-            />
-            {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => { setSearchQuery(''); setResults([]); }}>
-                    <Ionicons name="close-circle" size={20} color="#666" />
+      <View style={[
+          styles.contentWrapper,
+          !hasSearched 
+            // IDLE STATE: Center vertically, but add bottom padding to push it UP visually
+            ? { justifyContent: 'center', paddingBottom: 150 } 
+            // ACTIVE STATE: Only use top inset, moving it very close to top
+            : { paddingTop: insets.top }
+      ]}>
+
+        {!hasSearched && (
+            <View style={styles.brandContainer}>
+                <MaterialCommunityIcons name="magnet-on" size={60} color="#E50914" style={{ marginBottom: 16 }} />
+                <Text style={styles.brandTitle}>Torrent Search</Text>
+                <TouchableOpacity 
+                    onPress={() => navigation.navigate("history")}
+                    style={styles.historyPill}
+                >
+                    <MaterialIcons name="history" size={16} color="#CCC" />
+                    <Text style={{ color: '#CCC', fontSize: 12, fontWeight: '600' }}>History</Text>
                 </TouchableOpacity>
-            )}
-          </View>
+            </View>
+        )}
 
-          {loading && (
-              <ActivityIndicator color="#E50914" size="large" style={{marginTop: 40}} />
-          )}
+        <View style={[styles.searchSection, hasSearched && styles.searchSectionActive]}>
+            <View style={styles.inputWrapper}>
+                <Ionicons name="search" size={20} color="#666" style={{ marginLeft: 16 }} />
+                <TextInput
+                    style={styles.input}
+                    placeholder="Search movies, shows, anime..."
+                    placeholderTextColor="#666"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    onSubmitEditing={() => handleSearch()}
+                    returnKeyType="search"
+                    keyboardAppearance="dark"
+                />
+                {searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={handleClear} style={{ padding: 10 }}>
+                        <Ionicons name="close-circle" size={18} color="#666" />
+                    </TouchableOpacity>
+                )}
+            </View>
+        </View>
 
-          {/* Results List */}
-          <View style={styles.resultsContainer}>
-            {renderResults()}
-          </View>
-
-          {/* Show More */}
-          {results.length > 5 && (
-            <TouchableOpacity
-              onPress={() => setShowMore(!showMore)}
-              style={styles.showMoreBtn}
+        {hasSearched && (
+            <AnimatedScrollView 
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                style={{ width: '100%' }}
             >
-              <Text style={styles.showMoreText}>{showMore ? "Show Less" : "Show More Results"}</Text>
-              <Feather name={showMore ? "chevron-up" : "chevron-down"} size={18} color="#888" />
-            </TouchableOpacity>
-          )}
-          
-          
-      </AnimatedScrollView>
+                <View style={styles.resultsHeader}>
+                     <Text style={styles.resultsTitle}>{loading ? 'Searching...' : 'Results'}</Text>
+                     <TouchableOpacity onPress={() => navigation.navigate("history")}>
+                        <MaterialIcons name="history" size={24} color="#666" />
+                     </TouchableOpacity>
+                </View>
+
+                {loading ? (
+                    <View style={styles.loaderContainer}>
+                        <ActivityIndicator size="large" color="#E50914" />
+                        <Text style={styles.loadingText}>Scraping sources...</Text>
+                    </View>
+                ) : (
+                    <View style={{ gap: 16 }}>
+                        {results.length > 0 ? renderResults() : (
+                            <View style={styles.emptyState}>
+                                <Text style={styles.emptyText}>No results found.</Text>
+                            </View>
+                        )}
+                        
+                        {results.length > 5 && (
+                            <TouchableOpacity onPress={() => setShowMore(!showMore)} style={styles.showMoreBtn}>
+                                <Text style={styles.showMoreText}>{showMore ? "Show Less" : "Show More Results"}</Text>
+                                <Feather name={showMore ? "chevron-up" : "chevron-down"} size={16} color="#888" />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                )}
+            </AnimatedScrollView>
+        )}
+
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: "#121212",
+  container: { flex: 1, backgroundColor: '#000' },
+  contentWrapper: { flex: 1, alignItems: 'center' },
+  brandContainer: { alignItems: 'center', marginBottom: 40 },
+  brandTitle: { color: 'white', fontSize: 28, fontWeight: 'bold', marginBottom: 20 },
+  historyPill: { 
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      backgroundColor: '#1A1A1A', paddingHorizontal: 16, paddingVertical: 8,
+      borderRadius: 20, borderWidth: 1, borderColor: '#333'
   },
-  header: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingHorizontal: 20,
-      paddingTop: 50,
-      paddingBottom: 20,
+  searchSection: { width: '100%', paddingHorizontal: 20 },
+  searchSectionActive: { marginBottom: 10 }, 
+  inputWrapper: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#1A1A1A', width: '100%', height: 52,
+    borderRadius: 26, borderWidth: 1, borderColor: '#333',
+    shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 4.65, elevation: 8,
   },
-  pageTitle: {
-      fontSize: 32,
-      fontFamily: 'GoogleSansFlex-Bold',
-      color: '#fff',
+  input: { flex: 1, color: 'white', paddingHorizontal: 12, fontSize: 16 },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 100 },
+  resultsHeader: { 
+      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', 
+      marginBottom: 16, marginTop: 10 
   },
-  historyBtn: {
-      padding: 8,
-      backgroundColor: '#1E1E1E',
-      borderRadius: 12,
+  resultsTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+  card: { 
+      backgroundColor: '#111', borderRadius: 16, borderWidth: 1, borderColor: '#222',
+      marginBottom: 16, overflow: 'hidden'
   },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 40,
+  cardInner: { flexDirection: 'row', padding: 16 },
+  iconContainer: {
+      width: 50, height: 50, borderRadius: 12, backgroundColor: '#1A1A1A', 
+      justifyContent: 'center', alignItems: 'center', marginRight: 16
   },
-  
-  // Search Box
-  searchBoxContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: '#1E1E1E',
-      borderRadius: 16,
-      paddingHorizontal: 16,
-      height: 50,
-      marginBottom: 24,
-      borderWidth: 1,
-      borderColor: '#333',
-  },
-  searchIcon: {
-      marginRight: 10,
-  },
-  searchInput: {
-      flex: 1,
-      backgroundColor: 'transparent',
-      height: 50,
-      fontSize: 16,
-      fontFamily: 'GoogleSansFlex-Regular',
-  },
-
-  // Card Styles
-  resultsContainer: {
-      gap: 16,
-  },
-  cardContainer: {
-      backgroundColor: '#1E1E1E',
-      borderRadius: 12,
-      padding: 16,
-      borderWidth: 1,
-      borderColor: '#333',
-  },
-  cardHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginBottom: 12,
-  },
-  cardTitle: {
-      fontSize: 16,
-      color: '#fff',
-      fontFamily: 'GoogleSansFlex-Medium',
-      marginBottom: 8,
-      lineHeight: 22,
-  },
-  metaRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-  },
-  qualityTag: {
-      borderWidth: 1,
-      borderRadius: 4,
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-  },
-  qualityText: {
-      fontSize: 10,
-      fontWeight: 'bold',
-      fontFamily: 'GoogleSansFlex-Bold',
-  },
-  fileSize: {
-      fontSize: 12,
-      color: '#888',
-      fontFamily: 'GoogleSansFlex-Regular',
-  },
-  sourceText: {
-      fontSize: 12,
-      color: '#666',
-      fontFamily: 'GoogleSansFlex-Regular',
-      backgroundColor: '#2a2a2a',
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: 4,
-  },
-  
-  // Footer of Card
-  cardFooter: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginTop: 8,
-      paddingTop: 12,
-      borderTopWidth: 1,
-      borderTopColor: '#333',
-  },
-  seedRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-  },
-  seedText: {
-      marginLeft: 6,
-      fontSize: 13,
-      fontWeight: 'bold',
-      fontFamily: 'GoogleSansFlex-Medium',
-  },
-  peerText: {
-      marginLeft: 6,
-      fontSize: 13,
-      color: '#888',
-      fontFamily: 'GoogleSansFlex-Regular',
-  },
+  cardContent: { flex: 1 },
+  cardTitle: { color: 'white', fontSize: 16, fontWeight: 'bold', marginBottom: 8, lineHeight: 22 },
+  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  tag: { backgroundColor: '#1A1A1A', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  tagText: { color: '#CCC', fontSize: 11, fontWeight: '600' },
+  seedRow: { flexDirection: 'row', alignItems: 'center' },
   actionRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
+      flexDirection: 'row', backgroundColor: '#161616', padding: 12,
+      borderTopWidth: 1, borderTopColor: '#222', justifyContent: 'space-between', alignItems: 'center'
   },
-  iconBtn: {
-      padding: 8,
-      backgroundColor: '#2a2a2a',
-      borderRadius: 8,
-  },
+  shareBtn: { padding: 10, borderRadius: 8, backgroundColor: '#222', width: 44, alignItems: 'center' },
   downloadBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: '#E50914',
-      paddingHorizontal: 16,
-      paddingVertical: 8,
-      borderRadius: 8,
-      gap: 6,
+      flex: 1, marginLeft: 12, backgroundColor: '#E50914', borderRadius: 8,
+      flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 10, gap: 8
   },
-  downloadText: {
-      color: '#fff',
-      fontSize: 13,
-      fontFamily: 'GoogleSansFlex-Bold',
-  },
-
-  // Show More
-  showMoreBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: 16,
-      gap: 8,
-  },
-  showMoreText: {
-      color: '#888',
-      fontSize: 14,
-      fontFamily: 'GoogleSansFlex-Medium',
-  },
+  downloadText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
+  loaderContainer: { marginTop: 50, alignItems: 'center' },
+  loadingText: { color: '#666', marginTop: 16 },
+  emptyState: { alignItems: 'center', marginTop: 50 },
+  emptyText: { color: '#666', fontSize: 16 },
+  showMoreBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 20, gap: 8 },
+  showMoreText: { color: '#888', fontWeight: '600' },
 });

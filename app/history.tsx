@@ -137,7 +137,7 @@ const HistoryPage = () => {
           <TouchableOpacity
             style={styles.historyItem}
             // Expo Router navigation
-            onPress={() => router.push({ pathname: "/search", params: { prefillQuery: item.query } })}
+            // onPress={() => router.push({ pathname: "/search", params: { prefillQuery: item.query } })}
           >
             <Text style={styles.queryText} numberOfLines={1}>{item.query}</Text>
             <Text style={styles.dateText}>{formatDate(item.date)}</Text>
