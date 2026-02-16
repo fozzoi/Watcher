@@ -140,7 +140,7 @@ const CustomTabBar: React.FC<BottomTabBarProps> = (props) => {
 
         {/* THE PILL TAB BAR */}
         <View style={localStyles.pillContainer}>
-            {/* Blur Background of Pill */}
+
             {/* <BlurView 
               intensity={25}
               tint='dark'
@@ -184,8 +184,7 @@ const CustomTabBar: React.FC<BottomTabBarProps> = (props) => {
                             activeOpacity={0.7}
                         >
                             {iconComponent}
-                            {/* Optional Active Dot Indicator */}
-                            {isFocused && <View style={localStyles.activeDot} />}
+                            
                         </TouchableOpacity>
                     );
                 })}

@@ -1,23 +1,31 @@
-import axios from "axios";
-import { GEMINI_API_KEY, TMDB_API_KEY, WORKER_HOST } from './secrets'; // Ensure you have this file created
+import axios from 'axios';
+import { GEMINI_API_KEY, TMDB_API_KEY, WORKER_HOST } from './secrets'; 
+
+// ==========================================
+// 1. GLOBAL CONFIGURATION & SETUP
+// ==========================================
 
 const API_BASE_URL = `https://${WORKER_HOST}/3`;
+const GEMINI_MODEL = "gemini-flash-latest"; // Fast, cost-effective model
 
-// --- GLOBAL CONFIGURATION ---
-// This acts as the single source of truth for app settings
+// Single source of truth for app settings
 export let GLOBAL_CONFIG = {
   hiRes: false,
   nsfwFilterEnabled: true,
-  aiEnabled: true,         // Default: AI On
-  customApiKey: ""         // Default: Use shared key
+  aiEnabled: true,       
+  customApiKey: ""       
 };
 
 export const setGlobalConfig = (key: keyof typeof GLOBAL_CONFIG, value: any) => {
   // @ts-ignore
   GLOBAL_CONFIG[key] = value;
+  
   // Clear cache if content settings change to force refresh
   if (key === 'nsfwFilterEnabled' || key === 'hiRes') {
       requestCache.clear();
+  }
+  if (key === 'customApiKey') {
+      console.log("Global Config: Custom API Key Updated");
   }
 };
 
@@ -28,10 +36,12 @@ const tmdbApi = axios.create({
 });
 
 const requestCache = new Map();
+const aiCache = new Map<string, TMDBResult[]>();
 
 export const clearCache = (keyPrefix: string = "") => {
   if (keyPrefix === "") {
     requestCache.clear();
+    aiCache.clear();
   } else {
     for (const key of requestCache.keys()) {
       if (key.startsWith(keyPrefix)) requestCache.delete(key);
@@ -39,7 +49,10 @@ export const clearCache = (keyPrefix: string = "") => {
   }
 };
 
-// --- INTERFACES ---
+// ==========================================
+// 2. INTERFACES
+// ==========================================
+
 export interface TMDBImage {
   file_path: string;
   aspect_ratio: number;
@@ -162,7 +175,10 @@ export interface TMDBPerson {
   homepage?: string | null;
 }
 
-// --- HELPER: FORMAT DATA ---
+// ==========================================
+// 3. HELPER FUNCTIONS
+// ==========================================
+
 const formatBasicItemData = (item: any): Omit<TMDBResult, 'certification' | 'cast'> => ({
   id: item.id,
   title: item.title || item.name,
@@ -222,7 +238,9 @@ export const getImageUrl = (path: string | null, size: string = "w500"): string 
   return `https://${WORKER_HOST}/t/p/${finalSize}${path}`;
 };
 
-// --- FETCH FUNCTIONS ---
+// ==========================================
+// 4. TMDB FETCH FUNCTIONS
+// ==========================================
 
 export const getTrendingMovies = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
     const endpoint = genreId ? "/discover/movie" : "/trending/movie/week";
@@ -580,41 +598,94 @@ export const getMoviesByGenre = async (genreId: number, page: number = 1): Promi
   } catch (error) { return []; }
 };
 
-
 // ==========================================
-// 🤖 GEMINI AI RECOMMENDATIONS (FINAL)
+// 5. GEMINI AI RECOMMENDATIONS
 // ==========================================
 
-// 🧠 MEMORY CACHE
-const aiCache = new Map<string, TMDBResult[]>();
+// --- FEATURE 1: Prompt-based Recommendations ---
+export const getGeminiRecommendations = async (userPrompt: string): Promise<TMDBResult[]> => {
+  try {
+    // 1. Check Settings
+    if (!GLOBAL_CONFIG.aiEnabled) return [];
 
+    // 2. Select Key & URL
+    const activeKey = GLOBAL_CONFIG.customApiKey && GLOBAL_CONFIG.customApiKey.length > 10 
+        ? GLOBAL_CONFIG.customApiKey 
+        : GEMINI_API_KEY;
+
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${activeKey}`;
+
+    const systemInstruction = `
+      You are a movie recommendation engine. 
+      The user will describe a mood, plot, or vibe.
+      Return a JSON array of exactly 10 movie titles that match.
+      Do not include years. Do not include introductory text. Just the array.
+      
+      Example Input: "Scary movies in space"
+      Example Output: ["Alien", "Event Horizon", "Sunshine", "Pandorum", "Life", "Apollo 18", "Gravity", "Interstellar", "Moon", "The Martian"]
+    `;
+
+    const payload = {
+      contents: [{
+        parts: [{ text: `${systemInstruction}\n\nUser Input: "${userPrompt}"` }]
+      }]
+    };
+
+    console.log(`Sending AI request using ${activeKey === GEMINI_API_KEY ? "Default Key" : "Custom Key"}...`);
+
+    const response = await axios.post(GEMINI_URL, payload);
+    
+    if (!response.data.candidates || response.data.candidates.length === 0) {
+      console.warn("AI returned no candidates.");
+      return [];
+    }
+
+    const aiText = response.data.candidates[0].content.parts[0].text;
+    const cleanJson = aiText.replace(/```json|```/g, '').trim();
+    
+    let movieTitles: string[] = [];
+    try {
+        movieTitles = JSON.parse(cleanJson);
+    } catch (e) {
+        console.error("Failed to parse AI JSON");
+        return [];
+    }
+
+    const moviePromises = movieTitles.map(async (title) => {
+      const results = await searchTMDB(title);
+      return results.find(m => m.poster_path) || null;
+    });
+
+    const movies = await Promise.all(moviePromises);
+    return movies.filter((m): m is TMDBResult => m !== null);
+
+  } catch (error: any) {
+    if (error.response) {
+        console.error(`AI Error ${error.response.status}:`, JSON.stringify(error.response.data));
+    } else {
+        console.error("AI Connection Error:", error.message);
+    }
+    return [];
+  }
+};
+
+// --- FEATURE 2: Similar "Vibe" Recommendations ---
 export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie' | 'tv' = 'movie', tmdbId: number): Promise<TMDBResult[]> => {
   
-  // A. CHECK SETTINGS: Is AI Enabled?
-  if (!GLOBAL_CONFIG.aiEnabled) {
-      console.log("🤖 AI: Feature is disabled in settings.");
-      return [];
-  }
+  if (!GLOBAL_CONFIG.aiEnabled) return [];
 
-  // B. CHECK MEMORY CACHE (Free & Instant)
+  // Check Cache first
   const cacheKey = `${mediaType}-${tmdbId}`;
-  if (aiCache.has(cacheKey)) {
-      console.log(`🧠 AI: Loaded "${title}" from cache (0 Cost)`);
-      return aiCache.get(cacheKey) || [];
-  }
+  if (aiCache.has(cacheKey)) return aiCache.get(cacheKey) || [];
 
-  // C. SELECT API KEY (Custom vs Shared)
+  // Select Key
   const activeKey = GLOBAL_CONFIG.customApiKey && GLOBAL_CONFIG.customApiKey.length > 20 
       ? GLOBAL_CONFIG.customApiKey 
       : GEMINI_API_KEY;
 
-  // D. PREPARE REQUEST
-  const GEMINI_MODEL = "gemini-flash-latest"; 
   const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${activeKey}`;
 
   try {
-    console.log(`🤖 AI: Asking Gemini for "${title}"...`);
-
     const prompt = `
       Recommend 10 ${mediaType === 'movie' ? 'movies' : 'TV shows'} similar to "${title}" in terms of tone, plot, and vibe.
       Return ONLY a JSON array of strings. Do not add markdown or explanations.
@@ -634,13 +705,12 @@ export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie'
     const cleanJson = aiText.replace(/```json|```/g, '').trim(); 
     const titles = JSON.parse(cleanJson);
 
-    // E. PARALLEL FETCH DETAILS FROM TMDB
     const promises = titles.map(async (t: string) => {
       try {
         const searchUrl = `/search/${mediaType}`; 
         const params = { query: t, include_adult: !GLOBAL_CONFIG.nsfwFilterEnabled };
         const res = await tmdbApi.get(searchUrl, { params });
-        return res.data.results?.[0] || null; // Just grab first match
+        return res.data.results?.[0] || null; 
       } catch (err) { return null; }
     });
 
@@ -651,20 +721,12 @@ export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie'
         .map(m => ({ ...formatBasicItemData(m), media_type: mediaType }));
 
     const uniqueMovies = Array.from(new Map(validMovies.map(m => [m.id, m])).values());
-
-    // F. SAVE TO CACHE
     aiCache.set(cacheKey, uniqueMovies);
 
     return uniqueMovies;
 
   } catch (error: any) {
-    if (error.response?.status === 429) {
-        console.warn("🤖 AI Quota Exceeded (429). Slow down!");
-    } else if (error.response?.status === 400 || error.response?.status === 403) {
-         console.error("🤖 AI Key Error: Invalid Key.");
-    } else {
-        console.error("🤖 AI Error:", error.message);
-    }
+    console.error("AI Error:", error.message);
     return [];
   }
 };
