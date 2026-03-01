@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.8)', 
     paddingHorizontal: 6, 
     paddingVertical: 4, 
-    borderRadius: 6, 
+    borderRadius: 5, 
     gap: 3 
   },
   ratingTextSmall: { 

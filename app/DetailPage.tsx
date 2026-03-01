@@ -9,10 +9,14 @@ import {
   Image,
   ActivityIndicator,
   StatusBar,
-  Linking,
+  InteractionManager,
+  Platform,
+  ToastAndroid,
+  Alert,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native'; 
+import * as Clipboard from 'expo-clipboard'; 
 import { 
   getImageUrl, 
   getMovieGenres, 
@@ -28,7 +32,7 @@ import {
 import { getProgress } from '../src/utils/progress'; 
 import { useRoute, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Animated, {
@@ -36,26 +40,22 @@ import Animated, {
   useAnimatedStyle,
   interpolate,
   useAnimatedScrollHandler,
-  Extrapolate,
   FadeInDown,
+  Extrapolate,
 } from 'react-native-reanimated';
 import { STREAM_SOURCES, makeStreamUrl } from '../src/utils/sources';
 
 const { width, height } = Dimensions.get('window');
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 40) + 10; 
-const HEADER_HEIGHT = height * 0.6;
+const HEADER_HEIGHT = height * 0.55; 
 const IMAGE_SIZES = { THUMBNAIL: 'w154', POSTER_DETAIL: 'w780', STILL: 'w300', ORIGINAL: 'original' };
 
-// --- COMPONENTS ---
-
-const InfoChip = ({ label, value, icon }: { label: string, value: string, icon: any }) => (
-  <View style={styles.infoChipContainer}>
-    <Text style={styles.infoLabel}>{label}</Text>
-    <View style={styles.infoValueRow}>
-      <Feather name={icon} size={12} color="#E50914" style={{marginRight: 4}} />
-      <Text style={styles.infoValue} numberOfLines={1}>{value}</Text>
-    </View>
+// --- GOOGLE-STYLE CHIP COMPONENTS ---
+const GoogleMetaChip = ({ icon, text, color = "#FFF" }: { icon?: any, text: string | number, color?: string }) => (
+  <View style={styles.googleMetaChip}>
+    {icon && <Ionicons name={icon} size={12} color={color} style={{ marginRight: 4 }} />}
+    <Text style={[styles.googleMetaText, { color }]}>{text}</Text>
   </View>
 );
 
@@ -71,32 +71,26 @@ const DetailPage = () => {
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   const [loadingAi, setLoadingAi] = useState(false);
 
-  // ... existing state ...
-  // New state to track which source actually works
   const [workingSourceIndex, setWorkingSourceIndex] = useState(0);
   
   const [isInWatchlist, setIsInWatchlist] = useState(false);
+  const [isWatched, setIsWatched] = useState(false); 
+  
   const [showFullOverview, setShowFullOverview] = useState(false);
   const [genres, setGenres] = useState<{id: number, name: string}[]>([]);
   const [similarMovies, setSimilarMovies] = useState<any[]>([]);
   
-  // Progress State
   const [lastWatched, setLastWatched] = useState<any>(null); 
-
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [episodes, setEpisodes] = useState<TMDBEpisode[]>([]);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
   
   const [galleryVisible, setGalleryVisible] = useState(false);
-  
-  // SOURCE CHECK STATE
   const [sourceStatus, setSourceStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
   
   const scrollY = useSharedValue(0);
 
-  // --- PREFETCH SOURCE LOGIC ---
   useEffect(() => {
-    // Only start checking when we have the IDs needed
     if (externalIds && (externalIds.imdb_id || movie.id)) {
         prefetchSources();
     }
@@ -104,92 +98,60 @@ const DetailPage = () => {
 
   const prefetchSources = async () => {
      setSourceStatus('checking');
-     
      const tmdbId = movie.id;
      const imdbId = externalIds?.imdb_id;
      let foundWorking = false;
 
-     // Loop through sources to find the first one that replies "OK"
      for (let i = 0; i < STREAM_SOURCES.length; i++) {
          const source = STREAM_SOURCES[i];
-         // Test S1E1 for TV shows, or just the movie ID
          const testUrl = makeStreamUrl(source.url, movie.media_type, tmdbId, imdbId, 1, 1);
-         
          try {
-             // HEAD request checks if link exists without downloading video
              const controller = new AbortController();
-             const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
-             
-             const response = await fetch(testUrl, { 
-                 method: 'HEAD', 
-                 signal: controller.signal,
-                 headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-             });
+             const timeoutId = setTimeout(() => controller.abort(), 3000); 
+             const response = await fetch(testUrl, { method: 'HEAD', signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0' } });
              clearTimeout(timeoutId);
 
              if (response.status === 200 || response.status === 302) {
-                 console.log(`✅ Pre-check passed: ${source.name}`);
-                 setWorkingSourceIndex(i); // Save this index!
+                 setWorkingSourceIndex(i); 
                  setSourceStatus('available');
                  foundWorking = true;
-                 break; // Stop checking, we found a winner
+                 break; 
              }
-         } catch (e) {
-             // connection failed, try next one
-         }
+         } catch (e) {}
      }
-
      if (!foundWorking) {
-         // Fallback logic
-         if (movie.media_type === 'movie' && !externalIds.imdb_id) {
-             setSourceStatus('unavailable');
-         } else {
-             setSourceStatus('available');
-             setWorkingSourceIndex(0); // Default to first source
-         }
+         if (movie.media_type === 'movie' && !externalIds.imdb_id) setSourceStatus('unavailable');
+         else { setSourceStatus('available'); setWorkingSourceIndex(0); }
      }
   };
 
   useEffect(() => {
     const fetchAi = async () => {
       if (!movie.title && !movie.name) return;
-      
       setLoadingAi(true);
-      setTimeout(async () => {
-        const aiData = await getGeminiMoviesSimilarTo(
-          movie.title || movie.name, 
-          movie.media_type,
-          movie.id // <--- ADD THIS
-        );
-        setAiRecommendations(aiData);
-        setLoadingAi(false);
-      }, 500); 
+      const aiData = await getGeminiMoviesSimilarTo(movie.title || movie.name, movie.media_type, movie.id);
+      setAiRecommendations(aiData);
+      setLoadingAi(false);
     };
-
-    fetchAi();
+    const task = InteractionManager.runAfterInteractions(() => fetchAi());
+    return () => task.cancel(); 
   }, [movie.id]);
 
   useEffect(() => {
-    loadDeepDetails();
+    const task = InteractionManager.runAfterInteractions(() => loadDeepDetails());
+    return () => task.cancel(); 
   }, [initialMovie.id]);
 
-  // SOURCE CHECKER LOGIC
   useEffect(() => {
-    if (externalIds) {
-        checkSourceAvailability();
-    }
+    if (externalIds) checkSourceAvailability();
   }, [externalIds]);
 
   const checkSourceAvailability = () => {
      setSourceStatus('checking');
      setTimeout(() => {
-         if (externalIds.imdb_id) {
-             setSourceStatus('available');
-         } else if (movie.media_type === 'movie' && !externalIds.imdb_id) {
-             setSourceStatus('unavailable');
-         } else {
-            setSourceStatus('available'); 
-         }
+         if (externalIds.imdb_id) setSourceStatus('available');
+         else if (movie.media_type === 'movie' && !externalIds.imdb_id) setSourceStatus('unavailable');
+         else setSourceStatus('available'); 
      }, 800); 
   };
 
@@ -198,19 +160,20 @@ const DetailPage = () => {
       const checkProgress = async () => {
         const progress = await getProgress(movie.id);
         setLastWatched(progress);
-        
         if (progress && movie.media_type === 'tv' && progress.lastSeason !== selectedSeason) {
             setSelectedSeason(progress.lastSeason);
             fetchEpisodes(progress.lastSeason);
         }
       };
-      checkProgress();
+      const task = InteractionManager.runAfterInteractions(() => checkProgress());
+      return () => task.cancel();
     }, [movie.id, selectedSeason])
   );
 
   const loadDeepDetails = async () => {
     try {
       checkIfInWatchlist();
+      checkIfWatched(); 
 
       const [fullDetails, imagesData, genresData, similarData, idsData] = await Promise.all([
         getMediaDetails(initialMovie.id, initialMovie.media_type), 
@@ -229,18 +192,15 @@ const DetailPage = () => {
       if (initialMovie.media_type === 'tv' && fullDetails.seasons?.length > 0) {
         const storedProgress = await getProgress(initialMovie.id);
         let seasonToLoad = 1;
-        if (storedProgress) {
-            seasonToLoad = storedProgress.lastSeason;
-        } else {
+        if (storedProgress) seasonToLoad = storedProgress.lastSeason;
+        else {
             const validSeasons = fullDetails.seasons.filter((s: any) => s.season_number > 0);
             seasonToLoad = validSeasons.length > 0 ? validSeasons[0].season_number : fullDetails.seasons[0].season_number;
         }
         setSelectedSeason(seasonToLoad);
         fetchEpisodes(seasonToLoad);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   };
 
   const fetchEpisodes = async (seasonNumber: number) => {
@@ -248,38 +208,31 @@ const DetailPage = () => {
     try {
       const data = await getSeasonEpisodes(movie.id, seasonNumber);
       setEpisodes(data);
-    } catch (e) { console.error(e); } 
-    finally { setLoadingEpisodes(false); }
+    } catch (e) {} finally { setLoadingEpisodes(false); }
   };
 
   const handlePlay = (episode?: TMDBEpisode) => {
-    // 1. Check if source is valid
     if (sourceStatus === 'unavailable') {
         alert("No streaming source found for this content.");
         return;
     }
 
-    // 2. Calculate the Season and Episode logic
     let targetSeason = 1;
     let targetEpisode = 1;
 
     if (episode) {
-        // Case A: User clicked a specific episode
         targetSeason = episode.season_number;
         targetEpisode = episode.episode_number;
     } else if (lastWatched && movie.media_type === 'tv') {
-        // Case B: User clicked "Resume" (load from memory)
         targetSeason = lastWatched.lastSeason;
         targetEpisode = lastWatched.lastEpisode;
     } else if (movie.media_type === 'tv') {
-        // Case C: User clicked "Start Series" (default to S1 E1)
         if(episodes.length > 0) {
             targetSeason = episodes[0].season_number;
             targetEpisode = episodes[0].episode_number;
         }
     }
 
-    // 3. Construct the data object (Now targetSeason exists!)
     const mediaData = {
       tmdbId: movie.id,
       imdbId: externalIds.imdb_id, 
@@ -289,26 +242,36 @@ const DetailPage = () => {
       episode: targetEpisode,
       poster: movie.poster_path,
       episodeName: episode ? episode.name : `Episode ${targetEpisode}`,
-      startIndex: workingSourceIndex // The pre-checked source
+      startIndex: workingSourceIndex 
     };
 
-    // 4. Navigate
     navigation.navigate('Player', { ...mediaData });
   };
 
   const checkIfInWatchlist = async () => { try { const stored = await AsyncStorage.getItem('watchlist'); const list = stored ? JSON.parse(stored) : []; setIsInWatchlist(list.some((item: any) => item.id === movie.id)); } catch (e) {} };
   const toggleWatchlist = async () => { try { const stored = await AsyncStorage.getItem('watchlist'); const list = stored ? JSON.parse(stored) : []; const exists = list.some((item: any) => item.id === movie.id); const newList = exists ? list.filter((item: any) => item.id !== movie.id) : [...list, movie]; await AsyncStorage.setItem('watchlist', JSON.stringify(newList)); setIsInWatchlist(!exists); } catch (e) {} };
+
+  const checkIfWatched = async () => { try { const stored = await AsyncStorage.getItem('history'); const list = stored ? JSON.parse(stored) : []; setIsWatched(list.some((item: any) => item.id === movie.id)); } catch (e) {} };
+  const toggleWatched = async () => { try { const stored = await AsyncStorage.getItem('history'); const list = stored ? JSON.parse(stored) : []; const exists = list.some((item: any) => item.id === movie.id); const newList = exists ? list.filter((item: any) => item.id !== movie.id) : [...list, movie]; await AsyncStorage.setItem('history', JSON.stringify(newList)); setIsWatched(!exists); } catch (e) {} };
+
   const openTelegramSearch = () => { const title = movie.title || movie.name; const date = movie.release_date || movie.first_air_date; const year = date ? date.substring(0, 4) : ''; const message = encodeURIComponent(`${title} ${year}`); const telegramLink = `tg://msg?text=${message}`; Linking.openURL(telegramLink).catch(err => { const webLink = `https://t.me/share/url?text=${message}`; Linking.openURL(webLink); }); };
+  const openTorrentSearch = () => { const query = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.slice(0, 4) || ''}`; navigation.navigate('Search', { screen: 'SearchMain', params: { prefillQuery: query } }); };
   
-  // RESTORED: Torrent/Download Search Function
-  const openTorrentSearch = () => { 
-      const query = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.slice(0, 4) || ''}`; 
-      navigation.navigate('Search', { screen: 'SearchMain', params: { prefillQuery: query } }); 
+  const copyTitleToClipboard = async () => {
+    const textToCopy = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.substring(0, 4) || ''}`;
+    await Clipboard.setStringAsync(textToCopy);
+    if (Platform.OS === 'android') {
+      ToastAndroid.show('Copied to clipboard!', ToastAndroid.SHORT);
+    } else {
+      Alert.alert('Copied', 'Title and year copied to clipboard!');
+    }
   };
-  
+
   const scrollHandler = useAnimatedScrollHandler((event) => { scrollY.value = event.contentOffset.y; });
   const heroStyle = useAnimatedStyle(() => { const scale = interpolate(scrollY.value, [-100, 0], [1.2, 1], Extrapolate.CLAMP); const opacity = interpolate(scrollY.value, [0, HEADER_HEIGHT * 0.5], [1, 0], Extrapolate.CLAMP); return { transform: [{ scale }], opacity }; });
-  const formatCurrency = (value?: number) => { if (!value) return 'N/A'; return value >= 1000000 ? `$${(value / 1000000).toFixed(1)}M` : `$${value.toLocaleString()}`; };
+
+  const displayTitle = movie.title || movie.name;
+  const releaseYear = (movie.release_date || movie.first_air_date)?.split('-')[0] || '';
 
   const getButtonText = () => {
     if (sourceStatus === 'checking') return "Finding Best Stream..."; // Updated text
@@ -323,57 +286,39 @@ const DetailPage = () => {
     }
     return "Start Series";
   };
-
+  
   return (
     <View style={styles.baseContainer}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
       
-      {/* HEADER */}
+      {/* HEADER: BACK (Left) & LOVE (Right) */}
       <View style={styles.fixedHeader}>
-         <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.roundBtn, {overflow: 'hidden'}]}>
-            <BlurView intensity={30} tint='dark' experimentalBlurMethod="dimezisBlurView" style={{...StyleSheet.absoluteFillObject, borderRadius: 20}} />
-            <Ionicons name="arrow-back" size={24} color="#FFF" />
+         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtnWrapper}>
+            <BlurView intensity={30} tint="dark" style={styles.iconBlur}>
+                <Ionicons name="arrow-back" size={24} color="#FFF" />
+            </BlurView>
          </TouchableOpacity>
-         <View style={{flexDirection: 'row', gap: 10}}>
-            <TouchableOpacity onPress={toggleWatchlist} style={[styles.roundBtn, {overflow: 'hidden'}]}>
-              <BlurView intensity={30} tint='dark' experimentalBlurMethod="dimezisBlurView" style={{...StyleSheet.absoluteFillObject, borderRadius: 20}} />
-              <MaterialIcons name={isInWatchlist ? "bookmark" : "bookmark-outline"} size={24} color={isInWatchlist ? "#E50914" : "#FFF"} />
-            </TouchableOpacity>
-         </View>
+
+         
       </View>
 
       <Animated.ScrollView
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{paddingBottom: 120}}
+        // ✅ INCREASED PADDING SO TAB BAR DOESN'T COVER THE BOTTOM
+        contentContainerStyle={{paddingBottom: 140}} 
       >
-        {/* HERO IMAGE */}
-        <TouchableOpacity activeOpacity={0.95} onPress={() => setGalleryVisible(true)} style={{ height: HEADER_HEIGHT }}>
-            <Animated.Image source={{ uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }} style={[StyleSheet.absoluteFill, heroStyle]} resizeMode="cover" />
-            <LinearGradient colors={['transparent', 'rgba(20,20,20,0.2)', '#141414']} style={StyleSheet.absoluteFill} />
-            
-            <View style={styles.heroContent}>
-                <Text style={styles.heroTitle}>{movie.title || movie.name}</Text>
-                
-                {/* META ROW */}
-                <View style={styles.metaRow}>
-                    <View style={styles.metaChipNoBlur}>
-                        <Ionicons name="star" size={12} color="#FFD700" />
-                        <Text style={styles.metaText}>{movie.vote_average.toFixed(1)}</Text>
-                    </View>
-                    <View style={styles.metaChipNoBlur}>
-                        <Text style={styles.metaText}>{(movie.release_date || movie.first_air_date)?.split('-')[0] || 'N/A'}</Text>
-                    </View>
-                    {movie.runtime > 0 && (<View style={styles.metaChipNoBlur}><Text style={styles.metaText}>{Math.floor(movie.runtime/60)}h {movie.runtime%60}m</Text></View>)}
-                    {movie.certification && (<View style={styles.metaChipNoBlur}><Text style={styles.metaText}>{movie.certification}</Text></View>)}
-                </View>
-                
-                {movie.tagline && <Text style={styles.tagline}>"{movie.tagline}"</Text>}
-                
-                {/* ACTION BUTTONS */}
-                <View style={styles.actionButtonContainer}>
-                  <TouchableOpacity 
+        {/* HERO IMAGE & BOTTOM CENTER PLAY BUTTON */}
+        <View style={{ height: HEADER_HEIGHT }}>
+            <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={0.95} onPress={() => setGalleryVisible(true)}>
+                <Animated.Image source={{ uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }} style={[StyleSheet.absoluteFill, heroStyle]} resizeMode="cover" />
+                <LinearGradient colors={['transparent', 'rgba(20,20,20,0.6)', '#141414']} style={StyleSheet.absoluteFill} locations={[0, 0.6, 1]} />
+            </TouchableOpacity>
+
+            {/* ✅ MOVED TO BOTTOM MIDDLE OF POSTER */}
+            <View style={styles.bottomPlayOverlay} pointerEvents="box-none">
+               <TouchableOpacity 
                     style={[styles.watchNowBtn, sourceStatus === 'unavailable' && styles.watchNowBtnDisabled]} 
                     onPress={() => handlePlay()} 
                     activeOpacity={0.8}
@@ -386,110 +331,93 @@ const DetailPage = () => {
                     )}
                     <Text style={styles.watchNowText}>{getButtonText()}</Text>
                   </TouchableOpacity>
-
-                  <View style={styles.secondaryActions}>
-                    <TouchableOpacity onPress={openTelegramSearch} style={[styles.iconBtn,{overflow: 'hidden'}]}>
-                        <Ionicons name="paper-plane-outline" size={22} color="#fff" />
-                    </TouchableOpacity>
-                    {/* RESTORED: Download Button */}
-                    <TouchableOpacity onPress={openTorrentSearch} style={[styles.iconBtn,{overflow: 'hidden'}]}>
-                        <Feather name="download" size={22} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
             </View>
-        </TouchableOpacity>
+        </View>
 
         <View style={styles.contentContainer}>
-        
-            {/* PRODUCTION / FRANCHISE INFO BAR */}
-            <View style={styles.studioBar}>
-                 {/* Clickable Director */}
-                 {movie.director && (
-                   <TouchableOpacity 
-                      style={styles.studioItem}
-                      onPress={() => navigation.push('CastDetails', { personId: movie.director.id })}
-                   >
-                     <Text style={styles.studioLabel}>Directed By</Text>
-                     <View style={{flexDirection: 'row', alignItems: 'center', gap: 6}}>
-                         {movie.director.profile_path && (
-                             <Image 
-                               source={{uri: getImageUrl(movie.director.profile_path, IMAGE_SIZES.THUMBNAIL)}} 
-                               style={{width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: '#444'}}
-                             />
-                         )}
-                         <Text style={[styles.studioValue, {color: '#E50914'}]} numberOfLines={1}>
-                            {movie.director.name}
-                         </Text>
-                     </View>
-                   </TouchableOpacity>
-                 )}
-                 
-                 {/* Studio */}
-                 {movie.production_companies && movie.production_companies.length > 0 && (
-                   <View style={styles.studioItem}>
-                     <Text style={styles.studioLabel}>Studio</Text>
-                     <Text style={styles.studioValue} numberOfLines={1}>{movie.production_companies[0].name}</Text>
-                   </View>
-                 )}
+            
+            
 
-                 {/* Franchise */}
-                 {movie.belongs_to_collection && (
-                   <View style={styles.studioItem}>
-                     <Text style={styles.studioLabel}>Franchise</Text>
-                     <Text style={styles.studioValue} numberOfLines={1}>{movie.belongs_to_collection.name.replace(' Collection', '')}</Text>
-                   </View>
-                 )}
+            {/* GOOGLE SEARCH ACTION ROW */}
+            
+            
+            {/* TITLE & COPY ROW */}
+            <View style={styles.titleRow}>
+                <Text style={styles.movieTitle} numberOfLines={3}>{displayTitle}</Text>
+                <TouchableOpacity style={styles.copyBtn} onPress={copyTitleToClipboard}>
+                    <Feather name="copy" size={20} color="#A3A3A3" />
+                </TouchableOpacity>
             </View>
 
-            {/* Info Grid */}
-            <View style={styles.infoGrid}>
-                <InfoChip label="Status" value={movie.status || 'N/A'} icon="activity" />
-                <InfoChip label="Language" value={(movie.original_language || 'en').toUpperCase()} icon="globe" />
-                {movie.budget > 0 && <InfoChip label="Budget" value={formatCurrency(movie.budget)} icon="dollar-sign" />}
-                {movie.revenue > 0 && <InfoChip label="Revenue" value={formatCurrency(movie.revenue)} icon="trending-up" />}
+            {/* GENRES */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 10}}>
+                {genres.map(g => (
+                    <TouchableOpacity key={g.id} onPress={() => navigation.navigate('ViewAll', { title: `${g.name}`, genreId: g.id, type: `genre/${g.id}`, data: [] })}>
+                        <Text style={styles.genreText}>{g.name}  •  </Text>
+                    </TouchableOpacity>
+                ))}
+            </ScrollView>
+
+            {/* GOOGLE SEARCH META CHIPS */}
+            <View style={styles.metaRow}>
+                {releaseYear ? <GoogleMetaChip text={releaseYear} /> : null}
+                <GoogleMetaChip icon="star" color="#FFD700" text={movie.vote_average?.toFixed(1) || '0.0'} />
+                {movie.runtime > 0 && <GoogleMetaChip text={`${Math.floor(movie.runtime/60)}h ${movie.runtime%60}m`} />}
+                {movie.certification && <GoogleMetaChip text={movie.certification} />}
+                {(movie.media_type === 'tv' && movie.number_of_seasons) ? <GoogleMetaChip text={`${movie.number_of_seasons} Seasons`} /> : null}
+                
             </View>
 
-            {/* Overview */}
+            {/* OVERVIEW */}
             <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Overview</Text>
                 <Text style={styles.overviewText}>
-                    {showFullOverview || (movie.overview?.length || 0) <= 150 ? movie.overview : `${movie.overview?.slice(0, 150)}...`}
+                    {showFullOverview || (movie.overview?.length || 0) <= 160 ? movie.overview : `${movie.overview?.slice(0, 160)}...`}
                 </Text>
-                {(movie.overview?.length || 0) > 150 && (
+                {(movie.overview?.length || 0) > 160 && (
                     <TouchableOpacity onPress={() => setShowFullOverview(!showFullOverview)}>
-                        <Text style={styles.readMore}>{showFullOverview ? 'Read Less' : 'Read More'}</Text>
+                        <Text style={styles.readMore}>{showFullOverview ? 'Less' : 'More'}</Text>
                     </TouchableOpacity>
                 )}
             </View>
 
-            {/* Genres */}
-            <View style={styles.section}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{flexDirection: 'row'}}>
-                    {genres.map(g => (
-                        <TouchableOpacity key={g.id} style={styles.genreTag} onPress={() => navigation.navigate('ViewAll', { title: `${g.name} ${movie.media_type === 'movie' ? 'Movies' : 'Shows'}`, genreId: g.id, type: `genre/${g.id}`, data: [] })}>
-                            <Text style={styles.genreText}>{g.name}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
+            <View style={styles.actionRow}>
+                <TouchableOpacity 
+                    style={[styles.googleActionBtn, isWatched && styles.googleActionBtnActive]} 
+                    onPress={toggleWatched}
+                >
+                    <Ionicons name={isWatched ? "checkmark-circle" : "checkmark-circle-outline"} size={18} color={isWatched ? "#4CAF50" : "#A3A3A3"} />
+                    <Text style={[styles.googleActionText, isWatched && {color: '#4CAF50'}]}>
+                        {isWatched ? "Watched" : "Watched"}
+                    </Text>
+                </TouchableOpacity>
+
+        
+                  <TouchableOpacity onPress={toggleWatchlist} style={styles.googleActionBtn}>
+                    <Ionicons name={isInWatchlist ? "heart" : "heart-outline"} size={18} color={isInWatchlist ? "#E50914" : "#A3A3A3"} />
+                    <Text style={styles.googleActionText}>Watchlist</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.googleActionBtn} onPress={openTorrentSearch}>
+                    <Feather name="download" size={18} color="#A3A3A3" />
+                    <Text style={styles.googleActionText}>Torrent</Text>
+                </TouchableOpacity>
             </View>
 
-            {/* Cast */}
+            
+
+            {/* CAST */}
             {movie.cast && movie.cast.length > 0 && (
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Top Cast</Text>
+                    <Text style={styles.sectionTitle}>Cast</Text>
                     <FlatList
                         horizontal
                         data={movie.cast.slice(0, 10)}
                         showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={{paddingRight: 16}}
                         renderItem={({ item, index }) => (
                             <Animated.View entering={FadeInDown.delay(index * 50)} style={styles.castCard}>
                                 <TouchableOpacity onPress={() => navigation.push('CastDetails', { personId: item.id })}>
                                     <Image source={{ uri: item.profile_path ? getImageUrl(item.profile_path, IMAGE_SIZES.THUMBNAIL) : 'https://via.placeholder.com/150' }} style={styles.castImage} />
                                     <Text style={styles.castName} numberOfLines={1}>{item.name}</Text>
-                                    <Text style={styles.castRole} numberOfLines={1}>{item.character}</Text>
                                 </TouchableOpacity>
                             </Animated.View>
                         )}
@@ -497,23 +425,17 @@ const DetailPage = () => {
                 </View>
             )}
 
-            {/* SEASONS & EPISODES UI */}
+            {/* EPISODES UI */}
             {movie.media_type === 'tv' && movie.seasons && (
                 <View style={styles.section}>
-                    <View style={styles.rowBetween}>
-                        <Text style={styles.sectionTitle}>Seasons</Text>
-                        <Text style={styles.seasonCount}>{movie.number_of_seasons} Seasons</Text>
-                    </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 10, paddingBottom: 10}}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 10, paddingBottom: 16}}>
                         {movie.seasons.filter((s:any) => s.season_number > 0).map((s: any) => (
                             <TouchableOpacity 
                                 key={s.id} 
                                 style={[styles.seasonChip, selectedSeason === s.season_number && styles.seasonChipActive]}
                                 onPress={() => { setSelectedSeason(s.season_number); fetchEpisodes(s.season_number); }}
                             >
-                                <Text style={[styles.seasonText, selectedSeason === s.season_number && styles.seasonTextActive]}>
-                                    {s.name}
-                                </Text>
+                                <Text style={[styles.seasonText, selectedSeason === s.season_number && styles.seasonTextActive]}>{s.name}</Text>
                             </TouchableOpacity>
                         ))}
                     </ScrollView>
@@ -530,29 +452,14 @@ const DetailPage = () => {
                                   onPress={() => handlePlay(ep)}
                                 >
                                     <View>
-                                      <Image 
-                                          source={{ uri: ep.still_path ? getImageUrl(ep.still_path, IMAGE_SIZES.STILL) : 'https://via.placeholder.com/100' }} 
-                                          style={styles.episodeThumb} 
-                                      />
+                                      <Image source={{ uri: ep.still_path ? getImageUrl(ep.still_path, IMAGE_SIZES.STILL) : 'https://via.placeholder.com/100' }} style={styles.episodeThumb} />
                                       <View style={styles.playOverlay}>
                                         <Ionicons name="play" size={20} color="white" />
                                       </View>
                                     </View>
                                     <View style={{flex: 1, justifyContent: 'center'}}>
-                                        <Text style={[styles.epTitle, isActive && {color: '#E50914'}]}>
-                                            {ep.episode_number}. {ep.name}
-                                        </Text>
+                                        <Text style={[styles.epTitle, isActive && {color: '#FFF'}]} numberOfLines={1}>{ep.episode_number}. {ep.name}</Text>
                                         <Text style={styles.epOverview} numberOfLines={2}>{ep.overview}</Text>
-                                        
-                                        {/* ADDED: Episode Release Date */}
-                                        <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4}}>
-                                            <Ionicons name="calendar-outline" size={10} color="#666" />
-                                            <Text style={{color: '#888', fontSize: 10}}>
-                                                {ep.air_date || 'Unknown Date'}
-                                            </Text>
-                                        </View>
-
-                                        {isActive && <Text style={{color: '#E50914', fontSize: 10, marginTop: 4}}>RESUME HERE</Text>}
                                     </View>
                                 </TouchableOpacity>
                                 );
@@ -562,21 +469,12 @@ const DetailPage = () => {
                 </View>
             )}
 
-            {/* AI RECOMMENDATIONS SECTION */}
+            {/* AI RECOMMENDATIONS */}
             {(loadingAi || aiRecommendations.length > 0) && (
               <View style={styles.section}>
-                  <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 6}}>
-                    <Ionicons name="sparkles" size={18} color="#FFD700" />
-                    <Text style={[styles.sectionTitle, { marginBottom: 0, color: '#FFD700' }]}>
-                       Vibe Match (AI)
-                    </Text>
-                  </View>
-                  
+                  <Text style={[styles.sectionTitle, { color: '#FFD700' }]}>Vibe Match AI</Text>
                   {loadingAi ? (
-                    <View style={{height: 180, justifyContent: 'center', alignItems: 'center'}}>
-                      <ActivityIndicator size="small" color="#FFD700" />
-                      <Text style={{color: '#666', fontSize: 10, marginTop: 8}}>Analyzing Vibe...</Text>
-                    </View>
+                    <ActivityIndicator size="small" color="#FFD700" style={{marginTop: 20}} />
                   ) : (
                     <FlatList
                         horizontal
@@ -584,21 +482,8 @@ const DetailPage = () => {
                         showsHorizontalScrollIndicator={false}
                         renderItem={({ item, index }) => (
                             <Animated.View entering={FadeInDown.delay(index * 100)}>
-                              <TouchableOpacity 
-                                style={styles.similarCard} 
-                                onPress={() => navigation.push('Detail', { movie: item })}
-                              >
-                                  <Image 
-                                    source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }} 
-                                    style={[styles.similarImage, { borderColor: 'rgba(255, 215, 0, 0.3)', borderWidth: 1 }]} 
-                                  />
-                                  <View style={styles.ratingBadge}>
-                                      <Ionicons name="star" size={10} color="#FFD700" />
-                                      <Text style={styles.ratingText}>{item.vote_average.toFixed(1)}</Text>
-                                  </View>
-                                  <Text style={styles.similarTitle} numberOfLines={1}>
-                                    {item.title || item.name}
-                                  </Text>
+                              <TouchableOpacity style={styles.similarCard} onPress={() => navigation.push('Detail', { movie: item })}>
+                                  <Image source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }} style={styles.similarImage} />
                               </TouchableOpacity>
                             </Animated.View>
                         )}
@@ -607,7 +492,7 @@ const DetailPage = () => {
               </View>
             )}
 
-            {/* Standard Similar Movies */}
+            {/* SIMILAR */}
             {similarMovies.length > 0 && (
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>More Like This</Text>
@@ -618,11 +503,6 @@ const DetailPage = () => {
                         renderItem={({ item }) => (
                             <TouchableOpacity style={styles.similarCard} onPress={() => navigation.push('Detail', { movie: item })}>
                                 <Image source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }} style={styles.similarImage} />
-                                <View style={styles.ratingBadge}>
-                                    <Ionicons name="star" size={10} color="#FFD700" />
-                                    <Text style={styles.ratingText}>{item.vote_average.toFixed(1)}</Text>
-                                </View>
-                                <Text style={styles.similarTitle} numberOfLines={1}>{item.title || item.name}</Text>
                             </TouchableOpacity>
                         )}
                     />
@@ -636,101 +516,36 @@ const DetailPage = () => {
 
 const COLORS = {
   background: '#141414',
-  panel: '#1F1F1F',
-  card: '#222',
-  accent: '#E50914',
   white: '#FFFFFF',
-  muted: '#888',
-  lightText: '#ccc',
-  subtleBorder: '#333',
-  overlay: 'rgba(255,255,255,0.05)',
+  muted: '#A3A3A3',
 };
 
-const SPACING = { xs: 6, sm: 8, md: 12, lg: 16, xl: 24 };
-
-const FONTS = {
-  regular: 'GoogleSansFlex-Regular',
-  medium: 'GoogleSansFlex-Medium',
-  bold: 'GoogleSansFlex-Bold',
-};
+const FONTS = { regular: 'GoogleSansFlex-Regular', medium: 'GoogleSansFlex-Medium', bold: 'GoogleSansFlex-Bold' };
 
 const styles = StyleSheet.create({
-  baseContainer: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  fixedHeader: {
-    position: 'absolute',
-    top: TOP_BAR_PADDING,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg,
-    zIndex: 100,
-  },
-  roundBtn: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  heroContent: {
-    position: 'absolute',
-    bottom: 20,
-    left: 16,
-    right: 16,
-  },
-  heroTitle: {
-    fontFamily: FONTS.bold,
-    fontSize: 32,
-    color: COLORS.white,
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-    marginBottom: 8,
-  },
-  tagline: {
-    fontFamily: FONTS.medium,
-    fontSize: 14,
-    color: COLORS.lightText,
-    fontStyle: 'italic',
-    marginTop: 8,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  metaChipNoBlur: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: 'rgba(20, 20, 20, 0.7)', 
-    gap: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)'
-  },
-  metaText: {
-    color: COLORS.white,
-    fontSize: 12,
-    fontFamily: FONTS.bold,
-  },
-  actionButtonContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 16,
-    gap: 12,
+  baseContainer: { flex: 1, backgroundColor: COLORS.background },
+  
+  // Header (Back & Love)
+  fixedHeader: { position: 'absolute', top: TOP_BAR_PADDING, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between', zIndex: 100 },
+  iconBtnWrapper: { borderRadius: 24, overflow: 'hidden' },
+  iconBlur: { padding: 10, borderRadius: 24, backgroundColor: 'rgba(0,0,0,0.3)' },
+  
+  // ✅ Bottom Center Play Button (NEW)
+    bottomPlayOverlay: { 
+      position: 'absolute', 
+      bottom: 20, // Hovering perfectly over the title area
+      justifyContent: 'center', 
+      alignItems: 'center',
+      alignContent: 'center',
+      alignSelf: 'center',
+  
   },
   watchNowBtn: {
     flex: 1,
     backgroundColor: COLORS.white,
-    height: 48,
+    height: 55,
+    width: 200,
+    overflow: 'hidden',
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
@@ -745,232 +560,58 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  secondaryActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  iconBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  contentContainer: {
-    padding: SPACING.lg,
-  },
-  
-  studioBar: {
-    flexDirection: 'row',
-    backgroundColor: 'transparent',
-    marginBottom: 20,
-    gap: 20,
-  },
-  studioItem: {
-    flex: 1,
-  },
-  studioLabel: {
-    color: '#666',
-    fontSize: 10,
-    textTransform: 'uppercase',
-    marginBottom: 2,
-    fontWeight: 'bold'
-  },
-  studioValue: {
-    color: '#ddd',
-    fontSize: 13,
-    fontWeight: '600'
-  },
+  }, 
+  resumeText: { 
+    color: COLORS.white, fontFamily: FONTS.bold, marginTop: 12, textShadowColor: 'rgba(0,0,0,0.8)', 
+    textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,alignSelf: 'center' },
 
-  infoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    backgroundColor: COLORS.panel,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: COLORS.subtleBorder,
-  },
-  infoChipContainer: {
-    width: '50%',
-    marginBottom: 12,
-  },
-  infoLabel: {
-    color: COLORS.muted,
-    fontSize: 11,
-    fontFamily: FONTS.regular,
-    marginBottom: 2,
-  },
-  infoValueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  infoValue: {
-    color: COLORS.white,
-    fontSize: 13,
-    fontFamily: FONTS.medium,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    color: COLORS.white,
-    fontFamily: FONTS.bold,
-    marginBottom: 12,
-  },
-  overviewText: {
-    color: COLORS.lightText,
-    fontSize: 15,
-    lineHeight: 22,
-    fontFamily: FONTS.regular,
-  },
-  readMore: {
-    color: COLORS.accent,
-    fontWeight: 'bold',
-    marginTop: 4,
-  },
-  genreTag: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: COLORS.card,
-    borderRadius: 20,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#444',
-  },
-  genreText: {
-    color: COLORS.white,
-    fontSize: 13,
-    fontFamily: FONTS.medium,
-  },
-  castCard: {
-    width: 100,
-    marginRight: 12,
-  },
-  castImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: COLORS.subtleBorder,
-  },
-  castName: {
-    color: COLORS.white,
-    fontSize: 12,
-    textAlign: 'center',
-    fontFamily: FONTS.medium,
-  },
-  castRole: {
-    color: COLORS.muted,
-    fontSize: 10,
-    textAlign: 'center',
-  },
-  similarCard: {
-    width: 120,
-    marginRight: 12,
-  },
-  similarImage: {
-    width: 120,
-    height: 180,
-    borderRadius: 8,
-    backgroundColor: COLORS.card,
-    marginBottom: 6,
-  },
-  ratingBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    borderRadius: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  ratingText: {
-    color: COLORS.white,
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  similarTitle: {
-    color: COLORS.lightText,
-    fontSize: 12,
-    fontFamily: FONTS.medium,
-  },
-  rowBetween: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  seasonCount: {
-    color: '#666',
-    fontSize: 12,
-  },
-  seasonChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: COLORS.card,
-  },
-  seasonChipActive: {
-    backgroundColor: COLORS.accent,
-  },
-  seasonText: {
-    color: COLORS.muted,
-    fontSize: 13,
-  },
-  seasonTextActive: {
-    color: COLORS.white,
-    fontWeight: 'bold',
-  },
-  episodeRow: {
-    flexDirection: 'row',
-    gap: 12,
-    backgroundColor: COLORS.overlay,
-    padding: 8,
-    borderRadius: 8,
-  },
-  episodeRowActive: {
-    backgroundColor: 'rgba(229, 9, 20, 0.1)',
-    borderColor: COLORS.accent,
-    borderWidth: 1,
-  },
-  episodeThumb: {
-    width: 100,
-    height: 56,
-    borderRadius: 4,
-    backgroundColor: '#333',
-  },
-  playOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 4,
-  },
-  epTitle: {
-    color: COLORS.white,
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 2,
-  },
-  epOverview: {
-    color: COLORS.muted,
-    fontSize: 11,
-  },
+  // Content Layout
+  contentContainer: { paddingHorizontal: 16, marginTop: -10 },
+  
+  // Title & Copy Row
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 },
+  movieTitle: { flex: 1, fontFamily: FONTS.bold, fontSize: 32, color: COLORS.white, lineHeight: 38, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
+  copyBtn: { padding: 8, marginTop: 4 },
+  
+  // Google Meta Chips
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  googleMetaChip: { flexDirection: 'row', alignItems: 'center', paddingRight: 10,backgroundColor: 'rgba(255, 255, 255, 0.12)', borderRadius: 6, paddingVertical: 4, paddingHorizontal: 10 },
+  googleMetaText: { fontFamily: FONTS.medium, fontSize: 13, color: COLORS.muted },
+
+  // Google Action Row
+  actionRow: { gap: 10, flexDirection: 'row', marginBottom: 20 ,justifyContent: 'space-around'},
+  googleActionBtn: {  flexDirection: 'row',justifyContent: 'center', alignItems: 'center', backgroundColor: '#2A2A2A', width:120,paddingHorizontal: 12, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: '#444' },
+  googleActionBtnActive: { borderColor: '#4CAF50', backgroundColor: 'rgba(76, 175, 80, 0.1)' },
+  googleActionText: { color: COLORS.white, fontFamily: FONTS.medium, fontSize: 14, marginLeft: 6 },
+
+  // Content Text
+  section: { marginBottom: 28 },
+  sectionTitle: { fontSize: 18, color: COLORS.white, fontFamily: FONTS.bold, marginBottom: 12 },
+  overviewText: { color: COLORS.white, fontSize: 15, lineHeight: 24, fontFamily: FONTS.regular },
+  readMore: { color: '#E50914', fontFamily: FONTS.bold, marginTop: 4, fontSize: 15 },
+  
+  genreText: { color: COLORS.muted, fontSize: 13, fontFamily: FONTS.medium },
+
+  // Cards & Cast
+  castCard: { width: 100, marginRight: 16 },
+  castImage: { width: 100, height: 150, borderRadius: 30, marginBottom: 8, backgroundColor: '#2A2A2A' },
+  castName: { color: COLORS.white, fontSize: 12, textAlign: 'center', fontFamily: FONTS.medium },
+  
+  similarCard: { width: 110, marginRight: 12 },
+  similarImage: { width: 110, height: 160, borderRadius: 8, backgroundColor: '#2A2A2A' },
+
+  // TV Shows
+  seasonChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: 'transparent' },
+  seasonChipActive: { borderColor: COLORS.white },
+  seasonText: { color: COLORS.muted, fontSize: 13, fontFamily: FONTS.medium },
+  seasonTextActive: { color: COLORS.white, fontFamily: FONTS.bold },
+  
+  episodeRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 16 },
+  episodeRowActive: { opacity: 1 },
+  episodeThumb: { width: 130, height: 75, borderRadius: 8, backgroundColor: '#2A2A2A' },
+  playOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 8 },
+  epTitle: { color: COLORS.white, fontSize: 14, fontFamily: FONTS.bold, marginBottom: 4 },
+  epOverview: { color: COLORS.muted, fontSize: 12, lineHeight: 18 },
 });
 
 export default DetailPage;

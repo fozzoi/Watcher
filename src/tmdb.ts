@@ -1,14 +1,13 @@
 import axios from 'axios';
-import { GEMINI_API_KEY, TMDB_API_KEY, WORKER_HOST } from './secrets'; 
+import { GEMINI_API_KEY, TMDB_API_KEY } from './secrets';
 
 // ==========================================
 // 1. GLOBAL CONFIGURATION & SETUP
 // ==========================================
 
-const API_BASE_URL = `https://${WORKER_HOST}/3`;
-const GEMINI_MODEL = "gemini-flash-latest"; // Fast, cost-effective model
+const API_BASE_URL = "https://api.themoviedb.org/3";
+const GEMINI_MODEL = "gemini-flash-latest"; 
 
-// Single source of truth for app settings
 export let GLOBAL_CONFIG = {
   hiRes: false,
   nsfwFilterEnabled: true,
@@ -20,7 +19,6 @@ export const setGlobalConfig = (key: keyof typeof GLOBAL_CONFIG, value: any) => 
   // @ts-ignore
   GLOBAL_CONFIG[key] = value;
   
-  // Clear cache if content settings change to force refresh
   if (key === 'nsfwFilterEnabled' || key === 'hiRes') {
       requestCache.clear();
   }
@@ -32,8 +30,15 @@ export const setGlobalConfig = (key: keyof typeof GLOBAL_CONFIG, value: any) => 
 const tmdbApi = axios.create({
   baseURL: API_BASE_URL,
   params: { api_key: TMDB_API_KEY },
-  timeout: 10000,
+  timeout: 15000, 
 });
+
+tmdbApi.interceptors.response.use(
+  response => response,
+  error => {
+    return Promise.reject(error);
+  }
+);
 
 const requestCache = new Map();
 const aiCache = new Map<string, TMDBResult[]>();
@@ -124,7 +129,7 @@ export interface TMDBResult {
   tagline?: string; 
   genre_ids?: number[];
   original_language?: string;
-  
+   
   cast?: TMDBCastMember[]; 
   director?: TMDBCrewMember;
   character?: string; 
@@ -132,7 +137,7 @@ export interface TMDBResult {
   seasons?: TMDBSeason[];
   external_ids?: TMDBExternalIds; 
   videos?: TMDBVideo[]; 
-  
+   
   production_companies?: TMDBProductionCompany[];
   belongs_to_collection?: TMDBCollection | null;
 }
@@ -217,7 +222,7 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
 
   const cacheKey = createCacheKey(endpoint, params);
   if (requestCache.has(cacheKey)) return requestCache.get(cacheKey);
-  
+   
   try {
     const response = await tmdbApi.get(endpoint, { params });
     requestCache.set(cacheKey, response.data);
@@ -233,14 +238,69 @@ export const getImageUrl = (path: string | null, size: string = "w500"): string 
   if (GLOBAL_CONFIG.hiRes) {
     if (size === "w500") finalSize = "original"; 
     if (size === "w780") finalSize = "original"; 
-    if (size === "w185") finalSize = "w500";     
+    if (size === "w185") finalSize = "w500";      
   }
-  return `https://${WORKER_HOST}/t/p/${finalSize}${path}`;
+  return `https://image.tmdb.org/t/p/${finalSize}${path}`;
 };
 
 // ==========================================
 // 4. TMDB FETCH FUNCTIONS
 // ==========================================
+
+export const getDiscoverMedia = async (
+    type: 'movie' | 'tv' = 'movie',
+    page: number = 1,
+    filters: { genreId?: number | null; year?: string; language?: string; rating?: number },
+    baseCategory?: string
+  ): Promise<TMDBResult[]> => {
+    
+    const params: any = {
+      page,
+      sort_by: 'popularity.desc',
+    };
+
+    if (baseCategory) {
+        const bc = baseCategory.toLowerCase();
+        if (bc === 'toprated') { params.sort_by = 'vote_average.desc'; params['vote_count.gte'] = 300; }
+        else if (bc === 'regional') { params.region = 'IN'; }
+        else if (bc.includes('hindi')) { params.with_original_language = 'hi'; }
+        else if (bc.includes('malayalam')) { params.with_original_language = 'ml'; }
+        else if (bc.includes('tamil')) { params.with_original_language = 'ta'; }
+        else if (bc.includes('korean')) { params.with_original_language = 'ko'; }
+        else if (bc.includes('japanese')) { params.with_original_language = 'ja'; }
+        else if (bc === 'animatedmovies') { params.with_genres = '16'; }
+        else if (bc === 'animemovies' || bc === 'animeshows') { 
+            params.with_genres = '16'; 
+            params.with_keywords = '210024'; 
+            params.with_original_language = 'ja'; 
+        }
+        else if (bc === 'hiddengems') { params['vote_average.gte'] = 7.5; params['vote_count.gte'] = 100; params.sort_by = 'vote_average.desc'; }
+        else if (bc === 'nostalgia') { params['primary_release_date.gte'] = '1990-01-01'; params['primary_release_date.lte'] = '2005-12-31'; }
+        else if (bc.startsWith('genre/')) { params.with_genres = bc.split('/')[1]; }
+    }
+  
+    if (filters.genreId) {
+         params.with_genres = params.with_genres ? `${params.with_genres},${filters.genreId}` : filters.genreId;
+    }
+    if (filters.language) params.with_original_language = filters.language;
+    if (filters.rating) params['vote_average.gte'] = filters.rating;
+    
+    if (filters.year) {
+       if (type === 'movie') {
+           params.primary_release_year = filters.year;
+       } else {
+           params.first_air_date_year = filters.year;
+       }
+    }
+  
+    try {
+      const data = await fetchWithCache(`/discover/${type}`, params);
+      return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: type }));
+    } catch (error) {
+      console.error('Discover API Error:', error);
+      return [];
+    }
+};
 
 export const getTrendingMovies = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
     const endpoint = genreId ? "/discover/movie" : "/trending/movie/week";
@@ -412,7 +472,6 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
       character: member.character || "Unknown Character"
     })) || [];
 
-    // ENHANCED DIRECTOR LOGIC
     let director = null;
     if (data.created_by && data.created_by.length > 0) {
         director = {
@@ -602,13 +661,10 @@ export const getMoviesByGenre = async (genreId: number, page: number = 1): Promi
 // 5. GEMINI AI RECOMMENDATIONS
 // ==========================================
 
-// --- FEATURE 1: Prompt-based Recommendations ---
 export const getGeminiRecommendations = async (userPrompt: string): Promise<TMDBResult[]> => {
   try {
-    // 1. Check Settings
     if (!GLOBAL_CONFIG.aiEnabled) return [];
 
-    // 2. Select Key & URL
     const activeKey = GLOBAL_CONFIG.customApiKey && GLOBAL_CONFIG.customApiKey.length > 10 
         ? GLOBAL_CONFIG.customApiKey 
         : GEMINI_API_KEY;
@@ -669,16 +725,13 @@ export const getGeminiRecommendations = async (userPrompt: string): Promise<TMDB
   }
 };
 
-// --- FEATURE 2: Similar "Vibe" Recommendations ---
 export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie' | 'tv' = 'movie', tmdbId: number): Promise<TMDBResult[]> => {
   
   if (!GLOBAL_CONFIG.aiEnabled) return [];
 
-  // Check Cache first
   const cacheKey = `${mediaType}-${tmdbId}`;
   if (aiCache.has(cacheKey)) return aiCache.get(cacheKey) || [];
 
-  // Select Key
   const activeKey = GLOBAL_CONFIG.customApiKey && GLOBAL_CONFIG.customApiKey.length > 20 
       ? GLOBAL_CONFIG.customApiKey 
       : GEMINI_API_KEY;

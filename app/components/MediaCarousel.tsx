@@ -8,22 +8,27 @@ import { EXPLORE_CARD_WIDTH, GAP_SIZE, HORIZONTAL_MARGIN } from './ExploreConsta
 
 interface MediaCarouselProps {
   title: string;
+  type?: string; // ✅ FIX 1: Added type to the interface
   data: any[];
   navigation: any;
   savedIds: Set<number>;
   toggleWatchlist: (item: any) => void;
 }
 
-const MediaCarousel = memo(({ title, data, navigation, savedIds, toggleWatchlist }: MediaCarouselProps) => {
+// ✅ FIX 2: Destructured 'type' from the props
+const MediaCarousel = memo(({ title, type, data, navigation, savedIds, toggleWatchlist }: MediaCarouselProps) => {
   if (!data || data.length === 0) return null;
 
   return (
     <View style={styles.sectionContainer}>
       <View style={[styles.sectionHeader, { paddingHorizontal: HORIZONTAL_MARGIN }]}>
         <Text style={styles.sectionTitle}>{title}</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('ViewAll', { title, data })}>
+        
+        {/* ✅ FIX 3: Passed 'type' into the ViewAll navigation params */}
+        <TouchableOpacity onPress={() => navigation.navigate('ViewAll', { title, data, type })}>
           <MaterialIcons name="chevron-right" size={24} color="#8C8C8C" />
         </TouchableOpacity>
+        
       </View>
       <FlashList
         horizontal

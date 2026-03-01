@@ -1,13 +1,23 @@
 import React, { useEffect } from 'react';
-import { Platform } from 'react-native'; // ✅ Added
+import { Platform } from 'react-native';
 import { registerRootComponent } from "expo";
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import * as Brightness from 'expo-brightness'; // ✅ Added
+import * as Brightness from 'expo-brightness';
+import { ThemeProvider, DarkTheme } from '@react-navigation/native'; // ✅ Imported ThemeProvider
 import AppNavigator from "./AppNavigator";
 
 SplashScreen.preventAutoHideAsync();
+
+// ✅ Moved our custom theme here
+const MyTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: '#141414', 
+  },
+};
 
 function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -16,7 +26,6 @@ function RootLayout() {
     'GoogleSansFlex-Bold': require('../assets/fonts/GoogleSansFlex-Bold.ttf'),
   });
 
-  // ✅ 1. Permission Logic (Moved UP before any return statements)
   useEffect(() => {
     (async () => {
       if (Platform.OS === 'android') {
@@ -35,22 +44,23 @@ function RootLayout() {
     })();
   }, []);
 
-  // ✅ 2. Hide Splash Screen when fonts load
   useEffect(() => {
     if (fontsLoaded) {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded]);
 
-  // ✅ 3. Conditional Return (Must be at the bottom)
   if (!fontsLoaded) {
     return null;
   }
 
   return (
-    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#000' }}>
-      <AppNavigator />
-    </SafeAreaProvider>
+    // ✅ Wrapped in ThemeProvider to pass the theme to Expo Router
+    <ThemeProvider value={MyTheme}>
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: '#141414' }}>
+        <AppNavigator />
+      </SafeAreaProvider>
+    </ThemeProvider>
   );
 }
 
