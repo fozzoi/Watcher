@@ -6,12 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "myapp",
-    "jsEngine": "hermes",
-    "newArchEnabled": true,
     "userInterfaceStyle": "dark",
-    
     "backgroundColor": "#000000",
-
     "androidNavigationBar": {
       "barStyle": "dark-content",
       "backgroundColor": "#000000"
@@ -22,7 +18,6 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "jsEngine": "hermes",
       "package": "com.thewatcher",
       "runtimeVersion": "1.0.0",
       "permissions": [
@@ -57,7 +52,9 @@
             "useLegacyPackaging": true
           }
         }
-      ]
+      ],
+      "expo-font",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true
