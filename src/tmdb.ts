@@ -232,6 +232,24 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
   }
 };
 
+// ✅ NEW: Helper to fetch two pages at once to ensure carousels remain full after filtering
+const fetchDoublePage = async (endpoint: string, params: any = {}, mediaType: "movie" | "tv") => {
+    try {
+        const [page1, page2] = await Promise.all([
+            fetchWithCache(endpoint, { ...params, page: 1 }),
+            fetchWithCache(endpoint, { ...params, page: 2 })
+        ]);
+        const combined = [...(page1.results || []), ...(page2.results || [])];
+        
+        // Remove duplicates just in case TMDB returns overlapping data across pages
+        const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
+        
+        return unique.map((item: any) => ({ ...formatBasicItemData(item), media_type: mediaType }));
+    } catch (error) {
+        return [];
+    }
+};
+
 export const getImageUrl = (path: string | null, size: string = "w500"): string => {
   if (!path) return "https://via.placeholder.com/500x750?text=No+Image";
   let finalSize = size;
@@ -244,7 +262,7 @@ export const getImageUrl = (path: string | null, size: string = "w500"): string 
 };
 
 // ==========================================
-// 4. TMDB FETCH FUNCTIONS
+// 4. TMDB FETCH FUNCTIONS (UPDATED FOR DOUBLE FETCH)
 // ==========================================
 
 export const getDiscoverMedia = async (
@@ -254,10 +272,7 @@ export const getDiscoverMedia = async (
     baseCategory?: string
   ): Promise<TMDBResult[]> => {
     
-    const params: any = {
-      page,
-      sort_by: 'popularity.desc',
-    };
+    const params: any = { sort_by: 'popularity.desc' };
 
     if (baseCategory) {
         const bc = baseCategory.toLowerCase();
@@ -279,33 +294,36 @@ export const getDiscoverMedia = async (
         else if (bc.startsWith('genre/')) { params.with_genres = bc.split('/')[1]; }
     }
   
-    if (filters.genreId) {
-         params.with_genres = params.with_genres ? `${params.with_genres},${filters.genreId}` : filters.genreId;
-    }
+    if (filters.genreId) params.with_genres = params.with_genres ? `${params.with_genres},${filters.genreId}` : filters.genreId;
     if (filters.language) params.with_original_language = filters.language;
     if (filters.rating) params['vote_average.gte'] = filters.rating;
     
     if (filters.year) {
-       if (type === 'movie') {
-           params.primary_release_year = filters.year;
-       } else {
-           params.first_air_date_year = filters.year;
-       }
+       if (type === 'movie') params.primary_release_year = filters.year;
+       else params.first_air_date_year = filters.year;
     }
   
-    try {
-      const data = await fetchWithCache(`/discover/${type}`, params);
-      return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: type }));
-    } catch (error) {
-      console.error('Discover API Error:', error);
-      return [];
+    // We only use double fetch for the initial load (page 1). 
+    // Pagination will work normally with single page fetches.
+    if (page === 1) {
+        return await fetchDoublePage(`/discover/${type}`, params, type);
+    } else {
+        params.page = page;
+        try {
+            const data = await fetchWithCache(`/discover/${type}`, params);
+            return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: type }));
+        } catch (error) { return []; }
     }
 };
 
 export const getTrendingMovies = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
     const endpoint = genreId ? "/discover/movie" : "/trending/movie/week";
-    const params: any = { page };
+    const params: any = {};
     if (genreId) { params.with_genres = genreId; params.sort_by = "popularity.desc"; }
+    
+    if (page === 1) return await fetchDoublePage(endpoint, params, "movie");
+    
+    params.page = page;
     try {
       const data = await fetchWithCache(endpoint, params);
       return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
@@ -314,8 +332,12 @@ export const getTrendingMovies = async (page: number = 1, genreId?: number): Pro
 
 export const getTrendingTV = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
     const endpoint = genreId ? "/discover/tv" : "/trending/tv/week";
-    const params: any = { page };
+    const params: any = {};
     if (genreId) { params.with_genres = genreId; params.sort_by = "popularity.desc"; }
+    
+    if (page === 1) return await fetchDoublePage(endpoint, params, "tv");
+
+    params.page = page;
     try {
       const data = await fetchWithCache(endpoint, params);
       return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "tv" }));
@@ -324,8 +346,12 @@ export const getTrendingTV = async (page: number = 1, genreId?: number): Promise
 
 export const getTopRated = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
     const endpoint = genreId ? "/discover/movie" : "/movie/top_rated";
-    const params: any = { page };
+    const params: any = {};
     if (genreId) { params.with_genres = genreId; params.sort_by = "vote_average.desc"; params["vote_count.gte"] = 300; }
+    
+    if (page === 1) return await fetchDoublePage(endpoint, params, "movie");
+
+    params.page = page;
     try {
       const data = await fetchWithCache(endpoint, params);
       return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
@@ -333,8 +359,12 @@ export const getTopRated = async (page: number = 1, genreId?: number): Promise<T
 };
 
 export const getRegionalMovies = async (region: string = 'IN', page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
-  const params: any = { region, sort_by: "popularity.desc", page };
+  const params: any = { region, sort_by: "popularity.desc" };
   if (genreId) params.with_genres = genreId;
+  
+  if (page === 1) return await fetchDoublePage("/discover/movie", params, "movie");
+
+  params.page = page;
   try {
     const data = await fetchWithCache("/discover/movie", params);
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
@@ -342,8 +372,12 @@ export const getRegionalMovies = async (region: string = 'IN', page: number = 1,
 };
 
 export const getLanguageMovies = async (language: string, page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
-  const params: any = { with_original_language: language, sort_by: "popularity.desc", page };
+  const params: any = { with_original_language: language, sort_by: "popularity.desc" };
   if (genreId) params.with_genres = genreId;
+  
+  if (page === 1) return await fetchDoublePage("/discover/movie", params, "movie");
+
+  params.page = page;
   try {
     const data = await fetchWithCache("/discover/movie", params);
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
@@ -351,8 +385,12 @@ export const getLanguageMovies = async (language: string, page: number = 1, genr
 };
 
 export const getLanguageTV = async (language: string, page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
-  const params: any = { with_original_language: language, sort_by: "popularity.desc", page };
+  const params: any = { with_original_language: language, sort_by: "popularity.desc" };
   if (genreId) params.with_genres = genreId;
+  
+  if (page === 1) return await fetchDoublePage("/discover/tv", params, "tv");
+
+  params.page = page;
   try {
     const data = await fetchWithCache("/discover/tv", params);
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "tv" }));
@@ -364,42 +402,48 @@ const ANIME_KEYWORD_ID = 210024;
 export const getAnimeContent = async (page: number = 1, isMovie: boolean = true, genreId?: number): Promise<TMDBResult[]> => {
   const mediaType = isMovie ? 'movie' : 'tv';
   const genres = genreId ? `${ANIME_GENRE_ID},${genreId}` : `${ANIME_GENRE_ID}`;
+  const params: any = { with_genres: genres, with_keywords: ANIME_KEYWORD_ID, with_original_language: 'ja', sort_by: 'popularity.desc' };
+  
+  if (page === 1) return await fetchDoublePage(`/discover/${mediaType}`, params, mediaType);
+
+  params.page = page;
   try {
-    const data = await fetchWithCache(`/discover/${mediaType}`, {
-      with_genres: genres,
-      with_keywords: ANIME_KEYWORD_ID,
-      with_original_language: 'ja',
-      sort_by: 'popularity.desc',
-      page
-    });
+    const data = await fetchWithCache(`/discover/${mediaType}`, params);
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: mediaType }));
   } catch (error) { return []; }
 };
 
 export const getAnimatedMovies = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
   const genres = genreId ? `${ANIME_GENRE_ID},${genreId}` : `${ANIME_GENRE_ID}`;
+  const params: any = { with_genres: genres, sort_by: 'popularity.desc' };
+  
+  if (page === 1) return await fetchDoublePage('/discover/movie', params, "movie");
+
+  params.page = page;
   try {
-    const data = await fetchWithCache('/discover/movie', { with_genres: genres, sort_by: 'popularity.desc', page });
+    const data = await fetchWithCache('/discover/movie', params);
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: 'movie' }));
   } catch (error) { return []; }
 };
 
 export const getUpcomingMovies = async (page: number = 1): Promise<TMDBResult[]> => {
+  const params: any = { region: 'IN' };
+  if (page === 1) return await fetchDoublePage("/movie/upcoming", params, "movie");
+
+  params.page = page;
   try {
-    const data = await fetchWithCache("/movie/upcoming", { page, region: 'IN' });
+    const data = await fetchWithCache("/movie/upcoming", params);
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
   } catch (error) { return []; }
 };
 
 export const getHiddenGems = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
-  const params: any = { 
-    page, 
-    "vote_average.gte": 7.5, 
-    "vote_count.gte": 100, 
-    "vote_count.lte": 3000, 
-    sort_by: "vote_average.desc" 
-  };
+  const params: any = { "vote_average.gte": 7.5, "vote_count.gte": 100, "vote_count.lte": 3000, sort_by: "vote_average.desc" };
   if (genreId) params.with_genres = genreId;
+  
+  if (page === 1) return await fetchDoublePage("/discover/movie", params, "movie");
+
+  params.page = page;
   try {
     const data = await fetchWithCache("/discover/movie", params);
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));
@@ -407,13 +451,12 @@ export const getHiddenGems = async (page: number = 1, genreId?: number): Promise
 };
 
 export const getNostalgicMovies = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
-  const params: any = { 
-    page, 
-    "primary_release_date.gte": "1990-01-01", 
-    "primary_release_date.lte": "2005-12-31", 
-    sort_by: "popularity.desc" 
-  };
+  const params: any = { "primary_release_date.gte": "1990-01-01", "primary_release_date.lte": "2005-12-31", sort_by: "popularity.desc" };
   if (genreId) params.with_genres = genreId;
+  
+  if (page === 1) return await fetchDoublePage("/discover/movie", params, "movie");
+
+  params.page = page;
   try {
     const data = await fetchWithCache("/discover/movie", params);
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "movie" }));

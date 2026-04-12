@@ -104,7 +104,8 @@ const ExplorePage = () => {
       const a = aStr ? JSON.parse(aStr) : [];
       setSavedIds(new Set([...m.map((i: any) => i.id), ...a.map((i: any) => i.id)]));
 
-      const watchedStr = await AsyncStorage.getItem('watched');
+      // ✅ FIXED: Changed 'watched' to 'history' to match our DetailPage logic
+      const watchedStr = await AsyncStorage.getItem('history');
       const w = watchedStr ? JSON.parse(watchedStr) : [];
       setWatchedIds(new Set(w.map((i: any) => i.id)));
 
@@ -128,10 +129,8 @@ const ExplorePage = () => {
     } catch (e) { console.error(e); }
   }, []);
 
-  // --- REMOVE HISTORY ITEM ---
   const handleRemoveHistoryItem = async (tmdbId: number) => {
     await removeProgress(tmdbId);
-    // Update local state to immediately remove the card smoothly
     setWatchHistory(prev => prev.filter(item => item.tmdbId !== tmdbId));
   };
 
@@ -207,7 +206,7 @@ const ExplorePage = () => {
           <Animated.View 
               key={item.tmdbId} 
               entering={FadeInDown.delay(index * 50)} 
-              layout={Layout.springify()} // Smooth collapse when X is pressed
+              layout={Layout.springify()} 
           >
             <TouchableOpacity 
                 style={styles.historyCard}
@@ -231,11 +230,10 @@ const ExplorePage = () => {
                     </View>
                 </View>
 
-                {/* THE "X" REMOVE BUTTON */}
                 <TouchableOpacity 
                   style={styles.removeHistoryBtn}
                   onPress={(e) => {
-                      e.stopPropagation(); // Prevents navigating to DetailPage
+                      e.stopPropagation(); 
                       handleRemoveHistoryItem(item.tmdbId);
                   }}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -267,10 +265,8 @@ const ExplorePage = () => {
               selectionColor="#E50914"
               returnKeyType="search"
               keyboardAppearance="light"
-              underlineColor="transparent"
+              underlineColorAndroid="transparent"
               cursorColor="#E50914"
-              activeUnderlineColor="transparent"
-              textColor='white'
             />
             <View style={styles.searchIconContainer}>
               {searchLoading ? (
@@ -328,17 +324,6 @@ const ExplorePage = () => {
                 <HeroSection items={allContent.trendingMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <GenreFilter selectedGenre={selectedGenre} onSelectGenre={setSelectedGenre} />
 
-                {/* {watchHistory.length > 0 && (
-                    <View style={styles.historySection}>
-                        <View style={{flexDirection: 'row', alignItems: 'center', marginLeft: HORIZONTAL_MARGIN, marginBottom: 12, gap: 8}}>
-                            <Feather name="clock" size={20} color="#fff" />
-                            <Text style={styles.historySectionTitle}>Jump Back In</Text>
-                        </View>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: HORIZONTAL_MARGIN }}>
-                            {watchHistory.slice(0, 8).map((item, index) => renderHistoryCard(item, index))}
-                        </ScrollView>
-                    </View>
-                )} */}
 
                 <MediaCarousel title="🗓️ Coming Soon" type="upcoming" data={allContent.upcoming} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="💎 Hidden Gems" type="hiddengems" data={allContent.hiddenGems} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
@@ -437,7 +422,6 @@ const styles = StyleSheet.create({
       fontSize: 10,
   },
   
-  // NEW STYLES FOR X BUTTON
   removeHistoryBtn: {
       position: 'absolute',
       top: 6,

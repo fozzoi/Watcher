@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
-  Dimensions,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
@@ -13,6 +12,8 @@ import {
   Platform,
   ToastAndroid,
   Alert,
+  useWindowDimensions, // Added for dynamic responsiveness
+  Linking,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native'; 
@@ -45,10 +46,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { STREAM_SOURCES, makeStreamUrl } from '../src/utils/sources';
 
-const { width, height } = Dimensions.get('window');
-
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 40) + 10; 
-const HEADER_HEIGHT = height * 0.55; 
 const IMAGE_SIZES = { THUMBNAIL: 'w154', POSTER_DETAIL: 'w780', STILL: 'w300', ORIGINAL: 'original' };
 
 // --- GOOGLE-STYLE CHIP COMPONENTS ---
@@ -62,6 +60,9 @@ const GoogleMetaChip = ({ icon, text, color = "#FFF" }: { icon?: any, text: stri
 const DetailPage = () => {
   const route = useRoute();
   const navigation = useNavigation<any>();
+  const { width, height } = useWindowDimensions(); // Dynamic dimensions
+  const HEADER_HEIGHT = height * 0.55; // Now updates on orientation/screen size change
+
   const { movie: initialMovie } = route.params as { movie: any };
 
   const [movie, setMovie] = useState(initialMovie);
@@ -89,6 +90,11 @@ const DetailPage = () => {
   const [sourceStatus, setSourceStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
   
   const scrollY = useSharedValue(0);
+
+  // Dynamic widths for horizontal scroll items based on screen size
+  const castCardWidth = width > 600 ? 120 : width * 0.28;
+  const similarCardWidth = width > 600 ? 150 : width * 0.35;
+  const episodeThumbWidth = width > 600 ? 180 : width * 0.35;
 
   useEffect(() => {
     if (externalIds && (externalIds.imdb_id || movie.id)) {
@@ -157,17 +163,28 @@ const DetailPage = () => {
 
   useFocusEffect(
     useCallback(() => {
+      let isActive = true;
       const checkProgress = async () => {
         const progress = await getProgress(movie.id);
+        if (!isActive) return;
         setLastWatched(progress);
-        if (progress && movie.media_type === 'tv' && progress.lastSeason !== selectedSeason) {
-            setSelectedSeason(progress.lastSeason);
-            fetchEpisodes(progress.lastSeason);
+        
+        if (progress && movie.media_type === 'tv') {
+            setSelectedSeason((prev) => {
+                if (prev !== progress.lastSeason) {
+                    fetchEpisodes(progress.lastSeason);
+                    return progress.lastSeason;
+                }
+                return prev;
+            });
         }
       };
       const task = InteractionManager.runAfterInteractions(() => checkProgress());
-      return () => task.cancel();
-    }, [movie.id, selectedSeason])
+      return () => {
+         isActive = false;
+         task.cancel();
+      };
+    }, [movie.id]) 
   );
 
   const loadDeepDetails = async () => {
@@ -213,7 +230,7 @@ const DetailPage = () => {
 
   const handlePlay = (episode?: TMDBEpisode) => {
     if (sourceStatus === 'unavailable') {
-        alert("No streaming source found for this content.");
+        Alert.alert("Error", "No streaming source found for this content.");
         return;
     }
 
@@ -248,8 +265,28 @@ const DetailPage = () => {
     navigation.navigate('Player', { ...mediaData });
   };
 
-  const checkIfInWatchlist = async () => { try { const stored = await AsyncStorage.getItem('watchlist'); const list = stored ? JSON.parse(stored) : []; setIsInWatchlist(list.some((item: any) => item.id === movie.id)); } catch (e) {} };
-  const toggleWatchlist = async () => { try { const stored = await AsyncStorage.getItem('watchlist'); const list = stored ? JSON.parse(stored) : []; const exists = list.some((item: any) => item.id === movie.id); const newList = exists ? list.filter((item: any) => item.id !== movie.id) : [...list, movie]; await AsyncStorage.setItem('watchlist', JSON.stringify(newList)); setIsInWatchlist(!exists); } catch (e) {} };
+  const checkIfInWatchlist = async () => { 
+      try { 
+          const stored = await AsyncStorage.getItem('watchlist'); 
+          const list = stored ? JSON.parse(stored) : []; 
+          setIsInWatchlist(list.some((item: any) => item.id === movie.id)); 
+      } catch (e) {} 
+  };
+  
+  const toggleWatchlist = async () => { 
+      try { 
+          const stored = await AsyncStorage.getItem('watchlist'); 
+          const list = stored ? JSON.parse(stored) : []; 
+          const exists = list.some((item: any) => item.id === movie.id); 
+          const newList = exists ? list.filter((item: any) => item.id !== movie.id) : [...list, movie]; 
+          await AsyncStorage.setItem('watchlist', JSON.stringify(newList)); 
+          setIsInWatchlist(!exists); 
+          
+          if (Platform.OS === 'android') {
+              ToastAndroid.show(exists ? 'Removed from Watchlist' : 'Added to Watchlist', ToastAndroid.SHORT);
+          }
+      } catch (e) {} 
+  };
 
   const checkIfWatched = async () => { try { const stored = await AsyncStorage.getItem('history'); const list = stored ? JSON.parse(stored) : []; setIsWatched(list.some((item: any) => item.id === movie.id)); } catch (e) {} };
   const toggleWatched = async () => { try { const stored = await AsyncStorage.getItem('history'); const list = stored ? JSON.parse(stored) : []; const exists = list.some((item: any) => item.id === movie.id); const newList = exists ? list.filter((item: any) => item.id !== movie.id) : [...list, movie]; await AsyncStorage.setItem('history', JSON.stringify(newList)); setIsWatched(!exists); } catch (e) {} };
@@ -274,7 +311,7 @@ const DetailPage = () => {
   const releaseYear = (movie.release_date || movie.first_air_date)?.split('-')[0] || '';
 
   const getButtonText = () => {
-    if (sourceStatus === 'checking') return "Finding Best Stream..."; // Updated text
+    if (sourceStatus === 'checking') return "Finding Best Stream..."; 
     if (sourceStatus === 'unavailable') return "Source Unavailable";
 
     if (movie.media_type === 'movie') {
@@ -291,7 +328,7 @@ const DetailPage = () => {
     <View style={styles.baseContainer}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
       
-      {/* HEADER: BACK (Left) & LOVE (Right) */}
+      {/* HEADER: BACK (Left) & WATCHLIST (Right) */}
       <View style={styles.fixedHeader}>
          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtnWrapper}>
             <BlurView intensity={30} tint="dark" style={styles.iconBlur}>
@@ -299,25 +336,32 @@ const DetailPage = () => {
             </BlurView>
          </TouchableOpacity>
 
-         
+         {/* RESTORED WATCHLIST BUTTON */}
+         <TouchableOpacity onPress={toggleWatchlist} style={styles.iconBtnWrapper}>
+            <BlurView intensity={30} tint="dark" style={styles.iconBlur}>
+                <Ionicons 
+                  name={isInWatchlist ? "heart" : "heart-outline"} 
+                  size={24} 
+                  color={isInWatchlist ? "#E50914" : "#FFF"} 
+                />
+            </BlurView>
+         </TouchableOpacity>
       </View>
 
       <Animated.ScrollView
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        // ✅ INCREASED PADDING SO TAB BAR DOESN'T COVER THE BOTTOM
         contentContainerStyle={{paddingBottom: 140}} 
       >
         {/* HERO IMAGE & BOTTOM CENTER PLAY BUTTON */}
-        <View style={{ height: HEADER_HEIGHT }}>
+        <View style={{ height: HEADER_HEIGHT, width: '100%' }}>
             <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={0.95} onPress={() => setGalleryVisible(true)}>
                 <Animated.Image source={{ uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }} style={[StyleSheet.absoluteFill, heroStyle]} resizeMode="cover" />
                 <LinearGradient colors={['transparent', 'rgba(20,20,20,0.6)', '#141414']} style={StyleSheet.absoluteFill} locations={[0, 0.6, 1]} />
             </TouchableOpacity>
 
-            {/* ✅ MOVED TO BOTTOM MIDDLE OF POSTER */}
-            <View style={styles.bottomPlayOverlay} pointerEvents="box-none">
+            <View style={[styles.bottomPlayOverlay, { width: width * 0.6, minWidth: 200, maxWidth: 350 }]} pointerEvents="box-none">
                <TouchableOpacity 
                     style={[styles.watchNowBtn, sourceStatus === 'unavailable' && styles.watchNowBtnDisabled]} 
                     onPress={() => handlePlay()} 
@@ -331,15 +375,11 @@ const DetailPage = () => {
                     )}
                     <Text style={styles.watchNowText}>{getButtonText()}</Text>
                   </TouchableOpacity>
+                  {lastWatched && <Text style={styles.resumeText}>Resume Playing</Text>}
             </View>
         </View>
 
         <View style={styles.contentContainer}>
-            
-            
-
-            {/* GOOGLE SEARCH ACTION ROW */}
-            
             
             {/* TITLE & COPY ROW */}
             <View style={styles.titleRow}>
@@ -365,7 +405,6 @@ const DetailPage = () => {
                 {movie.runtime > 0 && <GoogleMetaChip text={`${Math.floor(movie.runtime/60)}h ${movie.runtime%60}m`} />}
                 {movie.certification && <GoogleMetaChip text={movie.certification} />}
                 {(movie.media_type === 'tv' && movie.number_of_seasons) ? <GoogleMetaChip text={`${movie.number_of_seasons} Seasons`} /> : null}
-                
             </View>
 
             {/* OVERVIEW */}
@@ -380,6 +419,7 @@ const DetailPage = () => {
                 )}
             </View>
 
+            {/* RESPONSIVE GOOGLE SEARCH ACTION ROW */}
             <View style={styles.actionRow}>
                 <TouchableOpacity 
                     style={[styles.googleActionBtn, isWatched && styles.googleActionBtnActive]} 
@@ -391,10 +431,9 @@ const DetailPage = () => {
                     </Text>
                 </TouchableOpacity>
 
-        
-                  <TouchableOpacity onPress={toggleWatchlist} style={styles.googleActionBtn}>
-                    <Ionicons name={isInWatchlist ? "heart" : "heart-outline"} size={18} color={isInWatchlist ? "#E50914" : "#A3A3A3"} />
-                    <Text style={styles.googleActionText}>Watchlist</Text>
+                <TouchableOpacity style={styles.googleActionBtn} onPress={openTelegramSearch}>
+                    <Ionicons name="paper-plane-outline" size={18} color="#A3A3A3" />
+                    <Text style={styles.googleActionText}>Telegram</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.googleActionBtn} onPress={openTorrentSearch}>
@@ -402,8 +441,6 @@ const DetailPage = () => {
                     <Text style={styles.googleActionText}>Torrent</Text>
                 </TouchableOpacity>
             </View>
-
-            
 
             {/* CAST */}
             {movie.cast && movie.cast.length > 0 && (
@@ -414,9 +451,9 @@ const DetailPage = () => {
                         data={movie.cast.slice(0, 10)}
                         showsHorizontalScrollIndicator={false}
                         renderItem={({ item, index }) => (
-                            <Animated.View entering={FadeInDown.delay(index * 50)} style={styles.castCard}>
+                            <Animated.View entering={FadeInDown.delay(index * 50)} style={[styles.castCard, { width: castCardWidth }]}>
                                 <TouchableOpacity onPress={() => navigation.push('CastDetails', { personId: item.id })}>
-                                    <Image source={{ uri: item.profile_path ? getImageUrl(item.profile_path, IMAGE_SIZES.THUMBNAIL) : 'https://via.placeholder.com/150' }} style={styles.castImage} />
+                                    <Image source={{ uri: item.profile_path ? getImageUrl(item.profile_path, IMAGE_SIZES.THUMBNAIL) : 'https://via.placeholder.com/150' }} style={[styles.castImage, { width: castCardWidth, height: castCardWidth * 1.5 }]} />
                                     <Text style={styles.castName} numberOfLines={1}>{item.name}</Text>
                                 </TouchableOpacity>
                             </Animated.View>
@@ -452,7 +489,7 @@ const DetailPage = () => {
                                   onPress={() => handlePlay(ep)}
                                 >
                                     <View>
-                                      <Image source={{ uri: ep.still_path ? getImageUrl(ep.still_path, IMAGE_SIZES.STILL) : 'https://via.placeholder.com/100' }} style={styles.episodeThumb} />
+                                      <Image source={{ uri: ep.still_path ? getImageUrl(ep.still_path, IMAGE_SIZES.STILL) : 'https://via.placeholder.com/100' }} style={[styles.episodeThumb, { width: episodeThumbWidth, height: episodeThumbWidth * 0.56 }]} />
                                       <View style={styles.playOverlay}>
                                         <Ionicons name="play" size={20} color="white" />
                                       </View>
@@ -482,8 +519,15 @@ const DetailPage = () => {
                         showsHorizontalScrollIndicator={false}
                         renderItem={({ item, index }) => (
                             <Animated.View entering={FadeInDown.delay(index * 100)}>
-                              <TouchableOpacity style={styles.similarCard} onPress={() => navigation.push('Detail', { movie: item })}>
-                                  <Image source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }} style={styles.similarImage} />
+                              <TouchableOpacity style={[styles.similarCard, { width: similarCardWidth }]} onPress={() => navigation.push('Detail', { movie: item })}>
+                                  <View>
+                                      <Image source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }} style={[styles.similarImage, { width: similarCardWidth, height: similarCardWidth * 1.5 }]} />
+                                      <View style={styles.ratingBadge}>
+                                          <Ionicons name="star" size={10} color="#FFD700" />
+                                          <Text style={styles.ratingText}>{item.vote_average?.toFixed(1) || '0.0'}</Text>
+                                      </View>
+                                  </View>
+                                  <Text style={styles.similarTitle} numberOfLines={2}>{item.title || item.name}</Text>
                               </TouchableOpacity>
                             </Animated.View>
                         )}
@@ -492,7 +536,7 @@ const DetailPage = () => {
               </View>
             )}
 
-            {/* SIMILAR */}
+            {/* SIMILAR MOVIES */}
             {similarMovies.length > 0 && (
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>More Like This</Text>
@@ -501,8 +545,15 @@ const DetailPage = () => {
                         data={similarMovies}
                         showsHorizontalScrollIndicator={false}
                         renderItem={({ item }) => (
-                            <TouchableOpacity style={styles.similarCard} onPress={() => navigation.push('Detail', { movie: item })}>
-                                <Image source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }} style={styles.similarImage} />
+                            <TouchableOpacity style={[styles.similarCard, { width: similarCardWidth }]} onPress={() => navigation.push('Detail', { movie: item })}>
+                                <View>
+                                    <Image source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }} style={[styles.similarImage, { width: similarCardWidth, height: similarCardWidth * 1.5 }]} />
+                                    <View style={styles.ratingBadge}>
+                                        <Ionicons name="star" size={10} color="#FFD700" />
+                                        <Text style={styles.ratingText}>{item.vote_average?.toFixed(1) || '0.0'}</Text>
+                                    </View>
+                                </View>
+                                <Text style={styles.similarTitle} numberOfLines={2}>{item.title || item.name}</Text>
                             </TouchableOpacity>
                         )}
                     />
@@ -530,21 +581,16 @@ const styles = StyleSheet.create({
   iconBtnWrapper: { borderRadius: 24, overflow: 'hidden' },
   iconBlur: { padding: 10, borderRadius: 24, backgroundColor: 'rgba(0,0,0,0.3)' },
   
-  // ✅ Bottom Center Play Button (NEW)
-    bottomPlayOverlay: { 
+  // Bottom Center Play Button
+  bottomPlayOverlay: { 
       position: 'absolute', 
-      bottom: 20, // Hovering perfectly over the title area
-      justifyContent: 'center', 
-      alignItems: 'center',
-      alignContent: 'center',
+      bottom: 20, 
       alignSelf: 'center',
-  
   },
   watchNowBtn: {
-    flex: 1,
+    width: '100%',
     backgroundColor: COLORS.white,
     height: 55,
-    width: 200,
     overflow: 'hidden',
     borderRadius: 8,
     flexDirection: 'row',
@@ -552,18 +598,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  watchNowBtnDisabled: {
-    backgroundColor: '#555',
-    opacity: 0.7,
-  },
-  watchNowText: {
-    color: '#000',
-    fontSize: 16,
-    fontWeight: 'bold',
-  }, 
-  resumeText: { 
-    color: COLORS.white, fontFamily: FONTS.bold, marginTop: 12, textShadowColor: 'rgba(0,0,0,0.8)', 
-    textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,alignSelf: 'center' },
+  watchNowBtnDisabled: { backgroundColor: '#555', opacity: 0.7 },
+  watchNowText: { color: '#000', fontSize: 16, fontWeight: 'bold' }, 
+  resumeText: { color: COLORS.white, fontFamily: FONTS.bold, marginTop: 12, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4, alignSelf: 'center' },
 
   // Content Layout
   contentContainer: { paddingHorizontal: 16, marginTop: -10 },
@@ -575,14 +612,14 @@ const styles = StyleSheet.create({
   
   // Google Meta Chips
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  googleMetaChip: { flexDirection: 'row', alignItems: 'center', paddingRight: 10,backgroundColor: 'rgba(255, 255, 255, 0.12)', borderRadius: 6, paddingVertical: 4, paddingHorizontal: 10 },
+  googleMetaChip: { flexDirection: 'row', alignItems: 'center', paddingRight: 10, backgroundColor: 'rgba(255, 255, 255, 0.12)', borderRadius: 6, paddingVertical: 4, paddingHorizontal: 10 },
   googleMetaText: { fontFamily: FONTS.medium, fontSize: 13, color: COLORS.muted },
 
-  // Google Action Row
-  actionRow: { gap: 10, flexDirection: 'row', marginBottom: 20 ,justifyContent: 'space-around'},
-  googleActionBtn: {  flexDirection: 'row',justifyContent: 'center', alignItems: 'center', backgroundColor: '#2A2A2A', width:120,paddingHorizontal: 12, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: '#444' },
+  // Responsive Action Row
+  actionRow: { gap: 10, flexDirection: 'row', marginBottom: 20, width: '100%', justifyContent: 'space-between' },
+  googleActionBtn: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#2A2A2A', paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: '#444' },
   googleActionBtnActive: { borderColor: '#4CAF50', backgroundColor: 'rgba(76, 175, 80, 0.1)' },
-  googleActionText: { color: COLORS.white, fontFamily: FONTS.medium, fontSize: 14, marginLeft: 6 },
+  googleActionText: { color: COLORS.white, fontFamily: FONTS.medium, fontSize: 13, marginLeft: 6 },
 
   // Content Text
   section: { marginBottom: 28 },
@@ -592,13 +629,16 @@ const styles = StyleSheet.create({
   
   genreText: { color: COLORS.muted, fontSize: 13, fontFamily: FONTS.medium },
 
-  // Cards & Cast
-  castCard: { width: 100, marginRight: 16 },
-  castImage: { width: 100, height: 150, borderRadius: 30, marginBottom: 8, backgroundColor: '#2A2A2A' },
+  // Dynamic Cards & Cast
+  castCard: { marginRight: 16 },
+  castImage: { borderRadius: 20, marginBottom: 8, backgroundColor: '#2A2A2A' },
   castName: { color: COLORS.white, fontSize: 12, textAlign: 'center', fontFamily: FONTS.medium },
   
-  similarCard: { width: 110, marginRight: 12 },
-  similarImage: { width: 110, height: 160, borderRadius: 8, backgroundColor: '#2A2A2A' },
+  similarCard: { marginRight: 16 },
+  similarImage: { borderRadius: 12, backgroundColor: '#2A2A2A' },
+  similarTitle: { color: COLORS.white, fontSize: 13, fontFamily: FONTS.medium, marginTop: 8, lineHeight: 18 },
+  ratingBadge: { position: 'absolute', top: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.8)', paddingHorizontal: 6, paddingVertical: 4, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  ratingText: { color: COLORS.white, fontSize: 11, fontWeight: 'bold' },
 
   // TV Shows
   seasonChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: 'transparent' },
@@ -608,7 +648,7 @@ const styles = StyleSheet.create({
   
   episodeRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 16 },
   episodeRowActive: { opacity: 1 },
-  episodeThumb: { width: 130, height: 75, borderRadius: 8, backgroundColor: '#2A2A2A' },
+  episodeThumb: { borderRadius: 8, backgroundColor: '#2A2A2A' },
   playOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 8 },
   epTitle: { color: COLORS.white, fontSize: 14, fontFamily: FONTS.bold, marginBottom: 4 },
   epOverview: { color: COLORS.muted, fontSize: 12, lineHeight: 18 },
