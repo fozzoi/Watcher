@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, Switch, TextInput, Linking, Keyboard } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, Switch, TextInput, Linking, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import * as FileSystem from 'expo-file-system'; 
@@ -15,8 +15,8 @@ const Settings = () => {
   const [isHiRes, setIsHiRes] = useState(false);
   const [isNsfwFilter, setIsNsfwFilter] = useState(true);
   
-  // New AI States
-  const [isAiEnabled, setIsAiEnabled] = useState(true);
+  // Updated AI States for "Auto" triggering
+  const [isAutoAi, setIsAutoAi] = useState(true);
   const [customApiKey, setCustomApiKey] = useState('');
 
   useEffect(() => {
@@ -27,7 +27,7 @@ const Settings = () => {
     try {
       const savedHiRes = await AsyncStorage.getItem('settings_hires');
       const savedNsfw = await AsyncStorage.getItem('settings_nsfw');
-      const savedAi = await AsyncStorage.getItem('settings_ai_enabled');
+      const savedAutoAi = await AsyncStorage.getItem('settings_auto_ai');
       const savedKey = await AsyncStorage.getItem('settings_custom_key');
       
       if (savedHiRes !== null) {
@@ -40,12 +40,12 @@ const Settings = () => {
         setIsNsfwFilter(val);
         setGlobalConfig('nsfwFilterEnabled', val);
       }
-      // Load AI Settings
-      if (savedAi !== null) {
-        const val = JSON.parse(savedAi);
-        setIsAiEnabled(val);
-        setGlobalConfig('aiEnabled', val);
+      
+      // Load Auto AI Settings
+      if (savedAutoAi !== null) {
+        setIsAutoAi(JSON.parse(savedAutoAi));
       }
+
       if (savedKey !== null) {
         setCustomApiKey(savedKey);
         setGlobalConfig('customApiKey', savedKey);
@@ -65,10 +65,9 @@ const Settings = () => {
     await AsyncStorage.setItem('settings_nsfw', JSON.stringify(value));
   };
 
-  const toggleAi = async (value: boolean) => {
-    setIsAiEnabled(value);
-    setGlobalConfig('aiEnabled', value);
-    await AsyncStorage.setItem('settings_ai_enabled', JSON.stringify(value));
+  const toggleAutoAi = async (value: boolean) => {
+    setIsAutoAi(value);
+    await AsyncStorage.setItem('settings_auto_ai', JSON.stringify(value));
   };
 
   const saveApiKey = async (text: string) => {
@@ -113,8 +112,7 @@ const Settings = () => {
     );
   };
 
-  // Reusable Toggle Component
-  const SettingToggleRow = ({ iconFamily: IconFamily, iconName, title, subtitle, value, onValueChange }) => (
+  const SettingToggleRow = ({ iconFamily: IconFamily, iconName, title, subtitle, value, onValueChange }: any) => (
     <View style={{
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
       backgroundColor: '#1A1A1A', padding: 16, marginBottom: 12, borderRadius: 12,
@@ -154,21 +152,15 @@ const Settings = () => {
           <Text style={{ color: '#888', fontSize: 14, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>Content</Text>
           
           <SettingToggleRow 
-            iconFamily={Feather} 
-            iconName="image" 
-            title="Hi-Res Posters" 
-            subtitle="Higher quality (uses more data)"
-            value={isHiRes} 
-            onValueChange={toggleHiRes}
+            iconFamily={Feather} iconName="image" 
+            title="Hi-Res Posters" subtitle="Higher quality (uses more data)"
+            value={isHiRes} onValueChange={toggleHiRes}
           />
 
           <SettingToggleRow 
-            iconFamily={Feather} 
-            iconName="eye-off" 
-            title="NSFW Filter" 
-            subtitle="Hide explicit/adult content"
-            value={isNsfwFilter} 
-            onValueChange={toggleNsfw}
+            iconFamily={Feather} iconName="eye-off" 
+            title="NSFW Filter" subtitle="Hide explicit/adult content"
+            value={isNsfwFilter} onValueChange={toggleNsfw}
           />
         </View>
 
@@ -179,41 +171,39 @@ const Settings = () => {
           <SettingToggleRow 
             iconFamily={Ionicons} 
             iconName="sparkles-outline" 
-            title="Enable AI Vibe Match" 
-            subtitle="Get recommendations based on tone"
-            value={isAiEnabled} 
-            onValueChange={toggleAi}
+            title="Auto AI Vibe Match" 
+            subtitle="Auto-fetch AI recommendations on details page"
+            value={isAutoAi} 
+            onValueChange={toggleAutoAi}
           />
 
-          {isAiEnabled && (
-            <View style={{
-                backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12,
-                borderWidth: 1, borderColor: '#333'
-            }}>
-                <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8}}>
-                    <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>Custom API Key</Text>
-                    <TouchableOpacity onPress={handleHowToGetKey}>
-                        <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: 'bold' }}>How to get it?</Text>
-                    </TouchableOpacity>
-                </View>
-                
-                <Text style={{ color: '#888', fontSize: 12, marginBottom: 12 }}>
-                    Leave blank to use the default shared key. Use your own key if you hit rate limits frequently.
-                </Text>
-                
-                <TextInput 
-                    style={{
-                        backgroundColor: '#111', color: 'white', padding: 12, borderRadius: 8,
-                        borderWidth: 1, borderColor: '#444', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace'
-                    }}
-                    placeholder="Paste AIzaSy... here"
-                    placeholderTextColor="#555"
-                    value={customApiKey}
-                    onChangeText={saveApiKey}
-                    secureTextEntry={true}
-                />
-            </View>
-          )}
+          <View style={{
+              backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12,
+              borderWidth: 1, borderColor: '#333'
+          }}>
+              <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8}}>
+                  <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>Custom API Key</Text>
+                  <TouchableOpacity onPress={handleHowToGetKey}>
+                      <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: 'bold' }}>How to get it?</Text>
+                  </TouchableOpacity>
+              </View>
+              
+              <Text style={{ color: '#888', fontSize: 12, marginBottom: 12 }}>
+                  Leave blank to use the default shared key. Use your own key to completely avoid rate limits.
+              </Text>
+              
+              <TextInput 
+                  style={{
+                      backgroundColor: '#111', color: 'white', padding: 12, borderRadius: 8,
+                      borderWidth: 1, borderColor: '#444', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace'
+                  }}
+                  placeholder="Paste AIzaSy... here"
+                  placeholderTextColor="#555"
+                  value={customApiKey}
+                  onChangeText={saveApiKey}
+                  secureTextEntry={true}
+              />
+          </View>
         </View>
 
         {/* --- STORAGE SECTION --- */}
@@ -248,7 +238,5 @@ const Settings = () => {
     </View>
   );
 };
-
-import { Platform } from 'react-native'; // Ensure this is imported
 
 export default Settings;

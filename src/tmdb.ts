@@ -1,4 +1,5 @@
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GEMINI_API_KEY, TMDB_API_KEY } from './secrets';
 
 // ==========================================
@@ -40,8 +41,17 @@ tmdbApi.interceptors.response.use(
   }
 );
 
-const requestCache = new Map();
-const aiCache = new Map<string, TMDBResult[]>();
+// --- CACHE SETUP WITH TTL (Time-To-Live) ---
+const CACHE_TTL_MS = 1000 * 60 * 60 * 4; // 4 Hours
+const AI_CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 Hours
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const requestCache = new Map<string, CacheEntry<any>>();
+const aiCache = new Map<string, CacheEntry<TMDBResult[]>>();
 
 export const clearCache = (keyPrefix: string = "") => {
   if (keyPrefix === "") {
@@ -221,18 +231,25 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
   }
 
   const cacheKey = createCacheKey(endpoint, params);
-  if (requestCache.has(cacheKey)) return requestCache.get(cacheKey);
+  const cached = requestCache.get(cacheKey);
+
+  if (cached) {
+    const isExpired = (Date.now() - cached.timestamp) > CACHE_TTL_MS;
+    if (!isExpired) {
+      return cached.data;
+    }
+    requestCache.delete(cacheKey);
+  }
    
   try {
     const response = await tmdbApi.get(endpoint, { params });
-    requestCache.set(cacheKey, response.data);
+    requestCache.set(cacheKey, { data: response.data, timestamp: Date.now() });
     return response.data;
   } catch (error) {
     throw error;
   }
 };
 
-// ✅ NEW: Helper to fetch two pages at once to ensure carousels remain full after filtering
 const fetchDoublePage = async (endpoint: string, params: any = {}, mediaType: "movie" | "tv") => {
     try {
         const [page1, page2] = await Promise.all([
@@ -240,10 +257,7 @@ const fetchDoublePage = async (endpoint: string, params: any = {}, mediaType: "m
             fetchWithCache(endpoint, { ...params, page: 2 })
         ]);
         const combined = [...(page1.results || []), ...(page2.results || [])];
-        
-        // Remove duplicates just in case TMDB returns overlapping data across pages
-        const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
-        
+        const unique = Array.from(new Map(combined.map((item: any) => [item.id, item])).values());
         return unique.map((item: any) => ({ ...formatBasicItemData(item), media_type: mediaType }));
     } catch (error) {
         return [];
@@ -262,7 +276,7 @@ export const getImageUrl = (path: string | null, size: string = "w500"): string 
 };
 
 // ==========================================
-// 4. TMDB FETCH FUNCTIONS (UPDATED FOR DOUBLE FETCH)
+// 4. TMDB FETCH FUNCTIONS 
 // ==========================================
 
 export const getDiscoverMedia = async (
@@ -303,8 +317,6 @@ export const getDiscoverMedia = async (
        else params.first_air_date_year = filters.year;
     }
   
-    // We only use double fetch for the initial load (page 1). 
-    // Pagination will work normally with single page fetches.
     if (page === 1) {
         return await fetchDoublePage(`/discover/${type}`, params, type);
     } else {
@@ -463,37 +475,71 @@ export const getNostalgicMovies = async (page: number = 1, genreId?: number): Pr
   } catch (error) { return []; }
 };
 
-// --- BATCH FETCH ---
-export const fetchAllDiscoveryContent = async (genreId?: number) => {
+// ==========================================
+// 5. BATCH FETCH WITH ASYNC STORAGE (OFFLINE-FIRST)
+// ==========================================
+
+export const fetchAllDiscoveryContent = async (genreId?: number, forceRefresh = false) => {
   const gId = genreId === 0 ? undefined : genreId;
+  const cacheKey = `EXPLORE_PAGE_DATA_${gId || 'ALL'}`;
+
+  if (!forceRefresh) {
+      try {
+          const savedData = await AsyncStorage.getItem(cacheKey);
+          if (savedData) {
+              const parsed = JSON.parse(savedData);
+              fetchFreshDiscoveryContent(gId, cacheKey); 
+              return parsed;
+          }
+      } catch (e) {
+          console.log("Failed to load local cache", e);
+      }
+  }
+
+  return await fetchFreshDiscoveryContent(gId, cacheKey);
+};
+
+const fetchFreshDiscoveryContent = async (gId: number | undefined, cacheKey: string) => {
   try {
-    const results = await Promise.all([
+    const priorityResults = await Promise.all([
       getTrendingMovies(1, gId), getTrendingTV(1, gId), getTopRated(1, gId),
-      getRegionalMovies('IN', 1, gId),
+      getRegionalMovies('IN', 1, gId), getUpcomingMovies(1)
+    ]);
+
+    const secondaryResults = await Promise.all([
       getLanguageMovies('hi', 1, gId), getLanguageMovies('ml', 1, gId), getLanguageMovies('ta', 1, gId),
       getLanguageTV('hi', 1, gId), getLanguageTV('ml', 1, gId),
       getLanguageMovies('ko', 1, gId), getLanguageTV('ko', 1, gId),
       getLanguageMovies('ja', 1, gId), getLanguageTV('ja', 1, gId),
       getAnimeContent(1, true, gId), getAnimeContent(1, false, gId), getAnimatedMovies(1, gId),
-      getUpcomingMovies(1), getHiddenGems(1, gId), getNostalgicMovies(1, gId)
+      getHiddenGems(1, gId), getNostalgicMovies(1, gId)
     ]);
     
-    return {
-      trendingMovies: results[0], trendingTV: results[1], topRated: results[2], regional: results[3],
-      hindiMovies: results[4], malayalamMovies: results[5], tamilMovies: results[6],
-      hindiTV: results[7], malayalamTV: results[8],
-      koreanMovies: results[9], koreanTV: results[10],
-      japaneseMovies: results[11], japaneseTV: results[12],
-      animeMovies: results[13], animeShows: results[14], animatedMovies: results[15],
-      upcoming: results[16], hiddenGems: results[17], nostalgia: results[18]
+    const finalData = {
+      trendingMovies: priorityResults[0], trendingTV: priorityResults[1], topRated: priorityResults[2], 
+      regional: priorityResults[3], upcoming: priorityResults[4],
+      
+      hindiMovies: secondaryResults[0], malayalamMovies: secondaryResults[1], tamilMovies: secondaryResults[2],
+      hindiTV: secondaryResults[3], malayalamTV: secondaryResults[4],
+      koreanMovies: secondaryResults[5], koreanTV: secondaryResults[6],
+      japaneseMovies: secondaryResults[7], japaneseTV: secondaryResults[8],
+      animeMovies: secondaryResults[9], animeShows: secondaryResults[10], animatedMovies: secondaryResults[11],
+      hiddenGems: secondaryResults[12], nostalgia: secondaryResults[13]
     };
+
+    AsyncStorage.setItem(cacheKey, JSON.stringify(finalData)).catch(err => console.log(err));
+
+    return finalData;
   } catch (error) {
     console.error("Error fetching discovery content:", error);
-    return { trendingMovies: [], trendingTV: [], topRated: [], regional: [], hindiMovies: [], malayalamMovies: [], tamilMovies: [], hindiTV: [], malayalamTV: [], koreanMovies: [], koreanTV: [], japaneseMovies: [], japaneseTV: [], animeMovies: [], animeShows: [], animatedMovies: [], upcoming: [], hiddenGems: [], nostalgia: [] };
+    return null;
   }
 };
 
-// --- DETAILS & OTHERS ---
+// ==========================================
+// 6. DETAILS & OTHERS
+// ==========================================
+
 export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
   try {
     const append = "credits,release_dates,content_ratings,external_ids,videos";
@@ -515,7 +561,7 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
       character: member.character || "Unknown Character"
     })) || [];
 
-    let director = null;
+    let director: TMDBCrewMember | undefined = undefined;
     if (data.created_by && data.created_by.length > 0) {
         director = {
             id: data.created_by[0].id,
@@ -586,7 +632,7 @@ export const getSeasonEpisodes = async (tvId: number, seasonNumber: number): Pro
 
 export const getSimilarMedia = async (id: number, mediaType: "movie" | "tv", page: number = 1): Promise<TMDBResult[]> => {
   try {
-    const data = await fetchWithCache(`/${mediaType}/${id}/similar`, { page });
+    const data = await fetchWithCache(`/${mediaType}/${id}/recommendations`, { page });
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: mediaType }));
   } catch (error) { return []; }
 };
@@ -658,8 +704,8 @@ export const searchGenres = async (query: string): Promise<{ id: number; name: s
   try {
     const [movieGenres, tvGenres] = await Promise.all([ fetchWithCache("/genre/movie/list"), fetchWithCache("/genre/tv/list") ]);
     const allGenres = [...movieGenres.genres, ...tvGenres.genres];
-    const uniqueGenres = Array.from(new Map(allGenres.map(g => [g.id, g])).values());
-    return uniqueGenres.filter(genre => genre.name.toLowerCase().includes(query.toLowerCase()));
+    const uniqueGenres = Array.from(new Map(allGenres.map((g: any) => [g.id, g])).values());
+    return uniqueGenres.filter((genre: any) => genre.name.toLowerCase().includes(query.toLowerCase()));
   } catch (error) { return []; }
 };
 
@@ -701,7 +747,7 @@ export const getMoviesByGenre = async (genreId: number, page: number = 1): Promi
 };
 
 // ==========================================
-// 5. GEMINI AI RECOMMENDATIONS
+// 7. GEMINI AI RECOMMENDATIONS
 // ==========================================
 
 export const getGeminiRecommendations = async (userPrompt: string): Promise<TMDBResult[]> => {
@@ -773,7 +819,13 @@ export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie'
   if (!GLOBAL_CONFIG.aiEnabled) return [];
 
   const cacheKey = `${mediaType}-${tmdbId}`;
-  if (aiCache.has(cacheKey)) return aiCache.get(cacheKey) || [];
+  const cached = aiCache.get(cacheKey);
+  
+  if (cached) {
+      const isExpired = (Date.now() - cached.timestamp) > AI_CACHE_TTL_MS;
+      if (!isExpired) return cached.data;
+      aiCache.delete(cacheKey);
+  }
 
   const activeKey = GLOBAL_CONFIG.customApiKey && GLOBAL_CONFIG.customApiKey.length > 20 
       ? GLOBAL_CONFIG.customApiKey 
@@ -817,7 +869,8 @@ export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie'
         .map(m => ({ ...formatBasicItemData(m), media_type: mediaType }));
 
     const uniqueMovies = Array.from(new Map(validMovies.map(m => [m.id, m])).values());
-    aiCache.set(cacheKey, uniqueMovies);
+    
+    aiCache.set(cacheKey, { data: uniqueMovies, timestamp: Date.now() });
 
     return uniqueMovies;
 

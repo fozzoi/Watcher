@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -12,11 +12,11 @@ import {
   Platform,
   ToastAndroid,
   Alert,
-  useWindowDimensions, // Added for dynamic responsiveness
+  useWindowDimensions,
   Linking,
 } from 'react-native';
 import { Text } from 'react-native-paper';
-import { useFocusEffect } from '@react-navigation/native'; 
+import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native'; 
 import * as Clipboard from 'expo-clipboard'; 
 import { 
   getImageUrl, 
@@ -31,7 +31,6 @@ import {
   getGeminiMoviesSimilarTo,
 } from '../src/tmdb';
 import { getProgress } from '../src/utils/progress'; 
-import { useRoute, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -46,10 +45,19 @@ import Animated, {
 } from 'react-native-reanimated';
 import { STREAM_SOURCES, makeStreamUrl } from '../src/utils/sources';
 
+// --- CONSTANTS ---
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 40) + 10; 
 const IMAGE_SIZES = { THUMBNAIL: 'w154', POSTER_DETAIL: 'w780', STILL: 'w300', ORIGINAL: 'original' };
 
-// --- GOOGLE-STYLE CHIP COMPONENTS ---
+const COLORS = {
+  background: '#141414',
+  white: '#FFFFFF',
+  muted: '#A3A3A3',
+};
+
+const FONTS = { regular: 'GoogleSansFlex-Regular', medium: 'GoogleSansFlex-Medium', bold: 'GoogleSansFlex-Bold' };
+
+// --- GOOGLE-STYLE CHIP COMPONENT ---
 const GoogleMetaChip = ({ icon, text, color = "#FFF" }: { icon?: any, text: string | number, color?: string }) => (
   <View style={styles.googleMetaChip}>
     {icon && <Ionicons name={icon} size={12} color={color} style={{ marginRight: 4 }} />}
@@ -60,9 +68,21 @@ const GoogleMetaChip = ({ icon, text, color = "#FFF" }: { icon?: any, text: stri
 const DetailPage = () => {
   const route = useRoute();
   const navigation = useNavigation<any>();
-  const { width, height } = useWindowDimensions(); // Dynamic dimensions
-  const HEADER_HEIGHT = height * 0.55; // Now updates on orientation/screen size change
+  
+  // --- RESPONSIVE LOGIC ---
+  const { width, height } = useWindowDimensions();
+  const isTablet = width >= 768;
+  const isLandscape = width > height;
+  
+  const CONTENT_MAX_WIDTH = 1000;
+  const contentWidth = isTablet ? Math.min(width * 0.9, CONTENT_MAX_WIDTH) : width;
+  const HEADER_HEIGHT = isLandscape ? height * 0.7 : height * 0.55;
 
+  const castCardWidth = isTablet ? 140 : width * 0.28;
+  const similarCardWidth = isTablet ? 180 : width * 0.35;
+  const episodeThumbWidth = isTablet ? 220 : width * 0.35;
+
+  // --- STATE ---
   const { movie: initialMovie } = route.params as { movie: any };
 
   const [movie, setMovie] = useState(initialMovie);
@@ -71,6 +91,7 @@ const DetailPage = () => {
 
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   const [loadingAi, setLoadingAi] = useState(false);
+  const [autoAiEnabled, setAutoAiEnabled] = useState(true);
 
   const [workingSourceIndex, setWorkingSourceIndex] = useState(0);
   
@@ -91,10 +112,42 @@ const DetailPage = () => {
   
   const scrollY = useSharedValue(0);
 
-  // Dynamic widths for horizontal scroll items based on screen size
-  const castCardWidth = width > 600 ? 120 : width * 0.28;
-  const similarCardWidth = width > 600 ? 150 : width * 0.35;
-  const episodeThumbWidth = width > 600 ? 180 : width * 0.35;
+  // --- DYNAMIC STYLES ---
+  const dynamicStyles = useMemo(() => {
+    return {
+      contentAlign: {
+        alignSelf: 'center' as const,
+        width: contentWidth,
+        paddingHorizontal: isTablet ? 40 : 16,
+      },
+      titleSize: {
+        fontSize: isTablet ? 48 : 32,
+        lineHeight: isTablet ? 54 : 38,
+      }
+    };
+  }, [width, height, isTablet, isLandscape]);
+
+  // --- EFFECTS & FETCHING ---
+  useEffect(() => {
+    AsyncStorage.getItem('settings_auto_ai').then(val => {
+      if (val !== null) setAutoAiEnabled(JSON.parse(val));
+    });
+  }, []);
+
+  const fetchAiRecommendations = async () => {
+    if (!movie.title && !movie.name) return;
+    setLoadingAi(true);
+    const aiData = await getGeminiMoviesSimilarTo(movie.title || movie.name, movie.media_type, movie.id);
+    setAiRecommendations(aiData);
+    setLoadingAi(false);
+  };
+
+  useEffect(() => {
+    if (autoAiEnabled && (movie.title || movie.name)) {
+      const task = InteractionManager.runAfterInteractions(() => fetchAiRecommendations());
+      return () => task.cancel(); 
+    }
+  }, [movie.id, autoAiEnabled, movie.title, movie.name]);
 
   useEffect(() => {
     if (externalIds && (externalIds.imdb_id || movie.id)) {
@@ -130,18 +183,6 @@ const DetailPage = () => {
          else { setSourceStatus('available'); setWorkingSourceIndex(0); }
      }
   };
-
-  useEffect(() => {
-    const fetchAi = async () => {
-      if (!movie.title && !movie.name) return;
-      setLoadingAi(true);
-      const aiData = await getGeminiMoviesSimilarTo(movie.title || movie.name, movie.media_type, movie.id);
-      setAiRecommendations(aiData);
-      setLoadingAi(false);
-    };
-    const task = InteractionManager.runAfterInteractions(() => fetchAi());
-    return () => task.cancel(); 
-  }, [movie.id]);
 
   useEffect(() => {
     const task = InteractionManager.runAfterInteractions(() => loadDeepDetails());
@@ -228,6 +269,7 @@ const DetailPage = () => {
     } catch (e) {} finally { setLoadingEpisodes(false); }
   };
 
+  // --- ACTIONS ---
   const handlePlay = (episode?: TMDBEpisode) => {
     if (sourceStatus === 'unavailable') {
         Alert.alert("Error", "No streaming source found for this content.");
@@ -288,11 +330,41 @@ const DetailPage = () => {
       } catch (e) {} 
   };
 
-  const checkIfWatched = async () => { try { const stored = await AsyncStorage.getItem('history'); const list = stored ? JSON.parse(stored) : []; setIsWatched(list.some((item: any) => item.id === movie.id)); } catch (e) {} };
-  const toggleWatched = async () => { try { const stored = await AsyncStorage.getItem('history'); const list = stored ? JSON.parse(stored) : []; const exists = list.some((item: any) => item.id === movie.id); const newList = exists ? list.filter((item: any) => item.id !== movie.id) : [...list, movie]; await AsyncStorage.setItem('history', JSON.stringify(newList)); setIsWatched(!exists); } catch (e) {} };
+  const checkIfWatched = async () => { 
+    try { 
+      const stored = await AsyncStorage.getItem('history'); 
+      const list = stored ? JSON.parse(stored) : []; 
+      setIsWatched(list.some((item: any) => item.id === movie.id)); 
+    } catch (e) {} 
+  };
 
-  const openTelegramSearch = () => { const title = movie.title || movie.name; const date = movie.release_date || movie.first_air_date; const year = date ? date.substring(0, 4) : ''; const message = encodeURIComponent(`${title} ${year}`); const telegramLink = `tg://msg?text=${message}`; Linking.openURL(telegramLink).catch(err => { const webLink = `https://t.me/share/url?text=${message}`; Linking.openURL(webLink); }); };
-  const openTorrentSearch = () => { const query = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.slice(0, 4) || ''}`; navigation.navigate('Search', { screen: 'SearchMain', params: { prefillQuery: query } }); };
+  const toggleWatched = async () => { 
+    try { 
+      const stored = await AsyncStorage.getItem('history'); 
+      const list = stored ? JSON.parse(stored) : []; 
+      const exists = list.some((item: any) => item.id === movie.id); 
+      const newList = exists ? list.filter((item: any) => item.id !== movie.id) : [...list, movie]; 
+      await AsyncStorage.setItem('history', JSON.stringify(newList)); 
+      setIsWatched(!exists); 
+    } catch (e) {} 
+  };
+
+  const openTelegramSearch = () => { 
+    const title = movie.title || movie.name; 
+    const date = movie.release_date || movie.first_air_date; 
+    const year = date ? date.substring(0, 4) : ''; 
+    const message = encodeURIComponent(`${title} ${year}`); 
+    const telegramLink = `tg://msg?text=${message}`; 
+    Linking.openURL(telegramLink).catch(err => { 
+      const webLink = `https://t.me/share/url?text=${message}`; 
+      Linking.openURL(webLink); 
+    }); 
+  };
+
+  const openTorrentSearch = () => { 
+    const query = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.slice(0, 4) || ''}`; 
+    navigation.navigate('Search', { screen: 'SearchMain', params: { prefillQuery: query } }); 
+  };
   
   const copyTitleToClipboard = async () => {
     const textToCopy = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.substring(0, 4) || ''}`;
@@ -305,7 +377,11 @@ const DetailPage = () => {
   };
 
   const scrollHandler = useAnimatedScrollHandler((event) => { scrollY.value = event.contentOffset.y; });
-  const heroStyle = useAnimatedStyle(() => { const scale = interpolate(scrollY.value, [-100, 0], [1.2, 1], Extrapolate.CLAMP); const opacity = interpolate(scrollY.value, [0, HEADER_HEIGHT * 0.5], [1, 0], Extrapolate.CLAMP); return { transform: [{ scale }], opacity }; });
+  const heroStyle = useAnimatedStyle(() => { 
+    const scale = interpolate(scrollY.value, [-100, 0], [1.2, 1], Extrapolate.CLAMP); 
+    const opacity = interpolate(scrollY.value, [0, HEADER_HEIGHT * 0.5], [1, 0], Extrapolate.CLAMP); 
+    return { transform: [{ scale }], opacity }; 
+  });
 
   const displayTitle = movie.title || movie.name;
   const releaseYear = (movie.release_date || movie.first_air_date)?.split('-')[0] || '';
@@ -329,19 +405,18 @@ const DetailPage = () => {
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
       
       {/* HEADER: BACK (Left) & WATCHLIST (Right) */}
-      <View style={styles.fixedHeader}>
+      <View style={[styles.fixedHeader, { paddingHorizontal: isTablet ? 32 : 16 }]}>
          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtnWrapper}>
-            <BlurView intensity={30} tint="dark" style={styles.iconBlur}>
-                <Ionicons name="arrow-back" size={24} color="#FFF" />
+            <BlurView intensity={40} tint="dark" style={styles.iconBlur}>
+                <Ionicons name="arrow-back" size={isTablet ? 28 : 24} color="#FFF" />
             </BlurView>
          </TouchableOpacity>
 
-         {/* RESTORED WATCHLIST BUTTON */}
          <TouchableOpacity onPress={toggleWatchlist} style={styles.iconBtnWrapper}>
-            <BlurView intensity={30} tint="dark" style={styles.iconBlur}>
+            <BlurView intensity={40} tint="dark" style={styles.iconBlur}>
                 <Ionicons 
                   name={isInWatchlist ? "heart" : "heart-outline"} 
-                  size={24} 
+                  size={isTablet ? 28 : 24} 
                   color={isInWatchlist ? "#E50914" : "#FFF"} 
                 />
             </BlurView>
@@ -358,12 +433,12 @@ const DetailPage = () => {
         <View style={{ height: HEADER_HEIGHT, width: '100%' }}>
             <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={0.95} onPress={() => setGalleryVisible(true)}>
                 <Animated.Image source={{ uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }} style={[StyleSheet.absoluteFill, heroStyle]} resizeMode="cover" />
-                <LinearGradient colors={['transparent', 'rgba(20,20,20,0.6)', '#141414']} style={StyleSheet.absoluteFill} locations={[0, 0.6, 1]} />
+                <LinearGradient colors={['transparent', 'rgba(20,20,20,0.4)', '#141414']} style={StyleSheet.absoluteFill} locations={[0, 0.5, 1]} />
             </TouchableOpacity>
 
-            <View style={[styles.bottomPlayOverlay, { width: width * 0.6, minWidth: 200, maxWidth: 350 }]} pointerEvents="box-none">
+            <View style={[styles.bottomPlayOverlay, { width: isTablet ? 400 : width * 0.7 }]} pointerEvents="box-none">
                <TouchableOpacity 
-                    style={[styles.watchNowBtn, sourceStatus === 'unavailable' && styles.watchNowBtnDisabled]} 
+                    style={[styles.watchNowBtn, sourceStatus === 'unavailable' && styles.watchNowBtnDisabled, isTablet && { height: 65 }]} 
                     onPress={() => handlePlay()} 
                     activeOpacity={0.8}
                     disabled={sourceStatus === 'unavailable' || sourceStatus === 'checking'}
@@ -371,21 +446,21 @@ const DetailPage = () => {
                     {sourceStatus === 'checking' ? (
                        <ActivityIndicator color="#000" size="small" />
                     ) : (
-                       <Ionicons name={lastWatched ? "play-skip-forward" : "play"} size={24} color="#000" />
+                       <Ionicons name={lastWatched ? "play-skip-forward" : "play"} size={isTablet ? 30 : 24} color="#000" />
                     )}
-                    <Text style={styles.watchNowText}>{getButtonText()}</Text>
+                    <Text style={[styles.watchNowText, isTablet && { fontSize: 18 }]}>{getButtonText()}</Text>
                   </TouchableOpacity>
                   {lastWatched && <Text style={styles.resumeText}>Resume Playing</Text>}
             </View>
         </View>
 
-        <View style={styles.contentContainer}>
+        <View style={[styles.contentContainer, dynamicStyles.contentAlign]}>
             
             {/* TITLE & COPY ROW */}
             <View style={styles.titleRow}>
-                <Text style={styles.movieTitle} numberOfLines={3}>{displayTitle}</Text>
+                <Text style={[styles.movieTitle, dynamicStyles.titleSize]} numberOfLines={3}>{displayTitle}</Text>
                 <TouchableOpacity style={styles.copyBtn} onPress={copyTitleToClipboard}>
-                    <Feather name="copy" size={20} color="#A3A3A3" />
+                    <Feather name="copy" size={isTablet ? 24 : 20} color="#A3A3A3" />
                 </TouchableOpacity>
             </View>
 
@@ -407,20 +482,8 @@ const DetailPage = () => {
                 {(movie.media_type === 'tv' && movie.number_of_seasons) ? <GoogleMetaChip text={`${movie.number_of_seasons} Seasons`} /> : null}
             </View>
 
-            {/* OVERVIEW */}
-            <View style={styles.section}>
-                <Text style={styles.overviewText}>
-                    {showFullOverview || (movie.overview?.length || 0) <= 160 ? movie.overview : `${movie.overview?.slice(0, 160)}...`}
-                </Text>
-                {(movie.overview?.length || 0) > 160 && (
-                    <TouchableOpacity onPress={() => setShowFullOverview(!showFullOverview)}>
-                        <Text style={styles.readMore}>{showFullOverview ? 'Less' : 'More'}</Text>
-                    </TouchableOpacity>
-                )}
-            </View>
-
             {/* RESPONSIVE GOOGLE SEARCH ACTION ROW */}
-            <View style={styles.actionRow}>
+            <View style={[styles.actionRow, isTablet && { maxWidth: 600, alignSelf: 'flex-start' }]}>
                 <TouchableOpacity 
                     style={[styles.googleActionBtn, isWatched && styles.googleActionBtnActive]} 
                     onPress={toggleWatched}
@@ -440,6 +503,18 @@ const DetailPage = () => {
                     <Feather name="download" size={18} color="#A3A3A3" />
                     <Text style={styles.googleActionText}>Torrent</Text>
                 </TouchableOpacity>
+            </View>
+
+            {/* OVERVIEW */}
+            <View style={styles.section}>
+                <Text style={[styles.overviewText, isTablet && { fontSize: 17, lineHeight: 28 }]}>
+                    {showFullOverview || (movie.overview?.length || 0) <= 250 ? movie.overview : `${movie.overview?.slice(0, 250)}...`}
+                </Text>
+                {(movie.overview?.length || 0) > 250 && (
+                    <TouchableOpacity onPress={() => setShowFullOverview(!showFullOverview)}>
+                        <Text style={styles.readMore}>{showFullOverview ? 'Less' : 'More'}</Text>
+                    </TouchableOpacity>
+                )}
             </View>
 
             {/* CAST */}
@@ -478,14 +553,14 @@ const DetailPage = () => {
                     </ScrollView>
                     
                     {loadingEpisodes ? <ActivityIndicator color="#E50914" /> : (
-                        <View style={{gap: 10}}>
+                        <View style={isTablet ? styles.episodeGridTablet : styles.episodeListMobile}>
                             {episodes.map(ep => {
                                 const isActive = lastWatched && lastWatched.lastSeason === ep.season_number && lastWatched.lastEpisode === ep.episode_number;
 
                                 return (
                                 <TouchableOpacity 
                                   key={ep.id} 
-                                  style={[styles.episodeRow, isActive && styles.episodeRowActive]}
+                                  style={[styles.episodeRow, isActive && styles.episodeRowActive, isTablet && { width: '48%' }]}
                                   onPress={() => handlePlay(ep)}
                                 >
                                     <View>
@@ -507,34 +582,44 @@ const DetailPage = () => {
             )}
 
             {/* AI RECOMMENDATIONS */}
-            {(loadingAi || aiRecommendations.length > 0) && (
-              <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: '#FFD700' }]}>Vibe Match AI</Text>
-                  {loadingAi ? (
-                    <ActivityIndicator size="small" color="#FFD700" style={{marginTop: 20}} />
-                  ) : (
-                    <FlatList
-                        horizontal
-                        data={aiRecommendations}
-                        showsHorizontalScrollIndicator={false}
-                        renderItem={({ item, index }) => (
-                            <Animated.View entering={FadeInDown.delay(index * 100)}>
-                              <TouchableOpacity style={[styles.similarCard, { width: similarCardWidth }]} onPress={() => navigation.push('Detail', { movie: item })}>
-                                  <View>
-                                      <Image source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }} style={[styles.similarImage, { width: similarCardWidth, height: similarCardWidth * 1.5 }]} />
-                                      <View style={styles.ratingBadge}>
-                                          <Ionicons name="star" size={10} color="#FFD700" />
-                                          <Text style={styles.ratingText}>{item.vote_average?.toFixed(1) || '0.0'}</Text>
-                                      </View>
-                                  </View>
-                                  <Text style={styles.similarTitle} numberOfLines={2}>{item.title || item.name}</Text>
-                              </TouchableOpacity>
-                            </Animated.View>
-                        )}
-                    />
-                  )}
-              </View>
-            )}
+            <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: '#FFD700' }]}>Vibe Match AI</Text>
+                
+                {/* MANUAL FETCH BUTTON */}
+                {!autoAiEnabled && aiRecommendations.length === 0 && !loadingAi && (
+                    <TouchableOpacity 
+                        style={{ backgroundColor: 'rgba(255, 215, 0, 0.1)', paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#FFD700', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+                        onPress={fetchAiRecommendations}
+                    >
+                        <Ionicons name="sparkles" size={18} color="#FFD700" />
+                        <Text style={{ color: '#FFD700', fontWeight: 'bold', fontSize: 15 }}>Generate Vibe Match</Text>
+                    </TouchableOpacity>
+                )}
+
+                {loadingAi ? (
+                  <ActivityIndicator size="small" color="#FFD700" style={{marginTop: 20}} />
+                ) : aiRecommendations.length > 0 ? (
+                  <FlatList
+                      horizontal
+                      data={aiRecommendations}
+                      showsHorizontalScrollIndicator={false}
+                      renderItem={({ item, index }) => (
+                          <Animated.View entering={FadeInDown.delay(index * 100)}>
+                            <TouchableOpacity style={[styles.similarCard, { width: similarCardWidth }]} onPress={() => navigation.push('Detail', { movie: item })}>
+                                <View>
+                                    <Image source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }} style={[styles.similarImage, { width: similarCardWidth, height: similarCardWidth * 1.5 }]} />
+                                    <View style={styles.ratingBadge}>
+                                        <Ionicons name="star" size={10} color="#FFD700" />
+                                        <Text style={styles.ratingText}>{item.vote_average?.toFixed(1) || '0.0'}</Text>
+                                    </View>
+                                </View>
+                                <Text style={styles.similarTitle} numberOfLines={2}>{item.title || item.name}</Text>
+                            </TouchableOpacity>
+                          </Animated.View>
+                      )}
+                  />
+                ) : null}
+            </View>
 
             {/* SIMILAR MOVIES */}
             {similarMovies.length > 0 && (
@@ -565,73 +650,64 @@ const DetailPage = () => {
   );
 };
 
-const COLORS = {
-  background: '#141414',
-  white: '#FFFFFF',
-  muted: '#A3A3A3',
-};
-
-const FONTS = { regular: 'GoogleSansFlex-Regular', medium: 'GoogleSansFlex-Medium', bold: 'GoogleSansFlex-Bold' };
-
 const styles = StyleSheet.create({
   baseContainer: { flex: 1, backgroundColor: COLORS.background },
   
-  // Header (Back & Love)
-  fixedHeader: { position: 'absolute', top: TOP_BAR_PADDING, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between', zIndex: 100 },
+  // Header
+  fixedHeader: { position: 'absolute', top: TOP_BAR_PADDING, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', zIndex: 100 },
   iconBtnWrapper: { borderRadius: 24, overflow: 'hidden' },
   iconBlur: { padding: 10, borderRadius: 24, backgroundColor: 'rgba(0,0,0,0.3)' },
   
-  // Bottom Center Play Button
-  bottomPlayOverlay: { 
-      position: 'absolute', 
-      bottom: 20, 
-      alignSelf: 'center',
-  },
+  // Play Button
+  bottomPlayOverlay: { position: 'absolute', bottom: 40, alignSelf: 'center', alignItems: 'center' },
   watchNowBtn: {
     width: '100%',
     backgroundColor: COLORS.white,
     height: 55,
-    overflow: 'hidden',
-    borderRadius: 8,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 12,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
   },
   watchNowBtnDisabled: { backgroundColor: '#555', opacity: 0.7 },
   watchNowText: { color: '#000', fontSize: 16, fontWeight: 'bold' }, 
   resumeText: { color: COLORS.white, fontFamily: FONTS.bold, marginTop: 12, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4, alignSelf: 'center' },
 
   // Content Layout
-  contentContainer: { paddingHorizontal: 16, marginTop: -10 },
+  contentContainer: { marginTop: -20, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: COLORS.background, paddingTop: 24 },
   
-  // Title & Copy Row
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 },
+  // Title & Row
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   movieTitle: { flex: 1, fontFamily: FONTS.bold, fontSize: 32, color: COLORS.white, lineHeight: 38, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
   copyBtn: { padding: 8, marginTop: 4 },
   
   // Google Meta Chips
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   googleMetaChip: { flexDirection: 'row', alignItems: 'center', paddingRight: 10, backgroundColor: 'rgba(255, 255, 255, 0.12)', borderRadius: 6, paddingVertical: 4, paddingHorizontal: 10 },
   googleMetaText: { fontFamily: FONTS.medium, fontSize: 13, color: COLORS.muted },
 
-  // Responsive Action Row
-  actionRow: { gap: 10, flexDirection: 'row', marginBottom: 20, width: '100%', justifyContent: 'space-between' },
-  googleActionBtn: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#2A2A2A', paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: '#444' },
+  // Action Buttons
+  actionRow: { gap: 10, flexDirection: 'row', marginBottom: 30, width: '100%', justifyContent: 'space-between' },
+  googleActionBtn: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#2A2A2A', paddingVertical: 12, borderRadius: 100, borderWidth: 1, borderColor: '#444' },
   googleActionBtnActive: { borderColor: '#4CAF50', backgroundColor: 'rgba(76, 175, 80, 0.1)' },
   googleActionText: { color: COLORS.white, fontFamily: FONTS.medium, fontSize: 13, marginLeft: 6 },
 
   // Content Text
-  section: { marginBottom: 28 },
-  sectionTitle: { fontSize: 18, color: COLORS.white, fontFamily: FONTS.bold, marginBottom: 12 },
+  section: { marginBottom: 36 },
+  sectionTitle: { fontSize: 20, color: COLORS.white, fontFamily: FONTS.bold, marginBottom: 16 },
   overviewText: { color: COLORS.white, fontSize: 15, lineHeight: 24, fontFamily: FONTS.regular },
   readMore: { color: '#E50914', fontFamily: FONTS.bold, marginTop: 4, fontSize: 15 },
-  
   genreText: { color: COLORS.muted, fontSize: 13, fontFamily: FONTS.medium },
 
   // Dynamic Cards & Cast
   castCard: { marginRight: 16 },
-  castImage: { borderRadius: 20, marginBottom: 8, backgroundColor: '#2A2A2A' },
+  castImage: { borderRadius: 16, marginBottom: 8, backgroundColor: '#2A2A2A' },
   castName: { color: COLORS.white, fontSize: 12, textAlign: 'center', fontFamily: FONTS.medium },
   
   similarCard: { marginRight: 16 },
@@ -646,7 +722,10 @@ const styles = StyleSheet.create({
   seasonText: { color: COLORS.muted, fontSize: 13, fontFamily: FONTS.medium },
   seasonTextActive: { color: COLORS.white, fontFamily: FONTS.bold },
   
-  episodeRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 16 },
+  episodeGridTablet: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 20 },
+  episodeListMobile: { flexDirection: 'column', gap: 12 },
+  
+  episodeRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 8 },
   episodeRowActive: { opacity: 1 },
   episodeThumb: { borderRadius: 8, backgroundColor: '#2A2A2A' },
   playOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 8 },

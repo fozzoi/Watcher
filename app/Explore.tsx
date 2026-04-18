@@ -15,19 +15,16 @@ import {
   Keyboard,
   TextInput,
   Alert,
-  Text,
-  Image,
 } from 'react-native';
 import { ActivityIndicator } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
-import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
+import Animated from 'react-native-reanimated';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   fetchAllDiscoveryContent,
   searchTMDB,
   searchPeople,
-  getImageUrl,
 } from '../src/tmdb';
 import { getAllProgress, removeProgress, WatchProgress } from '../src/utils/progress'; 
 
@@ -38,6 +35,7 @@ import HeroSection from './components/HeroSection';
 import GenreFilter from './components/GenreFilter';
 import MediaCarousel from './components/MediaCarousel';
 import SearchResultsList from './components/SearchResultsList';
+import WatchHistoryCarousel from './components/WatchHistoryCarousel'; // ✅ NEW IMPORT
 import { HORIZONTAL_MARGIN } from './components/ExploreConstants';
 
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
@@ -53,6 +51,11 @@ const SkeletonCarousel = () => (
   </View>
 );
 
+const filterWatched = (list: any[], wIds: Set<number>) => {
+  if (!list) return [];
+  return list.filter((item: any) => !wIds.has(item.id));
+};
+
 const ExplorePage = () => {
   const [selectedGenre, setSelectedGenre] = useState(0);
   const [contentLoading, setContentLoading] = useState(true);
@@ -66,6 +69,8 @@ const ExplorePage = () => {
 
   const [tmdbResults, setTmdbResults] = useState<any[]>([]);
   const [peopleResults, setPeopleResults] = useState<any[]>([]);
+  
+  const [rawContent, setRawContent] = useState<any>(null);
   
   const [allContent, setAllContent] = useState<any>({
     trendingMovies: [], trendingTV: [], topRated: [], regional: [],
@@ -104,7 +109,6 @@ const ExplorePage = () => {
       const a = aStr ? JSON.parse(aStr) : [];
       setSavedIds(new Set([...m.map((i: any) => i.id), ...a.map((i: any) => i.id)]));
 
-      // ✅ FIXED: Changed 'watched' to 'history' to match our DetailPage logic
       const watchedStr = await AsyncStorage.getItem('history');
       const w = watchedStr ? JSON.parse(watchedStr) : [];
       setWatchedIds(new Set(w.map((i: any) => i.id)));
@@ -134,49 +138,54 @@ const ExplorePage = () => {
     setWatchHistory(prev => prev.filter(item => item.tmdbId !== tmdbId));
   };
 
-  const filterWatched = (list: any[], wIds: Set<number>) => {
-      if (!list) return [];
-      return list.filter((item: any) => !wIds.has(item.id));
-  };
-
-  const fetchContent = useCallback(async (genreId: number = 0) => {
-    setContentLoading(true);
+  const fetchContent = useCallback(async (genreId: number = 0, forceRefresh: boolean = false) => {
     try {
-      const content = await fetchAllDiscoveryContent(genreId);
-      
-      const filteredContent = {
-         trendingMovies: filterWatched(content.trendingMovies, watchedIds),
-         trendingTV: filterWatched(content.trendingTV, watchedIds),
-         topRated: filterWatched(content.topRated, watchedIds),
-         regional: filterWatched(content.regional, watchedIds),
-         hindiMovies: filterWatched(content.hindiMovies, watchedIds),
-         malayalamMovies: filterWatched(content.malayalamMovies, watchedIds),
-         tamilMovies: filterWatched(content.tamilMovies, watchedIds),
-         hindiTV: filterWatched(content.hindiTV, watchedIds),
-         malayalamTV: filterWatched(content.malayalamTV, watchedIds),
-         koreanMovies: filterWatched(content.koreanMovies, watchedIds),
-         koreanTV: filterWatched(content.koreanTV, watchedIds),
-         japaneseMovies: filterWatched(content.japaneseMovies, watchedIds),
-         japaneseTV: filterWatched(content.japaneseTV, watchedIds),
-         animeMovies: filterWatched(content.animeMovies, watchedIds),
-         animeShows: filterWatched(content.animeShows, watchedIds),
-         animatedMovies: filterWatched(content.animatedMovies, watchedIds),
-         upcoming: filterWatched(content.upcoming, watchedIds),
-         hiddenGems: filterWatched(content.hiddenGems, watchedIds),
-         nostalgia: filterWatched(content.nostalgia, watchedIds),
-      };
+      const content = await fetchAllDiscoveryContent(genreId, forceRefresh);
+      if (content) {
+          setRawContent(content);
+      }
+    } catch (err) { console.error(err); }
+  }, []);
 
-      setAllContent(filteredContent);
-    } catch (err) { console.error(err); } finally { setContentLoading(false); }
-  }, [watchedIds]); 
-
-  useEffect(() => { fetchContent(selectedGenre); }, [selectedGenre, fetchContent]);
+  useEffect(() => { 
+    setContentLoading(true); 
+    fetchContent(selectedGenre, false); 
+  }, [selectedGenre, fetchContent]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchContent(selectedGenre);
+    await fetchContent(selectedGenre, true);
     setRefreshing(false);
   }, [selectedGenre, fetchContent]);
+
+  useEffect(() => {
+    if (!rawContent) return;
+
+    const filteredContent = {
+       trendingMovies: filterWatched(rawContent.trendingMovies, watchedIds),
+       trendingTV: filterWatched(rawContent.trendingTV, watchedIds),
+       topRated: filterWatched(rawContent.topRated, watchedIds),
+       regional: filterWatched(rawContent.regional, watchedIds),
+       hindiMovies: filterWatched(rawContent.hindiMovies, watchedIds),
+       malayalamMovies: filterWatched(rawContent.malayalamMovies, watchedIds),
+       tamilMovies: filterWatched(rawContent.tamilMovies, watchedIds),
+       hindiTV: filterWatched(rawContent.hindiTV, watchedIds),
+       malayalamTV: filterWatched(rawContent.malayalamTV, watchedIds),
+       koreanMovies: filterWatched(rawContent.koreanMovies, watchedIds),
+       koreanTV: filterWatched(rawContent.koreanTV, watchedIds),
+       japaneseMovies: filterWatched(rawContent.japaneseMovies, watchedIds),
+       japaneseTV: filterWatched(rawContent.japaneseTV, watchedIds),
+       animeMovies: filterWatched(rawContent.animeMovies, watchedIds),
+       animeShows: filterWatched(rawContent.animeShows, watchedIds),
+       animatedMovies: filterWatched(rawContent.animatedMovies, watchedIds),
+       upcoming: filterWatched(rawContent.upcoming, watchedIds),
+       hiddenGems: filterWatched(rawContent.hiddenGems, watchedIds),
+       nostalgia: filterWatched(rawContent.nostalgia, watchedIds),
+    };
+
+    setAllContent(filteredContent);
+    setContentLoading(false);
+  }, [rawContent, watchedIds]);
 
   const handleSearch = useCallback(async (searchText: string) => {
     const trimmed = searchText.trim();
@@ -196,57 +205,6 @@ const ExplorePage = () => {
   }, [query]);
 
   const inSearchMode = query.trim() !== '';
-
-  const renderHistoryCard = (item: WatchProgress, index: number) => {
-      const date = new Date(item.updatedAt);
-      const isToday = new Date().toDateString() === date.toDateString();
-      const dateString = isToday ? 'Today' : `${date.getDate()}/${date.getMonth() + 1}`;
-
-      return (
-          <Animated.View 
-              key={item.tmdbId} 
-              entering={FadeInDown.delay(index * 50)} 
-              layout={Layout.springify()} 
-          >
-            <TouchableOpacity 
-                style={styles.historyCard}
-                onPress={() => navigation.navigate('Detail', { 
-                    movie: { id: item.tmdbId, media_type: item.mediaType } 
-                })}
-            >
-                <View>
-                    <Image source={{ uri: getImageUrl(item.poster, 'w342') }} style={styles.historyImage} />
-                    <View style={styles.historyOverlay}>
-                        <Ionicons name="play-circle" size={36} color="rgba(255,255,255,0.8)" />
-                    </View>
-                </View>
-                <View style={styles.historyTextContainer}>
-                    <Text style={styles.historyTitle} numberOfLines={1}>{item.title || "Unknown"}</Text>
-                    <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
-                        <Text style={styles.historySubtitle}>
-                            {item.mediaType === 'tv' ? `S${item.lastSeason} : E${item.lastEpisode}` : 'Movie'}
-                        </Text>
-                        <Text style={styles.historyDate}>{dateString}</Text>
-                    </View>
-                </View>
-
-                <TouchableOpacity 
-                  style={styles.removeHistoryBtn}
-                  onPress={(e) => {
-                      e.stopPropagation(); 
-                      handleRemoveHistoryItem(item.tmdbId);
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                    <View style={styles.removeHistoryBg}>
-                        <Ionicons name="close" size={14} color="#FFF" />
-                    </View>
-                </TouchableOpacity>
-
-            </TouchableOpacity>
-          </Animated.View>
-      );
-  };
 
   return (
     <View style={styles.container}>
@@ -324,6 +282,12 @@ const ExplorePage = () => {
                 <HeroSection items={allContent.trendingMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <GenreFilter selectedGenre={selectedGenre} onSelectGenre={setSelectedGenre} />
 
+                {/* ✅ REPLACED WITH NEW COMPONENT */}
+                <WatchHistoryCarousel 
+                  history={watchHistory} 
+                  onRemove={handleRemoveHistoryItem} 
+                  navigation={navigation} 
+                />
 
                 <MediaCarousel title="🗓️ Coming Soon" type="upcoming" data={allContent.upcoming} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="💎 Hidden Gems" type="hiddengems" data={allContent.hiddenGems} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
@@ -371,72 +335,6 @@ const styles = StyleSheet.create({
   iconButton: {
     width: 48, height: 48, borderRadius: 14, backgroundColor: '#222', 
     justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)'
-  },
-
-  historySection: {
-      marginBottom: 30,
-      marginTop: 10,
-  },
-  historySectionTitle: {
-      color: '#fff',
-      fontSize: 18,
-      fontFamily: 'GoogleSansFlex-Bold',
-  },
-  historyCard: {
-      width: 140,
-      marginRight: 12,
-      backgroundColor: '#222',
-      borderRadius: 10,
-      overflow: 'hidden',
-      borderWidth: 1,
-      borderColor: '#333',
-      position: 'relative', 
-  },
-  historyImage: {
-      width: '100%',
-      height: 85,
-      backgroundColor: '#333',
-  },
-  historyOverlay: {
-      ...StyleSheet.absoluteFillObject,
-      backgroundColor: 'rgba(0,0,0,0.3)',
-      justifyContent: 'center',
-      alignItems: 'center',
-  },
-  historyTextContainer: {
-      padding: 8,
-  },
-  historyTitle: {
-      color: '#fff',
-      fontSize: 13,
-      fontFamily: 'GoogleSansFlex-Medium',
-      marginBottom: 4,
-  },
-  historySubtitle: {
-      color: '#E50914',
-      fontSize: 10,
-      fontFamily: 'GoogleSansFlex-Bold',
-  },
-  historyDate: {
-      color: '#888',
-      fontSize: 10,
-  },
-  
-  removeHistoryBtn: {
-      position: 'absolute',
-      top: 6,
-      right: 6,
-      zIndex: 10,
-  },
-  removeHistoryBg: {
-      width: 22,
-      height: 22,
-      borderRadius: 11,
-      backgroundColor: 'rgba(0,0,0,0.6)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.2)'
   },
 
   skeletonContainer: {
