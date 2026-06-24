@@ -135,8 +135,7 @@ const HistoryPage = () => {
         <Animated.View style={[styles.historyItemContainer, animatedStyle]} {...panHandlers}>
           <TouchableOpacity
             style={styles.historyItem}
-            // React Navigation push
-            // onPress={() => navigation.navigate("Search", { prefillQuery: item.query })}
+            onPress={() => navigation.navigate("index", { prefillQuery: item.query })}
           >
             <Text style={styles.queryText} numberOfLines={1}>{item.query}</Text>
             <Text style={styles.dateText}>{formatDate(item.date)}</Text>

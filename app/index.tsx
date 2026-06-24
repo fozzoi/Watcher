@@ -93,6 +93,20 @@ export default function Index() {
     setLoading(true);
     setResults([]); 
     
+    // --- NEW: Save to History ---
+    try {
+      const jsonValue = await AsyncStorage.getItem("searchHistory");
+      let currentHistory = jsonValue ? JSON.parse(jsonValue) : [];
+      // Remove duplicate if it already exists to move it to the top
+      currentHistory = currentHistory.filter((item: any) => item.query.toLowerCase() !== query.trim().toLowerCase());
+      // Append new search (your history.tsx reverses this array later)
+      currentHistory.push({ query: query.trim(), date: new Date().toISOString() });
+      await AsyncStorage.setItem("searchHistory", JSON.stringify(currentHistory));
+    } catch (e) {
+      console.log("History save error:", e);
+    }
+    // ----------------------------
+
     try {
       const scrapedResults = await searchTorrents(query);
       const sortedResults = scrapedResults.sort((a, b) => (b.seeds || 0) - (a.seeds || 0));
