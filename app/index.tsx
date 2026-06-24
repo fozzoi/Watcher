@@ -10,11 +10,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 // Legacy import for Expo 50+ (fixes deprecation warning)
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing"; 
-import { useNavigation } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { RouteProp, useRoute } from "@react-navigation/native";
+import { RouteProp, useRoute, useNavigation } from "@react-navigation/native";
 import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
-import { torrentScraper } from '../src/Scraper';
+import { searchTorrents } from '../src/Scraper';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -95,7 +94,7 @@ export default function Index() {
     setResults([]); 
     
     try {
-      const scrapedResults = await torrentScraper.searchAll(query);
+      const scrapedResults = await searchTorrents(query);
       const sortedResults = scrapedResults.sort((a, b) => (b.seeds || 0) - (a.seeds || 0));
       setResults(sortedResults);
     } catch (error) {
@@ -232,7 +231,7 @@ export default function Index() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <LinearGradient colors={['#0F0F0F', '#000']} style={StyleSheet.absoluteFillObject} />
+      <LinearGradient colors={['#0F0F0F', '#000']} style={StyleSheet.absoluteFill} />
 
       <View style={[
           styles.contentWrapper,

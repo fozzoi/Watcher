@@ -1,12 +1,11 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GEMINI_API_KEY, TMDB_API_KEY } from './secrets';
 
 // ==========================================
 // 1. GLOBAL CONFIGURATION & SETUP
 // ==========================================
 
-const API_BASE_URL = "https://api.themoviedb.org/3";
+const API_BASE_URL = "https://watcher-api-rho.vercel.app/api/tmdb";
 const GEMINI_MODEL = "gemini-flash-latest"; 
 
 export let GLOBAL_CONFIG = {
@@ -30,7 +29,7 @@ export const setGlobalConfig = (key: keyof typeof GLOBAL_CONFIG, value: any) => 
 
 const tmdbApi = axios.create({
   baseURL: API_BASE_URL,
-  params: { api_key: TMDB_API_KEY },
+  params: { api_key: "" }, // Backend handles this
   timeout: 15000, 
 });
 
@@ -752,52 +751,16 @@ export const getMoviesByGenre = async (genreId: number, page: number = 1): Promi
 
 export const getGeminiRecommendations = async (userPrompt: string): Promise<TMDBResult[]> => {
   try {
-    if (!GLOBAL_CONFIG.aiEnabled) return [];
-
-    const activeKey = GLOBAL_CONFIG.customApiKey && GLOBAL_CONFIG.customApiKey.length > 10 
-        ? GLOBAL_CONFIG.customApiKey 
-        : GEMINI_API_KEY;
-
-    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${activeKey}`;
-
-    const systemInstruction = `
-      You are a movie recommendation engine. 
-      The user will describe a mood, plot, or vibe.
-      Return a JSON array of exactly 10 movie titles that match.
-      Do not include years. Do not include introductory text. Just the array.
-      
-      Example Input: "Scary movies in space"
-      Example Output: ["Alien", "Event Horizon", "Sunshine", "Pandorum", "Life", "Apollo 18", "Gravity", "Interstellar", "Moon", "The Martian"]
-    `;
-
-    const payload = {
-      contents: [{
-        parts: [{ text: `${systemInstruction}\n\nUser Input: "${userPrompt}"` }]
-      }]
-    };
-
-    console.log(`Sending AI request using ${activeKey === GEMINI_API_KEY ? "Default Key" : "Custom Key"}...`);
-
-    const response = await axios.post(GEMINI_URL, payload);
+    const response = await axios.post('https://watcher-api-rho.vercel.app/api/gemini', {
+      action: 'search',
+      userPrompt: userPrompt,
+      customApiKey: GLOBAL_CONFIG.customApiKey
+    });
     
-    if (!response.data.candidates || response.data.candidates.length === 0) {
-      console.warn("AI returned no candidates.");
-      return [];
-    }
+    if (!response.data.results || response.data.results.length === 0) return [];
 
-    const aiText = response.data.candidates[0].content.parts[0].text;
-    const cleanJson = aiText.replace(/```json|```/g, '').trim();
-    
-    let movieTitles: string[] = [];
-    try {
-        movieTitles = JSON.parse(cleanJson);
-    } catch (e) {
-        console.error("Failed to parse AI JSON");
-        return [];
-    }
-
-    const moviePromises = movieTitles.map(async (title) => {
-      const results = await searchTMDB(title);
+    const moviePromises = response.data.results.map(async (item: any) => {
+      const results = await searchTMDB(item.title);
       return results.find(m => m.poster_path) || null;
     });
 
@@ -805,19 +768,12 @@ export const getGeminiRecommendations = async (userPrompt: string): Promise<TMDB
     return movies.filter((m): m is TMDBResult => m !== null);
 
   } catch (error: any) {
-    if (error.response) {
-        console.error(`AI Error ${error.response.status}:`, JSON.stringify(error.response.data));
-    } else {
-        console.error("AI Connection Error:", error.message);
-    }
+    console.error("AI Proxy Error:", error.message);
     return [];
   }
 };
 
 export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie' | 'tv' = 'movie', tmdbId: number): Promise<TMDBResult[]> => {
-  
-  if (!GLOBAL_CONFIG.aiEnabled) return [];
-
   const cacheKey = `${mediaType}-${tmdbId}`;
   const cached = aiCache.get(cacheKey);
   
@@ -827,55 +783,30 @@ export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie'
       aiCache.delete(cacheKey);
   }
 
-  const activeKey = GLOBAL_CONFIG.customApiKey && GLOBAL_CONFIG.customApiKey.length > 20 
-      ? GLOBAL_CONFIG.customApiKey 
-      : GEMINI_API_KEY;
-
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${activeKey}`;
-
   try {
-    const prompt = `
-      Recommend 10 ${mediaType === 'movie' ? 'movies' : 'TV shows'} similar to "${title}" in terms of tone, plot, and vibe.
-      Return ONLY a JSON array of strings. Do not add markdown or explanations.
-      Example: ["Movie A", "Movie B"]
-    `;
-
-    const payload = {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json" }
-    };
-
-    const response = await axios.post(GEMINI_URL, payload);
+    const response = await axios.post('https://watcher-api-rho.vercel.app/api/gemini', {
+      action: 'recommend',
+      title: title,
+      mediaType: mediaType,
+      tmdbId: tmdbId,
+      customApiKey: GLOBAL_CONFIG.customApiKey
+    });
     
-    if (!response.data.candidates || response.data.candidates.length === 0) return [];
+    if (!response.data.results || response.data.results.length === 0) return [];
 
-    const aiText = response.data.candidates[0].content.parts[0].text;
-    const cleanJson = aiText.replace(/```json|```/g, '').trim(); 
-    const titles = JSON.parse(cleanJson);
-
-    const promises = titles.map(async (t: string) => {
-      try {
-        const searchUrl = `/search/${mediaType}`; 
-        const params = { query: t, include_adult: !GLOBAL_CONFIG.nsfwFilterEnabled };
-        const res = await tmdbApi.get(searchUrl, { params });
-        return res.data.results?.[0] || null; 
-      } catch (err) { return null; }
+    const moviePromises = response.data.results.map(async (item: any) => {
+      const results = await searchTMDB(item.title);
+      return results.find(m => m.poster_path) || null;
     });
 
-    const results = await Promise.all(promises);
+    const movies = await Promise.all(moviePromises);
+    const validMovies = movies.filter((m): m is TMDBResult => m !== null);
     
-    const validMovies = results
-        .filter((m): m is TMDBResult => m !== null)
-        .map(m => ({ ...formatBasicItemData(m), media_type: mediaType }));
-
-    const uniqueMovies = Array.from(new Map(validMovies.map(m => [m.id, m])).values());
-    
-    aiCache.set(cacheKey, { data: uniqueMovies, timestamp: Date.now() });
-
-    return uniqueMovies;
+    aiCache.set(cacheKey, { data: validMovies, timestamp: Date.now() });
+    return validMovies;
 
   } catch (error: any) {
-    console.error("AI Error:", error.message);
+    console.error("AI Proxy Error:", error.message);
     return [];
   }
 };

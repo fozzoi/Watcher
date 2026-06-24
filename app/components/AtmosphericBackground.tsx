@@ -38,7 +38,7 @@ const AtmosphericBackground = memo(() => {
 export default AtmosphericBackground;
 
 const styles = StyleSheet.create({
-  atmosContainer: { ...StyleSheet.absoluteFillObject, zIndex: -1, backgroundColor: '#141414', overflow: 'hidden' },
+  atmosContainer: { ...StyleSheet.absoluteFill, zIndex: -1, backgroundColor: '#141414', overflow: 'hidden' },
   atmosGradientWrapper: { position: 'absolute', width: width * 1.5, height: width * 1.5, left: -width / 4, top: -width / 4 },
   atmosGradient: { width: '100%', height: '100%', opacity: 0.25 },
 });

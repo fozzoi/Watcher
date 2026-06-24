@@ -70,7 +70,7 @@ const HistoryCard: React.FC<CardProps> = ({ item, onRemove, navigation }) => {
             BlurView sits on top and references it via blurTarget={posterRef}.
             overflow: 'hidden' on posterContainer clips everything to the card radius.
           */}
-          <BlurTargetView ref={posterRef} style={StyleSheet.absoluteFillObject}>
+          <BlurTargetView ref={posterRef} style={StyleSheet.absoluteFill}>
             <Image
               source={{ uri: getImageUrl(item.poster, 'w342') }}
               style={styles.poster}
@@ -80,7 +80,7 @@ const HistoryCard: React.FC<CardProps> = ({ item, onRemove, navigation }) => {
           {/* Gradient scrim — bottom darkens for legibility */}
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.7)']}
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
             start={{ x: 0, y: 0.35 }}
             end={{ x: 0, y: 1 }}
             pointerEvents="none"

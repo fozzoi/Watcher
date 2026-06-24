@@ -11,8 +11,7 @@ import {
   Modal,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useFocusEffect } from "@react-navigation/native";
-import { useRouter } from "expo-router"; // Use expo-router instead of @react-navigation
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 
 interface HistoryItem {
   query: string;
@@ -37,7 +36,7 @@ const formatDate = (dateStr: string) => {
 
 const HistoryPage = () => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const router = useRouter(); // Expo Router hook
+  const navigation = useNavigation<any>();
   const [currentlyOpenSwipeable, setCurrentlyOpenSwipeable] = useState<number | null>(null);
   const animatedValues = useRef<{[key: string]: Animated.Value}>({}).current;
   const [isAlertVisible, setIsAlertVisible] = useState(false);
@@ -136,8 +135,8 @@ const HistoryPage = () => {
         <Animated.View style={[styles.historyItemContainer, animatedStyle]} {...panHandlers}>
           <TouchableOpacity
             style={styles.historyItem}
-            // Expo Router navigation
-            // onPress={() => router.push({ pathname: "/search", params: { prefillQuery: item.query } })}
+            // React Navigation push
+            // onPress={() => navigation.navigate("Search", { prefillQuery: item.query })}
           >
             <Text style={styles.queryText} numberOfLines={1}>{item.query}</Text>
             <Text style={styles.dateText}>{formatDate(item.date)}</Text>

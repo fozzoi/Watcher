@@ -129,7 +129,7 @@ const AiSearch = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <LinearGradient colors={['#0F0F0F', '#000']} style={StyleSheet.absoluteFillObject} />
+      <LinearGradient colors={['#0F0F0F', '#000']} style={StyleSheet.absoluteFill} />
 
       {/* --- CONTENT AREA --- */}
       <View style={[

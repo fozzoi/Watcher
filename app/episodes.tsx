@@ -1,11 +1,12 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { Text, Card, Button, Provider as PaperProvider, useTheme } from 'react-native-paper';
-import { useLocalSearchParams } from 'expo-router';
+import { useRoute } from '@react-navigation/native';
 import type { SeriesInfo } from './types';
 
 export default function Episodes() {
-  const { series: seriesParam } = useLocalSearchParams();
+  const route = useRoute<any>();
+  const seriesParam = route.params?.series;
   const series: SeriesInfo = JSON.parse(seriesParam as string);
   const theme = useTheme();
 

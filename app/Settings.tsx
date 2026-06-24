@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, Switch, TextInput, Linking, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import * as FileSystem from 'expo-file-system'; 
+import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 
 import { Feather, MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';

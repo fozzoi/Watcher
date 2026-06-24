@@ -15,8 +15,8 @@ import {
   Keyboard,
   TextInput,
   Alert,
+  ActivityIndicator
 } from 'react-native';
-import { ActivityIndicator } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import Animated from 'react-native-reanimated';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
@@ -239,9 +239,9 @@ const ExplorePage = () => {
             </View>
           </View>
 
-          <TouchableOpacity onPress={() => navigation.navigate('AiSearch')} style={styles.iconButtonAi}>
+          {/* <TouchableOpacity onPress={() => navigation.navigate('AiSearch')} style={styles.iconButtonAi}>
             <Ionicons name="sparkles" size={20} color="#A962FF" />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
 
           <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={styles.iconButton}>
             <Ionicons name="settings-outline" size={24} color="#FFFFFF" />

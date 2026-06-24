@@ -11,7 +11,6 @@ import {
   Share,
   Modal,
   FlatList,
-  Platform,
   ActivityIndicator,
 } from 'react-native';
 // Add AsyncStorage import

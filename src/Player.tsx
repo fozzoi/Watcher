@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { View, StyleSheet, ActivityIndicator, Text, Platform, AppState, BackHandler } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useRoute, useNavigation } from "@react-navigation/native";
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
 import { saveProgress } from '../src/utils/progress';
@@ -171,6 +171,6 @@ export default function Player() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'black' },
   webview: { flex: 1, backgroundColor: 'transparent' }, 
-  loader: { ...StyleSheet.absoluteFillObject, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
+  loader: { ...StyleSheet.absoluteFill, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
   loadingText: { color: 'white', marginTop: 15, fontWeight: '600' }
 });

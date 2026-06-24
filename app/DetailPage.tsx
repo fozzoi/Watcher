@@ -8,7 +8,6 @@ import {
   Image,
   ActivityIndicator,
   StatusBar,
-  InteractionManager,
   Platform,
   ToastAndroid,
   Alert,
@@ -144,8 +143,8 @@ const DetailPage = () => {
 
   useEffect(() => {
     if (autoAiEnabled && (movie.title || movie.name)) {
-      const task = InteractionManager.runAfterInteractions(() => fetchAiRecommendations());
-      return () => task.cancel(); 
+      const task = requestIdleCallback(() => fetchAiRecommendations());
+      return () => cancelIdleCallback(task); 
     }
   }, [movie.id, autoAiEnabled, movie.title, movie.name]);
 
@@ -185,8 +184,8 @@ const DetailPage = () => {
   };
 
   useEffect(() => {
-    const task = InteractionManager.runAfterInteractions(() => loadDeepDetails());
-    return () => task.cancel(); 
+    const task = requestIdleCallback(() => loadDeepDetails());
+    return () => cancelIdleCallback(task); 
   }, [initialMovie.id]);
 
   useEffect(() => {
@@ -220,10 +219,10 @@ const DetailPage = () => {
             });
         }
       };
-      const task = InteractionManager.runAfterInteractions(() => checkProgress());
+      const task = requestIdleCallback(() => checkProgress());
       return () => {
          isActive = false;
-         task.cancel();
+         cancelIdleCallback(task);
       };
     }, [movie.id]) 
   );

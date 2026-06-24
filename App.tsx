@@ -1,12 +1,17 @@
+
 import React, { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { Platform, LogBox } from 'react-native';
 import { registerRootComponent } from "expo";
+
+LogBox.ignoreLogs([
+  'Method readAsStringAsync imported from "expo-file-system" is deprecated'
+]);
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Brightness from 'expo-brightness';
-import { ThemeProvider, DarkTheme } from '@react-navigation/native'; // ✅ Imported ThemeProvider
-import AppNavigator from "./AppNavigator";
+import { ThemeProvider, DarkTheme, NavigationContainer } from '@react-navigation/native'; // ✅ Imported ThemeProvider
+import AppNavigator from "./app/AppNavigator";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -21,9 +26,9 @@ const MyTheme = {
 
 function RootLayout() {
   const [fontsLoaded] = useFonts({
-    'GoogleSansFlex-Regular': require('../assets/fonts/GoogleSansFlex-Regular.ttf'),
-    'GoogleSansFlex-Medium': require('../assets/fonts/GoogleSansFlex-Medium.ttf'),
-    'GoogleSansFlex-Bold': require('../assets/fonts/GoogleSansFlex-Bold.ttf'),
+    'GoogleSansFlex-Regular': require('./assets/fonts/GoogleSansFlex-Regular.ttf'),
+    'GoogleSansFlex-Medium': require('./assets/fonts/GoogleSansFlex-Medium.ttf'),
+    'GoogleSansFlex-Bold': require('./assets/fonts/GoogleSansFlex-Bold.ttf'),
   });
 
   useEffect(() => {
@@ -58,7 +63,9 @@ function RootLayout() {
     // ✅ Wrapped in ThemeProvider to pass the theme to Expo Router
     <ThemeProvider value={MyTheme}>
       <SafeAreaProvider style={{ flex: 1, backgroundColor: '#141414' }}>
-        <AppNavigator />
+        <NavigationContainer independent={true} theme={MyTheme}>
+          <AppNavigator />
+        </NavigationContainer>
       </SafeAreaProvider>
     </ThemeProvider>
   );

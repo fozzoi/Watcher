@@ -27,12 +27,11 @@
     },
     "web": {
       "bundler": "metro",
-      "output": "static",
+      "output": "single",
       "favicon": "assets/adaptive-icon.png",
       "backgroundColor": "#000000"
     },
     "plugins": [
-      "expo-router",
       "expo-brightness",
       [
         "expo-splash-screen",
@@ -54,15 +53,10 @@
         }
       ],
       "expo-font",
-      "expo-sharing"
+      "expo-sharing",
+      "expo-status-bar"
     ],
-    "experiments": {
-      "typedRoutes": true
-    },
     "extra": {
-      "router": {
-        "origin": false
-      },
       "eas": {
         "projectId": "a208162b-f69c-4bc1-969b-d670ee577a01"
       }

@@ -652,7 +652,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#141414',
   },
   animatedBgContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: 'hidden',
   },
   blurredBackground: {
@@ -660,7 +660,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   backgroundOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(20, 20, 20, 0.75)', 
   },
   safeArea: {
