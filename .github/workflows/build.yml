@@ -1,0 +1,41 @@
+name: Build Tauri App
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-tauri:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build Next.js frontend
+        run: npm run build
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # This action will automatically build your Tauri app and create a Draft Release 
+          # with the .exe Windows installer attached to it!
+          tagName: watcher-v__VERSION__
+          releaseName: 'Watcher App v__VERSION__'
+          releaseBody: 'Download the .msi or .exe file below to install Watcher on Windows.'
+          releaseDraft: true
+          prerelease: false
