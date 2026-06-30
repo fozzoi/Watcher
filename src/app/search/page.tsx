@@ -307,7 +307,7 @@ function TorrentSearchContent() {
         .history-pill {
           background: var(--badge-bg);
           border: 1px solid var(--card-border);
-          border-radius: 20px;
+          border-radius: 12px;
           padding: 8px 16px;
           color: var(--foreground-muted);
           font-size: 13px;

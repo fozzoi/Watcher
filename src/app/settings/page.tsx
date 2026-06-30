@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { AsyncStorage } from '@/utils/storage';
 import { setGlobalConfig } from '@/utils/tmdb';
+import { useTheme } from 'next-themes';
 
 export default function SettingsPage() {
   const [isHiRes, setIsHiRes] = useState(false);
@@ -25,11 +26,14 @@ export default function SettingsPage() {
   const [isAutoAi, setIsAutoAi] = useState(true);
   const [customApiKey, setCustomApiKey] = useState('');
   const [apiKeySaved, setApiKeySaved] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadSettings();
+    setMounted(true);
   }, []);
 
   const loadSettings = async () => {
@@ -280,6 +284,22 @@ export default function SettingsPage() {
                 <span className="slider round"></span>
               </label>
             </div>
+
+            <div className="toggle-item">
+              <div className="toggle-label">
+                <span className="toggle-title">Appearance</span>
+                <span className="toggle-desc">Switch between light, dark, or system auto theme.</span>
+              </div>
+              <div className="theme-selector">
+                {mounted && (
+                  <>
+                    <button className={theme === 'light' ? 'active' : ''} onClick={() => setTheme('light')}>Light</button>
+                    <button className={theme === 'dark' ? 'active' : ''} onClick={() => setTheme('dark')}>Dark</button>
+                    <button className={theme === 'system' ? 'active' : ''} onClick={() => setTheme('system')}>Auto</button>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 
@@ -418,6 +438,71 @@ export default function SettingsPage() {
           display: flex;
           gap: 12px;
           width: 100%;
+        }
+
+        .action-btn {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 16px 20px;
+          background: var(--badge-bg);
+          border: 1px solid var(--badge-border);
+          border-radius: 14px;
+          color: var(--foreground);
+          font-size: 15px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: var(--transition-smooth);
+          text-align: left;
+        }
+
+        .action-btn:hover {
+          background: var(--sidebar-hover);
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .danger-zone .action-btn {
+          background: rgba(239, 68, 68, 0.05);
+          border-color: rgba(239, 68, 68, 0.2);
+          color: #ef4444;
+        }
+
+        .danger-zone .action-btn:hover {
+          background: rgba(239, 68, 68, 0.1);
+          border-color: rgba(239, 68, 68, 0.4);
+        }
+        
+        .theme-selector {
+          display: flex;
+          gap: 8px;
+          background: var(--input-bg);
+          padding: 4px;
+          border-radius: 12px;
+          border: 1px solid var(--card-border);
+        }
+        
+        .theme-selector button {
+          padding: 6px 16px;
+          background: transparent;
+          border: none;
+          color: var(--foreground-muted);
+          font-size: 13px;
+          font-weight: 600;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: var(--transition-smooth);
+        }
+        
+        .theme-selector button:hover {
+          color: var(--foreground);
+        }
+        
+        .theme-selector button.active {
+          background: var(--sidebar-hover);
+          color: var(--foreground);
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }
 
         .modal-input {

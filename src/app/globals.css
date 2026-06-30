@@ -40,9 +40,9 @@
   --primary-gradient: linear-gradient(135deg, #e51c28 0%, #c41920 100%);
   --accent: #e83545;
   --sidebar-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(245, 245, 250, 0.95) 100%);
-  --sidebar-hover: rgba(0, 0, 0, 0.04);
-  --input-bg: rgba(0, 0, 0, 0.04);
-  --input-border: rgba(0, 0, 0, 0.1);
+  --sidebar-hover: rgba(0, 0, 0, 0.05);
+  --input-bg: #ffffff;
+  --input-border: rgba(0, 0, 0, 0.15);
   --input-focus-bg: rgba(0, 0, 0, 0.06);
   --scrollbar-thumb: rgba(0, 0, 0, 0.15);
   --shadow-color: rgba(0, 0, 0, 0.08);
@@ -134,7 +134,7 @@ a {
   color: #fff;
   border: none;
   padding: 10px 20px;
-  border-radius: 30px;
+  border-radius: 14px;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
@@ -159,7 +159,7 @@ a {
   color: var(--foreground);
   border: 1px solid var(--card-border);
   padding: 10px 20px;
-  border-radius: 30px;
+  border-radius: 14px;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
@@ -200,7 +200,7 @@ a {
 .search-input-field {
   background: var(--input-bg);
   border: 1px solid var(--input-border);
-  border-radius: 30px;
+  border-radius: 14px;
   color: var(--foreground);
   padding: 14px 20px 14px 50px;
   font-size: 16px;
@@ -211,6 +211,7 @@ a {
 
 .search-input-field::placeholder {
   color: var(--foreground-muted);
+  opacity: 0.8;
 }
 
 .search-input-field:focus {

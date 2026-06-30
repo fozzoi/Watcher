@@ -278,10 +278,10 @@ export default function ExplorePage() {
                       </button>
                       
                       <button 
-                        className="btn-secondary" 
+                        className="btn-secondary hero-btn" 
                         onClick={(e) => toggleWatchlist(currentHeroMovie, e)}
                       >
-                        <Heart size={18} fill={savedIds.has(currentHeroMovie.id) ? "var(--primary)" : "none"} color={savedIds.has(currentHeroMovie.id) ? "var(--primary)" : "#fff"} />
+                        <Heart size={18} fill={savedIds.has(currentHeroMovie.id) ? "var(--primary)" : "none"} color={savedIds.has(currentHeroMovie.id) ? "var(--primary)" : "currentColor"} />
                         <span>{savedIds.has(currentHeroMovie.id) ? 'In Watchlist' : 'Add Watchlist'}</span>
                       </button>
                     </div>
@@ -416,7 +416,7 @@ export default function ExplorePage() {
           border: none;
           padding: 0 24px;
           height: 48px;
-          border-radius: 24px;
+          border-radius: 14px;
           font-weight: 600;
           font-size: 14px;
           display: inline-flex;
@@ -533,7 +533,7 @@ export default function ExplorePage() {
         .hero-title {
           font-size: 32px;
           font-weight: 800;
-          color: var(--foreground);
+          color: #fff;
           line-height: 1.2;
           text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
@@ -546,7 +546,7 @@ export default function ExplorePage() {
 
         .hero-overview {
           font-size: 14px;
-          color: var(--foreground-muted);
+          color: rgba(255,255,255,0.7);
           line-height: 1.5;
           display: -webkit-box;
           -webkit-line-clamp: 3;
@@ -566,11 +566,11 @@ export default function ExplorePage() {
           align-items: center;
           gap: 4px;
           font-weight: 700;
-          color: var(--foreground);
+          color: #fff;
         }
 
         .hero-year {
-          color: var(--foreground-muted);
+          color: rgba(255,255,255,0.7);
           font-weight: 600;
         }
 
@@ -578,6 +578,16 @@ export default function ExplorePage() {
           display: flex;
           gap: 14px;
           margin-top: 10px;
+        }
+
+        .hero-btn {
+          background: rgba(255,255,255,0.15) !important;
+          border-color: rgba(255,255,255,0.3) !important;
+          color: #fff !important;
+        }
+        
+        .hero-btn:hover {
+          background: rgba(255,255,255,0.25) !important;
         }
 
         .hero-indicators {

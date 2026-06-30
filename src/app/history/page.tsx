@@ -246,7 +246,7 @@ export default function HistoryPage() {
           border: 1px solid rgba(239, 68, 68, 0.2);
           color: #fca5a5;
           padding: 8px 16px;
-          border-radius: 20px;
+          border-radius: 12px;
           font-weight: 600;
           font-size: 13px;
           display: flex;

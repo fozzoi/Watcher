@@ -560,7 +560,7 @@ export default function WatchListPage() {
         .icon-btn {
           background: rgba(255, 255, 255, 0.04);
           border: 1px solid var(--card-border);
-          border-radius: 20px;
+          border-radius: 12px;
           padding: 8px 16px;
           color: var(--foreground);
           font-size: 13.5px;
@@ -641,7 +641,7 @@ export default function WatchListPage() {
           background: transparent;
           border: none;
           height: 40px;
-          border-radius: 20px;
+          border-radius: 12px;
           color: var(--foreground-muted);
           font-size: 13.5px;
           font-weight: 600;
