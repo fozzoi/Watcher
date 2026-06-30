@@ -2,7 +2,7 @@ name: Build Tauri App
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "tauri" ]
   workflow_dispatch:
 
 jobs:
