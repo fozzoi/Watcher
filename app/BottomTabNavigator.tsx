@@ -210,6 +210,7 @@ const localStyles = StyleSheet.create({
 const RootTabNavigator = () => {
     return (
         <Tab.Navigator
+            backBehavior="history" // 🎯 Add this single line right here!
             tabBar={props => <CustomTabBar {...props} />}
             screenOptions={({ route }) => ({
                 tabBarIcon: ({ color, size, focused }) => {

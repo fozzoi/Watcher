@@ -51,20 +51,40 @@ export default function Index() {
   const [showMore, setShowMore] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [downloadingFile, setDownloadingFile] = useState(false);
+  const [isExternalEntry, setIsExternalEntry] = useState(false);
 
   // --- BACK HANDLER ---
+ // --- BACK HANDLER ---
   useEffect(() => {
     const onBackPress = () => {
+      // 1. If we came from an external screen (like the Details page)
+      if (isExternalEntry) {
+        setIsExternalEntry(false); // Reset the flag
+        navigation.goBack(); // 🚀 Jump straight back to Details immediately!
+
+        // Silently wipe the search screen clean in the background
+        setTimeout(() => {
+          navigation.setParams({ prefillQuery: undefined });
+          setSearchQuery('');
+          setResults([]);
+          setHasSearched(false);
+        }, 300);
+
+        return true; 
+      }
+
+      // 2. If we just manually typed a search inside the tab
       if (hasSearched || searchQuery.trim() !== '') {
         handleClear();
         return true; 
       }
+      
       return false;
     };
+    
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [hasSearched, searchQuery]);
-
+  }, [isExternalEntry, hasSearched, searchQuery]);
   // --- HELPERS ---
   const getQualityInfo = (name: string): { label: string; color: string } => {
     const lowerName = name.toLowerCase();
@@ -76,10 +96,11 @@ export default function Index() {
 
   useEffect(() => {
     if (route.params?.prefillQuery) {
+      setIsExternalEntry(true); // 🎯 Flag that we came from the Details screen!
       setSearchQuery(route.params.prefillQuery); 
       handleSearch(route.params.prefillQuery); 
     }
-  }, [route.params?.prefillQuery]); 
+  }, [route.params?.prefillQuery]);
 
   const configureAnimation = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -127,56 +148,57 @@ export default function Index() {
   };
 
   // --- SMART FILE DOWNLOADER (.torrent) ---
+  // --- SMART FILE DOWNLOADER (.torrent) ---
   const handleShareAsFile = async (url: string, fileName: string) => {
-    setDownloadingFile(true);
-    try {
-        const cleanName = fileName.replace(/[^a-z0-9]/gi, '_').substring(0, 50);
-        const fileUri = FileSystem.documentDirectory + cleanName + '.torrent';
-        
-        let success = false;
-
-        // 1. Try Cache if Magnet
-        if (url.startsWith('magnet:')) {
-            const match = url.match(/xt=urn:btih:([a-zA-Z0-9]+)/);
-            if (match && match[1]) {
-                const hash = match[1].toUpperCase();
-                const cacheUrl = `https://itorrents.org/torrent/${hash}.torrent`;
-                try {
-                    const downloadRes = await FileSystem.downloadAsync(cacheUrl, fileUri);
-                    if (downloadRes.status === 200) success = true; 
-                } catch (e) { /* ignore cache miss */ }
-            }
-        }
-
-        // 2. Fallback: Download direct URL or write Text
-        if (!success) {
-            if (!url.startsWith('magnet:')) {
-                try {
-                    await FileSystem.downloadAsync(url, fileUri);
-                    success = true;
-                } catch(e) {}
-            }
-            if (!success) {
-                await FileSystem.writeAsStringAsync(fileUri, url);
-            }
-        }
-
-        // 3. Share
-        if (await Sharing.isAvailableAsync()) {
-            await Sharing.shareAsync(fileUri, { 
-                mimeType: 'application/x-bittorrent', 
-                dialogTitle: 'Share Torrent File' 
-            });
-        } else {
-            Alert.alert("Saved", `File saved to: ${fileUri}`);
-        }
-
-    } catch (error) {
-        Alert.alert("Error", "Failed to create file.");
-    } finally {
-        setDownloadingFile(false);
+  setDownloadingFile(true);
+  try {
+    // Extract hash from magnet link
+    const match = url.match(/urn:btih:([a-fA-F0-9]{40})/i);
+    if (!match) {
+      Alert.alert('Error', 'No valid hash found in this magnet link.');
+      return;
     }
-  };
+
+    const hash = match[1].toUpperCase();
+    const cleanName = fileName.replace(/[^a-z0-9]/gi, '_').substring(0, 60);
+    const fileUri = FileSystem.documentDirectory + cleanName + '.torrent';
+
+    // Hit YOUR Vercel backend — it handles the cache fetching server-side
+    const torrentUrl = `https://watcher-api-rho.vercel.app/api/torrent-file?hash=${hash}`;
+
+    const downloadRes = await FileSystem.downloadAsync(torrentUrl, fileUri);
+
+    // Validate: real .torrent must be > 40 bytes
+    const fileInfo = await FileSystem.getInfoAsync(fileUri);
+    const fileSize = fileInfo.exists ? (fileInfo as any).size ?? 0 : 0;
+
+    if (downloadRes.status !== 200 || fileSize < 40) {
+      await FileSystem.deleteAsync(fileUri, { idempotent: true });
+      Alert.alert(
+        'Not Available',
+        'This torrent isn\'t in any cache yet.\nUse "Open Magnet" instead — it opens directly in your torrent app.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Share the real .torrent file
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'application/x-bittorrent',
+        dialogTitle: 'Share .torrent file',
+        UTI: 'com.bittorrent.torrent',
+      });
+    } else {
+      Alert.alert('Saved', `Torrent saved to: ${fileUri}`);
+    }
+
+  } catch (error) {
+    Alert.alert('Error', 'Failed to fetch torrent file. Try "Open Magnet" instead.');
+  } finally {
+    setDownloadingFile(false);
+  }
+};
 
   const renderResults = () => {
     const visibleResults = showMore ? results : results.slice(0, 5);

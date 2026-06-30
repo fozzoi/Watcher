@@ -1,11 +1,13 @@
+// app/Player.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, Platform, AppState, BackHandler } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text, Platform, AppState, BackHandler, TouchableOpacity } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 import { useRoute, useNavigation } from "@react-navigation/native";
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
 import { saveProgress } from '../src/utils/progress';
+import { Ionicons } from '@expo/vector-icons';
 
 const generateHlsHtml = (url: string) => `
   <!DOCTYPE html>
@@ -66,13 +68,13 @@ export default function Player() {
     const fetchStream = async () => {
       setLoading(true);
       try {
-        const baseUrl = "https://watcher-backend-s8wp.onrender.com"; // UPDATE WITH YOUR URL
+        // 🎯 Pointing directly to your Vercel deployment
+        const baseUrl = "https://watcher-api-rho.vercel.app"; 
         const encodedTitle = encodeURIComponent(title);
         
-        // Pass the title to the backend!
-        // In Player.tsx, make sure mediaType is exactly 'movie' or 'tv'
         const endpoint = `${baseUrl}/api/get_stream?tmdb_id=${tmdbId}&media_type=${mediaType.toLowerCase()}&title=${encodedTitle}&season=${season || 1}&episode=${episode || 1}`;     
         console.log("📡 Fetching:", endpoint);
+        
         const response = await fetch(endpoint);
         const data = await response.json();
 
@@ -81,7 +83,7 @@ export default function Player() {
                 setActiveProvider("Direct Link (Ad-Free)");
                 setStreamData(generateHlsHtml(data.stream_url));
             } else {
-                setActiveProvider("Vidsrc (Iframe Fallback)");
+                setActiveProvider("Iframe Fallback");
                 setStreamData(`
                   <html>
                     <body style="margin:0;background:black;">
@@ -142,14 +144,11 @@ export default function Player() {
             domStorageEnabled={true}
             allowsFullscreenVideo={true}
             mediaPlaybackRequiresUserAction={false}
-            
-            // 💉 Inject JS to kill redirects and popups instantly
             injectedJavaScript={`
               window.open = function() { return null; };
               window.onbeforeunload = function() { return "Prevented"; };
               true;
             `}
-            
             onShouldStartLoadWithRequest={(request) => {
               const isMainHtml = request.url === 'about:blank' || request.url.startsWith('data:');
               const isSafe = request.url.includes('cdn') || request.url.includes('m3u8') || request.url.includes('vidsrc');
@@ -164,6 +163,11 @@ export default function Player() {
           <Text style={styles.loadingText}>Connecting to {activeProvider}...</Text>
         </View>
       )}
+
+      {/* Exit Button */}
+      <TouchableOpacity style={styles.backButton} onPress={() => { exitFullScreen().then(() => navigation.goBack()) }}>
+        <Ionicons name="close" size={28} color="white" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -172,5 +176,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'black' },
   webview: { flex: 1, backgroundColor: 'transparent' }, 
   loader: { ...StyleSheet.absoluteFill, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
-  loadingText: { color: 'white', marginTop: 15, fontWeight: '600' }
+  loadingText: { color: 'white', marginTop: 15, fontWeight: '600' },
+  backButton: { position: 'absolute', top: 20, left: 20, zIndex: 200, backgroundColor: 'rgba(0,0,0,0.5)', padding: 8, borderRadius: 20 }
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   FlatList,
@@ -65,9 +65,9 @@ const WatchListPage = () => {
   
   const navigation = useNavigation<any>();
   const tabPosition = useSharedValue(0);
+  const flatListRef = useRef<FlatList>(null);
 
   const loadData = async () => {
-    setLoading(true);
     try {
       const storedMovies = await AsyncStorage.getItem('watchlist');
       const storedArtists = await AsyncStorage.getItem('favoriteArtists');
@@ -79,15 +79,32 @@ const WatchListPage = () => {
       
       runDailyAutoSync();
     } catch (error) {
-      console.error('Failed to load library data');
+      console.error('Failed to load library data', error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', loadData);
-    return unsubscribe;
+    let isMounted = true;
+
+    const initializeData = async () => {
+      setLoading(true);
+      await loadData();
+      if (!isMounted) return;
+      setLoading(false);
+    };
+
+    initializeData();
+
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadData();
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, [navigation]);
 
   const runDailyAutoSync = async () => {
@@ -243,7 +260,7 @@ const WatchListPage = () => {
       setSyncing(true);
       setSyncProgress('Analyzing file...');
 
-      let extractedMovies = [];
+      let extractedMovies: Array<{ title: string; year: string | null }> = [];
 
       try {
         const parsedJson = JSON.parse(text);
@@ -557,6 +574,7 @@ const WatchListPage = () => {
         </View>
       ) : (
         <FlatList
+          ref={flatListRef}
           data={displayList}
           keyExtractor={(item) => `${activeTab}-${item.id}`}
           renderItem={renderCard}
