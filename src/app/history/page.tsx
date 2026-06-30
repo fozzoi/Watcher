@@ -225,7 +225,7 @@ export default function HistoryPage() {
         }
 
         .back-btn:hover {
-          color: #fff;
+          color: var(--foreground);
           background: rgba(255, 255, 255, 0.05);
         }
 
@@ -237,7 +237,7 @@ export default function HistoryPage() {
         .header-title {
           font-size: 22px;
           font-weight: 800;
-          color: #fff;
+          color: var(--foreground);
           letter-spacing: 0.5px;
         }
 
@@ -336,7 +336,7 @@ export default function HistoryPage() {
         .query-text {
           font-size: 14.5px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;

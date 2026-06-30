@@ -107,7 +107,7 @@ export default function MovieCard({ item, isAdded, toggleWatchlist, showTitle = 
           backdrop-filter: blur(8px);
           -webkit-backdrop-filter: blur(8px);
           border: 1px solid rgba(255, 255, 255, 0.1);
-          color: #fff;
+          color: var(--foreground);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -144,7 +144,7 @@ export default function MovieCard({ item, isAdded, toggleWatchlist, showTitle = 
           border-radius: var(--border-radius-sm);
           font-size: 11px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
           border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
@@ -159,7 +159,7 @@ export default function MovieCard({ item, isAdded, toggleWatchlist, showTitle = 
         }
 
         .movie-card-container:hover .card-title {
-          color: #fff;
+          color: var(--foreground);
         }
       `}</style>
     </div>

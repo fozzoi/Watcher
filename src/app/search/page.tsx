@@ -300,12 +300,12 @@ function TorrentSearchContent() {
         .header-title {
           font-size: 24px;
           font-weight: 800;
-          color: #fff;
+          color: var(--foreground);
           letter-spacing: 0.5px;
         }
 
         .history-pill {
-          background: rgba(255, 255, 255, 0.05);
+          background: var(--badge-bg);
           border: 1px solid var(--card-border);
           border-radius: 20px;
           padding: 8px 16px;
@@ -320,9 +320,9 @@ function TorrentSearchContent() {
         }
 
         .history-pill:hover {
-          color: #fff;
-          background: rgba(255, 255, 255, 0.1);
-          border-color: rgba(255,255,255,0.2);
+          color: var(--foreground);
+          background: var(--sidebar-hover);
+          border-color: var(--foreground-muted);
         }
 
         .search-input-wrapper {
@@ -355,7 +355,7 @@ function TorrentSearchContent() {
         }
 
         .clear-btn:hover {
-          color: #fff;
+          color: var(--foreground);
         }
 
         /* Status banner */
@@ -414,7 +414,7 @@ function TorrentSearchContent() {
         .results-header-title {
           font-size: 18px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
           margin-bottom: 16px;
         }
 
@@ -434,7 +434,7 @@ function TorrentSearchContent() {
 
         .torrent-card:hover {
           border-color: var(--card-hover-border);
-          background: rgba(20, 20, 25, 0.75);
+          background: var(--card-bg);
         }
 
         .card-top {
@@ -470,7 +470,7 @@ function TorrentSearchContent() {
         .torrent-name {
           font-size: 16px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
           line-height: 1.4;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -539,13 +539,13 @@ function TorrentSearchContent() {
         }
 
         .share-file-btn:hover {
-          background: rgba(255, 255, 255, 0.03);
-          color: #fff;
+          background: var(--sidebar-hover);
+          color: var(--foreground);
         }
 
         .open-magnet-btn {
           background: var(--primary-gradient);
-          color: #fff;
+          color: var(--foreground);
           box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
         }
 
@@ -571,7 +571,7 @@ function TorrentSearchContent() {
         }
 
         .see-more-btn:hover {
-          color: #fff;
+          color: var(--foreground);
           border-color: rgba(255, 255, 255, 0.3);
           background: rgba(255, 255, 255, 0.02);
         }
@@ -649,7 +649,7 @@ function TorrentSearchContent() {
         .idle-splash h2 {
           font-size: 22px;
           font-weight: 800;
-          color: #fff;
+          color: var(--foreground);
         }
 
         .idle-splash p {

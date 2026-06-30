@@ -82,7 +82,7 @@ export default function MediaCarousel({ title, type, data, savedIds, toggleWatch
           font-size: 20px;
           font-weight: 700;
           letter-spacing: 0.5px;
-          color: #fff;
+          color: var(--foreground);
         }
 
         .view-all-link {
@@ -138,7 +138,7 @@ export default function MediaCarousel({ title, type, data, savedIds, toggleWatch
           backdrop-filter: blur(8px);
           -webkit-backdrop-filter: blur(8px);
           border: 1px solid var(--card-border);
-          color: #fff;
+          color: var(--foreground);
           display: flex;
           align-items: center;
           justify-content: center;

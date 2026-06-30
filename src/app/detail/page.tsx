@@ -407,8 +407,8 @@ function DetailContent() {
                       loading="lazy"
                     />
                   </div>
-                  <span className="cast-name">{member.name}</span>
-                  <span className="cast-character">{member.character}</span>
+                  <span className="cast-name" title={member.name}>{member.name}</span>
+                  <span className="cast-character" title={member.character}>{member.character}</span>
                 </Link>
               ))}
             </div>
@@ -596,7 +596,7 @@ function DetailContent() {
           left: 40px;
           background: rgba(0, 0, 0, 0.55);
           border: 1px solid rgba(255,255,255,0.1);
-          color: #fff;
+          color: var(--foreground);
           border-radius: 50%;
           width: 40px;
           height: 40px;
@@ -680,7 +680,7 @@ function DetailContent() {
         .movie-title {
           font-size: 32px;
           font-weight: 800;
-          color: #fff;
+          color: var(--foreground);
           line-height: 1.2;
         }
 
@@ -791,7 +791,7 @@ function DetailContent() {
         .resume-info h4 {
           font-size: 14.5px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
         }
 
         .resume-info p {
@@ -809,7 +809,7 @@ function DetailContent() {
         .synopsis-box h2, .cast-section h2, .episodes-section h2, .similar-media-section h2, .ai-recs-section h2 {
           font-size: 20px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
           letter-spacing: 0.5px;
         }
 
@@ -915,7 +915,7 @@ function DetailContent() {
         .lens-markdown-output h4 {
           font-size: 14.5px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
           margin-top: 8px;
         }
 
@@ -933,12 +933,13 @@ function DetailContent() {
         }
 
         .cast-card {
-          flex: 0 0 110px;
+          flex: 0 0 120px;
           display: flex;
           flex-direction: column;
           align-items: center;
           text-align: center;
-          gap: 6px;
+          gap: 8px;
+          max-width: 120px;
         }
 
         .cast-avatar {
@@ -947,7 +948,13 @@ function DetailContent() {
           border-radius: 50%;
           overflow: hidden;
           background: rgba(255,255,255,0.03);
-          border: 1px solid rgba(255,255,255,0.06);
+          border: 2px solid rgba(255,255,255,0.08);
+          transition: var(--transition-smooth);
+        }
+
+        .cast-card:hover .cast-avatar {
+          border-color: var(--primary);
+          transform: scale(1.05);
         }
 
         .cast-img {
@@ -957,22 +964,27 @@ function DetailContent() {
         }
 
         .cast-name {
+          display: block;
           font-size: 12px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
           width: 100%;
+          line-height: 1.3;
         }
 
         .cast-character {
+          display: block;
           font-size: 11px;
           color: var(--foreground-muted);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
           width: 100%;
+          line-height: 1.3;
+          margin-top: -2px;
         }
 
         /* Episodes section */
@@ -986,7 +998,7 @@ function DetailContent() {
         .season-dropdown {
           background: rgba(255, 255, 255, 0.05);
           border: 1px solid rgba(255,255,255,0.1);
-          color: #fff;
+          color: var(--foreground);
           border-radius: 8px;
           padding: 8px 12px;
           font-size: 13.5px;
@@ -1100,7 +1112,7 @@ function DetailContent() {
         .ep-header h3 {
           font-size: 15px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
         }
 
         .ep-air-date {

@@ -230,7 +230,7 @@ export default function AiSearchPage() {
         }
 
         .back-btn:hover {
-          color: #fff;
+          color: var(--foreground);
           background: rgba(255, 255, 255, 0.05);
         }
 
@@ -242,7 +242,7 @@ export default function AiSearchPage() {
         .header-title {
           font-size: 22px;
           font-weight: 800;
-          color: #fff;
+          color: var(--foreground);
           letter-spacing: 0.5px;
         }
 
@@ -283,14 +283,14 @@ export default function AiSearchPage() {
         }
 
         .logo-spark {
-          color: #fff;
+          color: var(--foreground);
           filter: drop-shadow(0 0 6px #fff);
         }
 
         .branding-section h2 {
           font-size: 24px;
           font-weight: 800;
-          color: #fff;
+          color: var(--foreground);
         }
 
         .branding-section p {
@@ -340,7 +340,7 @@ export default function AiSearchPage() {
         }
 
         .clear-btn:hover, .lucky-btn:hover {
-          color: #fff;
+          color: var(--foreground);
           background: rgba(255, 255, 255, 0.05);
         }
 
@@ -381,7 +381,7 @@ export default function AiSearchPage() {
         }
 
         .chip:hover {
-          color: #fff;
+          color: var(--foreground);
           border-color: rgba(138, 43, 226, 0.3);
           background: rgba(138, 43, 226, 0.05);
           box-shadow: 0 4px 15px rgba(138, 43, 226, 0.1);
@@ -397,7 +397,7 @@ export default function AiSearchPage() {
         .results-title {
           font-size: 18px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
           margin-bottom: 20px;
         }
 

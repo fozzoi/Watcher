@@ -150,7 +150,7 @@ export default function WatchHistoryCarousel({ history, onRemove }: WatchHistory
         }
 
         .section-title {
-          color: #fff;
+          color: var(--foreground);
           font-size: 20px;
           font-weight: 700;
           letter-spacing: 0.5px;
@@ -246,7 +246,7 @@ export default function WatchHistoryCarousel({ history, onRemove }: WatchHistory
           backdrop-filter: blur(8px);
           -webkit-backdrop-filter: blur(8px);
           border: 0.5px solid rgba(255, 255, 255, 0.15);
-          color: #fff;
+          color: var(--foreground);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -335,7 +335,7 @@ export default function WatchHistoryCarousel({ history, onRemove }: WatchHistory
         .card-title {
           font-size: 14px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -379,7 +379,7 @@ export default function WatchHistoryCarousel({ history, onRemove }: WatchHistory
           backdrop-filter: blur(8px);
           -webkit-backdrop-filter: blur(8px);
           border: 1px solid var(--card-border);
-          color: #fff;
+          color: var(--foreground);
           display: flex;
           align-items: center;
           justify-content: center;

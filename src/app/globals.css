@@ -1,4 +1,6 @@
-:root {
+/* ===== Dark Theme (Default) ===== */
+:root,
+[data-theme="dark"] {
   --bg-color: #0c0c0e;
   --bg-gradient-start: #0a0a0f;
   --bg-gradient-end: #040406;
@@ -11,13 +13,54 @@
   --primary-glow: rgba(229, 9, 20, 0.35);
   --primary-gradient: linear-gradient(135deg, #f51b27 0%, #b81d24 100%);
   --accent: #ff4a5a;
-  --sidebar-width: 240px;
-  --sidebar-collapsed-width: 76px;
+  --sidebar-bg: linear-gradient(135deg, rgba(25, 25, 30, 0.75) 0%, rgba(10, 10, 15, 0.85) 100%);
+  --sidebar-hover: rgba(255, 255, 255, 0.04);
+  --input-bg: rgba(255, 255, 255, 0.06);
+  --input-border: rgba(255, 255, 255, 0.1);
+  --input-focus-bg: rgba(255, 255, 255, 0.09);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --shadow-color: rgba(0, 0, 0, 0.37);
+  --badge-bg: rgba(255, 255, 255, 0.03);
+  --badge-border: rgba(255, 255, 255, 0.08);
+  color-scheme: dark;
+}
+
+/* ===== Light Theme ===== */
+[data-theme="light"] {
+  --bg-color: #f5f5f7;
+  --bg-gradient-start: #f0f0f4;
+  --bg-gradient-end: #e8e8ee;
+  --card-bg: rgba(255, 255, 255, 0.85);
+  --card-border: rgba(0, 0, 0, 0.08);
+  --card-hover-border: rgba(229, 9, 20, 0.35);
+  --foreground: #1a1a2e;
+  --foreground-muted: rgba(26, 26, 46, 0.55);
+  --primary: #d40812;
+  --primary-glow: rgba(212, 8, 18, 0.2);
+  --primary-gradient: linear-gradient(135deg, #e51c28 0%, #c41920 100%);
+  --accent: #e83545;
+  --sidebar-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(245, 245, 250, 0.95) 100%);
+  --sidebar-hover: rgba(0, 0, 0, 0.04);
+  --input-bg: rgba(0, 0, 0, 0.04);
+  --input-border: rgba(0, 0, 0, 0.1);
+  --input-focus-bg: rgba(0, 0, 0, 0.06);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
+  --shadow-color: rgba(0, 0, 0, 0.08);
+  --badge-bg: rgba(0, 0, 0, 0.04);
+  --badge-border: rgba(0, 0, 0, 0.08);
+  color-scheme: light;
+}
+
+/* ===== Shared Layout Tokens ===== */
+:root {
+  --sidebar-width: 220px;
+  --sidebar-collapsed-width: 68px;
   --border-radius-sm: 8px;
   --border-radius-md: 16px;
   --border-radius-lg: 24px;
   --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --transition-smooth: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  --transition-fast: all 0.15s ease;
 }
 
 * {
@@ -30,12 +73,21 @@
 body {
   color: var(--foreground);
   background-color: var(--bg-color);
-  background-image: radial-gradient(circle at 50% 0%, rgba(229, 9, 20, 0.08) 0%, transparent 60%),
-                    radial-gradient(circle at 0% 100%, rgba(20, 20, 35, 0.2) 0%, transparent 40%);
   background-attachment: fixed;
   min-height: 100vh;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+[data-theme="dark"] body {
+  background-image: radial-gradient(circle at 50% 0%, rgba(229, 9, 20, 0.08) 0%, transparent 60%),
+                    radial-gradient(circle at 0% 100%, rgba(20, 20, 35, 0.2) 0%, transparent 40%);
+}
+
+[data-theme="light"] body {
+  background-image: radial-gradient(circle at 50% 0%, rgba(229, 9, 20, 0.04) 0%, transparent 60%),
+                    radial-gradient(circle at 0% 100%, rgba(200, 200, 230, 0.15) 0%, transparent 40%);
 }
 
 /* Custom Scrollbar */
@@ -44,10 +96,10 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -69,11 +121,11 @@ a {
 }
 
 .glass-premium {
-  background: linear-gradient(135deg, rgba(25, 25, 30, 0.75) 0%, rgba(10, 10, 15, 0.85) 100%);
+  background: var(--sidebar-bg);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--card-border);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  box-shadow: 0 8px 32px 0 var(--shadow-color);
 }
 
 /* Interactive elements */
@@ -103,9 +155,9 @@ a {
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--input-bg);
+  color: var(--foreground);
+  border: 1px solid var(--card-border);
   padding: 10px 20px;
   border-radius: 30px;
   font-weight: 600;
@@ -117,8 +169,8 @@ a {
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
+  background: var(--sidebar-hover);
+  border-color: var(--foreground-muted);
   transform: translateY(-1px);
 }
 
@@ -132,24 +184,24 @@ a {
   flex: 1;
   padding: 30px 40px 100px 40px;
   margin-left: var(--sidebar-width);
-  transition: var(--transition-smooth);
+  transition: margin-left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   width: calc(100% - var(--sidebar-width));
 }
 
 @media (max-width: 900px) {
   .main-content {
-    margin-left: 0;
-    width: 100%;
-    padding: 20px 20px 120px 20px;
+    margin-left: var(--sidebar-collapsed-width);
+    width: calc(100% - var(--sidebar-collapsed-width));
+    padding: 20px 20px 100px 20px;
   }
 }
 
 /* Input Fields styling */
 .search-input-field {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: 30px;
-  color: #fff;
+  color: var(--foreground);
   padding: 14px 20px 14px 50px;
   font-size: 16px;
   width: 100%;
@@ -157,9 +209,13 @@ a {
   transition: var(--transition-smooth);
 }
 
+.search-input-field::placeholder {
+  color: var(--foreground-muted);
+}
+
 .search-input-field:focus {
   border-color: var(--primary);
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--input-focus-bg);
   box-shadow: 0 0 0 4px var(--primary-glow);
 }
 

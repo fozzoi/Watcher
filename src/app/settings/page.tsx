@@ -365,7 +365,7 @@ export default function SettingsPage() {
         .header-title {
           font-size: 24px;
           font-weight: 800;
-          color: #fff;
+          color: var(--foreground);
           letter-spacing: 0.5px;
         }
 
@@ -398,7 +398,7 @@ export default function SettingsPage() {
         .section-header h2 {
           font-size: 16px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
           letter-spacing: 0.5px;
         }
 
@@ -424,7 +424,7 @@ export default function SettingsPage() {
           background: rgba(255, 255, 255, 0.05);
           border: 1px solid rgba(255,255,255,0.1);
           border-radius: 10px;
-          color: #fff;
+          color: var(--foreground);
           padding: 12px 16px;
           font-size: 14px;
           flex: 1;
@@ -473,7 +473,7 @@ export default function SettingsPage() {
         .toggle-title {
           font-size: 14.5px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
         }
 
         .toggle-desc {
@@ -569,7 +569,7 @@ export default function SettingsPage() {
         .action-title {
           font-size: 14.5px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
         }
 
         .action-desc {

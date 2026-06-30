@@ -273,7 +273,7 @@ function PlayerContent() {
           background: rgba(0, 0, 0, 0.45);
           border: 1px solid rgba(255, 255, 255, 0.1);
           border-radius: 30px;
-          color: #fff;
+          color: var(--foreground);
           padding: 8px 18px;
           font-size: 13.5px;
           font-weight: 600;
@@ -294,7 +294,7 @@ function PlayerContent() {
           display: flex;
           flex-direction: column;
           align-items: flex-end;
-          color: #fff;
+          color: var(--foreground);
           text-align: right;
         }
 
@@ -347,7 +347,7 @@ function PlayerContent() {
         }
 
         .status-overlay.error {
-          color: #fff;
+          color: var(--foreground);
           padding: 24px;
           text-align: center;
         }

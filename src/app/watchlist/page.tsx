@@ -547,7 +547,7 @@ export default function WatchListPage() {
         .header-title {
           font-size: 24px;
           font-weight: 800;
-          color: #fff;
+          color: var(--foreground);
           letter-spacing: 0.5px;
         }
 
@@ -562,7 +562,7 @@ export default function WatchListPage() {
           border: 1px solid var(--card-border);
           border-radius: 20px;
           padding: 8px 16px;
-          color: #fff;
+          color: var(--foreground);
           font-size: 13.5px;
           font-weight: 600;
           display: flex;
@@ -622,7 +622,7 @@ export default function WatchListPage() {
 
         .import-dropdown button:hover {
           background: rgba(255, 255, 255, 0.05);
-          color: #fff;
+          color: var(--foreground);
         }
 
         /* Tabs bar */
@@ -655,12 +655,12 @@ export default function WatchListPage() {
         }
 
         .tab-btn:hover {
-          color: #fff;
+          color: var(--foreground);
         }
 
         .tab-btn.active {
           background: rgba(255, 255, 255, 0.06);
-          color: #fff;
+          color: var(--foreground);
           box-shadow: inset 0 1px 0 0 rgba(255,255,255,0.05);
         }
 
@@ -675,7 +675,7 @@ export default function WatchListPage() {
 
         .tab-btn.active .count-badge {
           background: var(--primary);
-          color: #fff;
+          color: var(--foreground);
         }
 
         /* Sync banner */
@@ -774,7 +774,7 @@ export default function WatchListPage() {
         .remove-btn:hover {
           background: rgba(239, 68, 68, 0.9);
           border-color: transparent;
-          color: #fff;
+          color: var(--foreground);
         }
 
         .card-title {
@@ -788,7 +788,7 @@ export default function WatchListPage() {
         }
 
         .library-card-wrapper:hover .card-title {
-          color: #fff;
+          color: var(--foreground);
         }
 
         .empty-state {
@@ -849,7 +849,7 @@ export default function WatchListPage() {
         .modal-header h2 {
           font-size: 18px;
           font-weight: 800;
-          color: #fff;
+          color: var(--foreground);
         }
 
         .modal-close {
@@ -871,7 +871,7 @@ export default function WatchListPage() {
           background: rgba(255, 255, 255, 0.05);
           border: 1px solid rgba(255,255,255,0.1);
           border-radius: 10px;
-          color: #fff;
+          color: var(--foreground);
           padding: 12px 16px;
           font-size: 14px;
           width: 100%;
@@ -906,7 +906,7 @@ export default function WatchListPage() {
         }
 
         .summary-stat strong {
-          color: #fff;
+          color: var(--foreground);
         }
 
         .summary-missed {

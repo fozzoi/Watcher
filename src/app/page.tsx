@@ -394,6 +394,7 @@ export default function ExplorePage() {
           gap: 16px;
           margin-bottom: 24px;
           width: 100%;
+          flex-wrap: wrap;
         }
 
         .search-bar-container {
@@ -452,8 +453,8 @@ export default function ExplorePage() {
           gap: 8px;
           padding: 8px 16px;
           border-radius: 20px;
-          background: rgba(255, 255, 255, 0.04);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: var(--badge-bg);
+          border: 1px solid var(--badge-border);
           color: var(--foreground-muted);
           font-weight: 600;
           font-size: 13.5px;
@@ -463,15 +464,15 @@ export default function ExplorePage() {
         }
 
         .genre-chip:hover {
-          color: #fff;
-          background: rgba(255, 255, 255, 0.08);
-          border-color: rgba(255, 255, 255, 0.2);
+          color: var(--foreground);
+          background: var(--sidebar-hover);
+          border-color: var(--foreground-muted);
         }
 
         .genre-chip.active {
           background: var(--primary-gradient);
           border-color: transparent;
-          color: #fff;
+          color: var(--foreground);
           box-shadow: 0 4px 10px var(--primary-glow);
         }
 
@@ -532,7 +533,7 @@ export default function ExplorePage() {
         .hero-title {
           font-size: 32px;
           font-weight: 800;
-          color: #fff;
+          color: var(--foreground);
           line-height: 1.2;
           text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
@@ -565,7 +566,7 @@ export default function ExplorePage() {
           align-items: center;
           gap: 4px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
         }
 
         .hero-year {
@@ -619,7 +620,7 @@ export default function ExplorePage() {
         .section-title {
           font-size: 22px;
           font-weight: 700;
-          color: #fff;
+          color: var(--foreground);
           margin-bottom: 20px;
         }
 
@@ -635,7 +636,7 @@ export default function ExplorePage() {
           width: 100%;
           height: 380px;
           border-radius: var(--border-radius-lg);
-          background: linear-gradient(90deg, #18181c 25%, #222228 50%, #18181c 75%);
+          background: linear-gradient(90deg, var(--card-bg) 25%, var(--sidebar-hover) 50%, var(--card-bg) 75%);
           background-size: 200% 100%;
           animation: loading-shimmer 1.5s infinite;
         }
@@ -644,7 +645,7 @@ export default function ExplorePage() {
           width: 200px;
           height: 24px;
           border-radius: 4px;
-          background: linear-gradient(90deg, #18181c 25%, #222228 50%, #18181c 75%);
+          background: linear-gradient(90deg, var(--card-bg) 25%, var(--sidebar-hover) 50%, var(--card-bg) 75%);
           background-size: 200% 100%;
           animation: loading-shimmer 1.5s infinite;
         }
@@ -658,7 +659,7 @@ export default function ExplorePage() {
           flex: 1;
           aspect-ratio: 2/3;
           border-radius: var(--border-radius-md);
-          background: linear-gradient(90deg, #18181c 25%, #222228 50%, #18181c 75%);
+          background: linear-gradient(90deg, var(--card-bg) 25%, var(--sidebar-hover) 50%, var(--card-bg) 75%);
           background-size: 200% 100%;
           animation: loading-shimmer 1.5s infinite;
         }
@@ -677,7 +678,7 @@ export default function ExplorePage() {
         .spinner {
           width: 40px;
           height: 40px;
-          border: 4px solid rgba(255, 255, 255, 0.1);
+          border: 4px solid var(--card-border);
           border-left-color: var(--primary);
           border-radius: 50%;
           animation: spin 1s linear infinite;

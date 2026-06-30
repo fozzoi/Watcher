@@ -183,7 +183,7 @@ function ViewAllContent() {
         }
 
         .back-btn:hover {
-          color: #fff;
+          color: var(--foreground);
           background: rgba(255, 255, 255, 0.05);
         }
 
@@ -195,7 +195,7 @@ function ViewAllContent() {
         .header-title {
           font-size: 22px;
           font-weight: 800;
-          color: #fff;
+          color: var(--foreground);
           letter-spacing: 0.5px;
         }
 
