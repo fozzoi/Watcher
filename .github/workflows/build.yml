@@ -41,3 +41,10 @@ jobs:
           releaseBody: 'Download the .msi or .exe file below to install Watcher on Windows.'
           releaseDraft: true
           prerelease: false
+
+      - name: Upload Windows Executable directly to Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: Watcher-Windows-EXE
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 7
