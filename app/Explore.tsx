@@ -37,6 +37,7 @@ import MediaCarousel from './components/MediaCarousel';
 import SearchResultsList from './components/SearchResultsList';
 import WatchHistoryCarousel from './components/WatchHistoryCarousel'; // ✅ NEW IMPORT
 import { HORIZONTAL_MARGIN } from './components/ExploreConstants';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
@@ -239,9 +240,16 @@ const ExplorePage = () => {
             </View>
           </View>
 
-          {/* <TouchableOpacity onPress={() => navigation.navigate('AiSearch')} style={styles.iconButtonAi}>
-            <Ionicons name="sparkles" size={20} color="#A962FF" />
-          </TouchableOpacity> */}
+          <TouchableOpacity onPress={() => navigation.navigate('AiSearch')} style={styles.iconButtonAi}>
+            <LinearGradient
+              colors={['#2a1b40', '#121212']} // Subtle dark purple to dark gray gradient
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.gradientContainer}
+            >
+              <Ionicons name="sparkles" size={20} color="#ffee00" />
+            </LinearGradient>
+          </TouchableOpacity>
 
           <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={styles.iconButton}>
             <Ionicons name="settings-outline" size={24} color="#FFFFFF" />
@@ -329,8 +337,26 @@ const styles = StyleSheet.create({
   searchIconContainer: { paddingHorizontal: 12 },
 
   iconButtonAi: {
-    width: 48, height: 48, borderRadius: 14, backgroundColor: '#222', 
-    justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#A962FF'
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    overflow: 'hidden', // Keeps the gradient inside the rounded corners
+    borderWidth: 1,
+    borderColor: 'rgba(169, 98, 255, 0.35)', // Softer, translucent purple border
+  
+  // Subtle glow effect (iOS only, harmless on Android)
+    shadowColor: '#A962FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3, // Gentle shadow for Android
+  },
+  gradientContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   iconButton: {
     width: 48, height: 48, borderRadius: 14, backgroundColor: '#222', 
