@@ -52,8 +52,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         with:
-          name: 'Watcher Android v1.0'
-          tag_name: 'android-latest'
+          name: 'Watcher Android v2.0.2'
+          tag_name: 'android-v2.0.2'
+          body: |
+            ## Watcher Android v2.0.2
+            - Minor bug fixes and improvements.
+            - Version updated to 2.0.2 across the board.
           files: android/app/build/outputs/apk/release/app-release.apk
           draft: true
           prerelease: false

@@ -29,7 +29,6 @@ import {
 import { getAllProgress, removeProgress, WatchProgress } from '../src/utils/progress'; 
 
 // --- COMPONENTS ---
-import AtmosphericBackground from './components/AtmosphericBackground';
 import SkeletonHero from './components/SkeletonHero';
 import HeroSection from './components/HeroSection';
 import GenreFilter from './components/GenreFilter';
@@ -209,9 +208,7 @@ const ExplorePage = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
-      <AtmosphericBackground />
-
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />     
       <View style={[styles.searchBarContainer, { zIndex: 100 }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}> 
           <View style={[styles.searchInputContainer, { flex: 1 }]}>
@@ -269,7 +266,7 @@ const ExplorePage = () => {
           />
         )}
 
-        <View style={{ flex: 1, display: inSearchMode ? 'none' : 'flex' }}>
+        <View style={{ flex: 1, display: inSearchMode ? 'none' : 'flex',borderRadius: 20, overflow: 'hidden' }}>
           <AnimatedScrollView 
             scrollEventThrottle={16} 
             removeClippedSubviews={true} 
@@ -328,7 +325,7 @@ const ExplorePage = () => {
 export default ExplorePage;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#141414' },
+  container: { flex: 1, backgroundColor: '#141414',borderRadius: 20, overflow: 'hidden' },
   scrollContent: { paddingTop: 10, paddingBottom: 80 }, 
   
   searchBarContainer: { paddingHorizontal: HORIZONTAL_MARGIN, paddingTop: (StatusBar.currentHeight || 0) + 12, paddingBottom: 12, backgroundColor: 'rgba(20, 20, 20, 0.98)', borderBottomWidth: 1, borderBottomColor: 'rgba(255, 255, 255, 0.08)' },

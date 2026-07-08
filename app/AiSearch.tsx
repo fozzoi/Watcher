@@ -13,10 +13,6 @@ import Animated, { FadeInUp } from 'react-native-reanimated';
 import { getGeminiRecommendations } from '../src/ai'; // Ensure this matches your file structure
 import { getImageUrl, getFullDetails } from '../src/tmdb';
 
-// Enable LayoutAnimation for Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const { width, height } = Dimensions.get('window');
 

@@ -28,13 +28,13 @@ import {
   getMediaDetails,
   getExternalIds,
   getGeminiMoviesSimilarTo,
-   GLOBAL_CONFIG 
+  GLOBAL_CONFIG 
 } from '../src/tmdb';
 import { getProgress } from '../src/utils/progress';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -47,7 +47,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { STREAM_SOURCES, makeStreamUrl } from '../src/utils/sources';
-import axios from 'axios';
 
 // --- CONSTANTS ---
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
@@ -66,7 +65,6 @@ const C = {
   aiAccent: '#A78BFA', // purple for AI
 };
 
-// ─── LENS AI INSIGHT MODAL ───────────────────────────────────────────────────
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 const DetailPage = () => {
   const route = useRoute();
@@ -75,7 +73,6 @@ const DetailPage = () => {
   const isTablet = width >= 768;
   const isLandscape = width > height;
 
-  // 🎯 Reduced Height Multipliers
   const HEADER_HEIGHT = isLandscape ? height * 0.70 : height * 0.55;
 
   const { movie: initialMovie } = route.params as { movie: any };
@@ -387,7 +384,6 @@ const DetailPage = () => {
             style={[StyleSheet.absoluteFill, heroStyle]}
             resizeMode="cover"
           />
-          {/* 🎯 Adjusted gradient locations to match the shorter height */}
           <LinearGradient
             colors={['transparent', 'rgba(13,13,13,0.4)', 'rgba(13,13,13,0.8)', C.bg]}
             locations={[0, 0.3, 0.6, 1]}
@@ -499,6 +495,7 @@ const DetailPage = () => {
             )}
           </View>
 
+          {/* ── LENS INLINE CARD (UPDATED) ── */}
           <View style={styles.lensInlineCard}>
             <View style={styles.lensInlineHeader}>
               <MaterialCommunityIcons name="creation" size={16} color="#D97706" />
@@ -517,27 +514,36 @@ const DetailPage = () => {
               </View>
             ) : lensInsight ? (
               <>
-                <View style={[styles.lensInlineBadge, { borderColor: lensInsight.worthIt === 'Yes' ? C.green : lensInsight.worthIt === 'Maybe' ? C.gold : '#EF4444' }]}
-                  >
-                  <Text style={styles.lensInlineBadgeText}>
-                    {lensInsight.worthIt === 'Yes' ? 'Worth Watching' : lensInsight.worthIt === 'Maybe' ? 'Maybe' : 'Skip It'}
-                  </Text>
+                <View style={[styles.lensInlineBadge, { borderColor: '#FBBF24' }]}>
+                  <Text style={styles.lensInlineBadgeText}>{lensInsight.worthIt}</Text>
                 </View>
-                <Text style={styles.lensInlineReason}>{lensInsight.worthReason}</Text>
+                
+                <Text style={styles.lensInlineReason}>{lensInsight.friendVerdict}</Text>
+                
                 <View style={styles.lensInlineField}>
                   <Text style={styles.lensInlineLabel}>Vibe</Text>
                   <Text style={styles.lensInlineValue}>{lensInsight.vibe}</Text>
                 </View>
+                
                 <View style={styles.lensInlineField}>
-                  <Text style={styles.lensInlineLabel}>What to Expect</Text>
-                  <Text style={styles.lensInlineValue}>{lensInsight.expect}</Text>
+                  <Text style={styles.lensInlineLabel}>What It's Actually About</Text>
+                  <Text style={styles.lensInlineValue}>{lensInsight.whatItsActuallyAbout}</Text>
                 </View>
-                {lensInsight.adultNote ? (
-                  <Text style={styles.lensInlineNote}>{lensInsight.adultNote}</Text>
+
+                <View style={styles.lensInlineField}>
+                  <Text style={styles.lensInlineLabel}>What You'll See</Text>
+                  <Text style={styles.lensInlineValue}>{lensInsight.whatYoullSee}</Text>
+                </View>
+
+                {lensInsight.spoilerOverview ? (
+                  <View style={styles.lensSpoilerBox}>
+                    <Text style={styles.lensSpoilerLabel}>⚠️ Spoiler Overview</Text>
+                    <Text style={styles.lensInlineValue}>{lensInsight.spoilerOverview}</Text>
+                  </View>
                 ) : null}
               </>
             ) : (
-              <Text style={styles.lensInlineNote}>Tap Lens above to generate a quick AI overview.</Text>
+              <Text style={styles.lensInlineNote}>Tap Lens above to generate a quick, honest AI breakdown.</Text>
             )}
           </View>
 
@@ -852,6 +858,7 @@ const styles = StyleSheet.create({
   },
   ratingText: { color: C.white, fontSize: 10, fontWeight: '700' },
 
+  // ── LENS INLINE CARD (UPDATED STYLES) ──
   lensInlineCard: {
     backgroundColor: '#F59E0B',
     borderRadius: 20,
@@ -880,8 +887,25 @@ const styles = StyleSheet.create({
   lensInlineField: { marginBottom: 12 },
   lensInlineLabel: { color: '#78350F', fontSize: 11, fontWeight: '700', marginBottom: 4, textTransform: 'uppercase' },
   lensInlineValue: { color: '#4B250E', fontSize: 14, lineHeight: 20 },
+  
+  // Custom Spoiler Box Styles
+  lensSpoilerBox: {
+    marginTop: 8,
+    padding: 12,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.3)',
+  },
+  lensSpoilerLabel: {
+    color: '#B91C1C',
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
 
-  // ── LENS MODAL ──
+  // ── LENS MODAL (Legacy, left in case you reuse classes) ──
   lensOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',

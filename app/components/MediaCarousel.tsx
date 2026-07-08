@@ -57,7 +57,7 @@ const MediaCarousel = memo(({ title, type, data, navigation, savedIds, toggleWat
 export default MediaCarousel;
 
 const styles = StyleSheet.create({
-  sectionContainer: { paddingBottom: 24 },
+  sectionContainer: { paddingBottom: 24 ,borderRadius: 20, overflow: 'hidden'},
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   sectionTitle: { color: '#FFFFFF', fontSize: 21, fontFamily: 'GoogleSansFlex-Bold' },
 });

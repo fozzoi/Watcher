@@ -2,7 +2,7 @@
   "expo": {
     "name": "Watcher",
     "slug": "Watcher",
-    "version": "1.2.0",
+    "version": "2.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "myapp",
