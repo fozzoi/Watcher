@@ -38,7 +38,12 @@ jobs:
           # with the .exe Windows installer attached to it!
           tagName: watcher-v__VERSION__
           releaseName: 'Watcher App v__VERSION__'
-          releaseBody: 'Download the .msi or .exe file below to install Watcher on Windows.'
+          releaseBody: |
+            ## Watcher Desktop v2.0.2
+            - Minor bug fixes and improvements.
+            - Enhanced Tauri integration.
+            
+            Download the .msi or .exe file below to install Watcher on Windows.
           releaseDraft: true
           prerelease: false
 
