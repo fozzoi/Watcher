@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -24,48 +24,197 @@ import {
   getSeasonEpisodes,
   getMovieImages,
   TMDBEpisode,
-  TMDBImage,
   getMediaDetails,
   getExternalIds,
   getGeminiMoviesSimilarTo,
-  GLOBAL_CONFIG 
+  GLOBAL_CONFIG,
 } from '../src/tmdb';
 import { getProgress } from '../src/utils/progress';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  interpolate,
-  useAnimatedScrollHandler,
-  FadeInDown,
-  FadeIn,
-  Extrapolate,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
 import { STREAM_SOURCES, makeStreamUrl } from '../src/utils/sources';
 
-// --- CONSTANTS ---
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 const IMAGE_SIZES = { THUMBNAIL: 'w154', POSTER_DETAIL: 'w780', STILL: 'w300', ORIGINAL: 'original' };
 
 const C = {
-  bg: '#0D0D0D',
-  surface: '#161616',
-  surface2: '#1F1F1F',
-  border: '#2A2A2A',
-  white: '#FFFFFF',
-  muted: '#888888',
-  accent: '#E50914',
-  gold: '#FFD700',
-  green: '#4CAF50',
-  aiAccent: '#A78BFA', // purple for AI
+  bg: '#0A0A0B',
+  surface: '#141416',
+  surface2: '#1C1C20',
+  border: 'rgba(255,255,255,0.06)',
+  borderStrong: 'rgba(255,255,255,0.12)',
+  white: '#FAFAFA',
+  text: '#E8E8EA',
+  muted: '#7A7A82',
+  mutedSoft: '#9B9BA3',
+  accent: '#F5F5F7',
+  red: '#FF453A',
+  gold: '#FFD60A',
+  green: '#30D158',
+  ai: '#C9A9FF',
+  aiSoft: 'rgba(201,169,255,0.10)',
+  aiBorder: 'rgba(201,169,255,0.28)',
 };
 
-// ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
+// --- SHIMMER & LOADING COMPONENTS ---
+
+const AIShimmerBar = ({ width: w = '100%', height = 12 }: any) => (
+  <View style={[{ width: w, height, borderRadius: 6, backgroundColor: C.aiSoft, marginBottom: 8 }]} />
+);
+
+const ShimmerBlock = React.memo(({ width, height, borderRadius = 8, style }: any) => (
+  <View style={[{ width, height, borderRadius, backgroundColor: C.surface2 }, style]} />
+));
+
+const EpisodeShimmer = React.memo(({ thumbWidth }: any) => (
+  <View style={[styles.epRow, { borderColor: 'transparent' }]}>
+    <ShimmerBlock width={thumbWidth} height={thumbWidth * 0.56} borderRadius={10} />
+    <View style={{ flex: 1, gap: 8, paddingVertical: 4 }}>
+      <ShimmerBlock width="35%" height={10} />
+      <ShimmerBlock width="85%" height={14} />
+      <ShimmerBlock width="100%" height={12} />
+      <ShimmerBlock width="60%" height={12} />
+    </View>
+  </View>
+));
+
+const CardShimmer = React.memo(({ width, height }: any) => (
+  <View style={{ width, marginRight: 12 }}>
+    <ShimmerBlock width={width} height={height} borderRadius={12} />
+    <View style={{ marginTop: 8, gap: 6 }}>
+      <ShimmerBlock width="80%" height={12} />
+      <ShimmerBlock width="50%" height={10} />
+    </View>
+  </View>
+));
+
+const DirectorShimmer = React.memo(() => (
+  <View style={[styles.directorCard, { paddingRight: 16, borderColor: 'transparent', marginRight: 12 }]}>
+    <ShimmerBlock width={40} height={40} borderRadius={20} />
+    <View style={{ gap: 6 }}>
+      <ShimmerBlock width={60} height={12} />
+      <ShimmerBlock width={40} height={10} />
+    </View>
+  </View>
+));
+
+// --- MEMOIZED RENDER COMPONENTS ---
+
+const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => (
+  <TouchableOpacity
+    style={[styles.similarCard, { width: cardWidth }]}
+    onPress={() => onPress(item)}
+    activeOpacity={0.55}
+  >
+    <Image
+      source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }}
+      style={[styles.similarImg, { width: cardWidth, height: cardWidth * 1.5 }]}
+    />
+    <View style={styles.ratingBadge}>
+      <Ionicons name="star" size={9} color={C.gold} />
+      <Text style={styles.ratingText}>{item.vote_average?.toFixed(1)}</Text>
+    </View>
+    <Text style={styles.similarTitle} numberOfLines={2}>
+      {item.title || item.name}
+    </Text>
+  </TouchableOpacity>
+));
+
+const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => (
+  <View>
+    <TouchableOpacity
+      style={styles.directorCard}
+      onPress={() => onPress(item.id)}
+      activeOpacity={0.55}
+    >
+      <Image
+        source={{
+          uri: item.profile_path
+            ? getImageUrl(item.profile_path, IMAGE_SIZES.THUMBNAIL)
+            : 'https://via.placeholder.com/150',
+        }}
+        style={styles.directorImg}
+      />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.directorName} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <Text style={styles.directorRole} numberOfLines={1}>
+          {item.role || (mediaType === 'tv' ? 'Creator' : 'Director')}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  </View>
+));
+
+const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => (
+  <View>
+    <TouchableOpacity
+      style={{ width: cardWidth }}
+      onPress={() => onPress(item.id)}
+      activeOpacity={0.55}
+    >
+      <Image
+        source={{
+          uri: item.profile_path
+            ? getImageUrl(item.profile_path, IMAGE_SIZES.THUMBNAIL)
+            : 'https://via.placeholder.com/150',
+        }}
+        style={[styles.castImg, { width: cardWidth, height: cardWidth * 1.35 }]}
+      />
+      <Text style={styles.castName} numberOfLines={1}>
+        {item.name}
+      </Text>
+      {item.character ? (
+        <Text style={styles.castCharacter} numberOfLines={1}>
+          {item.character}
+        </Text>
+      ) : null}
+    </TouchableOpacity>
+  </View>
+));
+
+const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay }: any) => (
+  <View>
+    <TouchableOpacity
+      style={[styles.epRow, isActive && styles.epRowActive]}
+      onPress={() => onPlay(ep)}
+      activeOpacity={0.75}
+    >
+      <View style={{ position: 'relative' }}>
+        <Image
+          source={{
+            uri: ep.still_path
+              ? getImageUrl(ep.still_path, IMAGE_SIZES.STILL)
+              : 'https://via.placeholder.com/100',
+          }}
+          style={[styles.epThumb, { width: episodeThumbWidth, height: episodeThumbWidth * 0.56 }]}
+        />
+        <View style={styles.epPlayOverlay}>
+          <Ionicons name="play" size={16} color="#FFF" />
+        </View>
+        {isActive && <View style={styles.epActiveDot} />}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.epNum, isActive && { color: C.gold }]}>
+          EPISODE {ep.episode_number}
+        </Text>
+        <Text style={styles.epTitle} numberOfLines={1}>
+          {ep.name}
+        </Text>
+        <Text style={styles.epOverview} numberOfLines={2}>
+          {ep.overview}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  </View>
+), (prev, next) => prev.isActive === next.isActive && prev.ep.id === next.ep.id && prev.episodeThumbWidth === next.episodeThumbWidth);
+
+
+// --- MAIN COMPONENT ---
+
 const DetailPage = () => {
   const route = useRoute();
   const navigation = useNavigation<any>();
@@ -73,13 +222,14 @@ const DetailPage = () => {
   const isTablet = width >= 768;
   const isLandscape = width > height;
 
-  const HEADER_HEIGHT = isLandscape ? height * 0.70 : height * 0.55;
+  const HEADER_HEIGHT = isLandscape ? height * 0.7 : height * 0.62;
 
   const { movie: initialMovie } = route.params as { movie: any };
   const [movie, setMovie] = useState(initialMovie);
   const [externalIds, setExternalIds] = useState<any>({});
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   const [loadingAi, setLoadingAi] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(true);
   const [autoAiEnabled, setAutoAiEnabled] = useState(true);
   const [workingSourceIndex, setWorkingSourceIndex] = useState(0);
   const [isInWatchlist, setIsInWatchlist] = useState(false);
@@ -95,16 +245,15 @@ const DetailPage = () => {
   const [lensInsight, setLensInsight] = useState<any>(null);
   const [lensLoading, setLensLoading] = useState(false);
   const [lensError, setLensError] = useState<string | null>(null);
+  const [aiTab, setAiTab] = useState<'lens' | 'vibe'>('lens');
+  const [directors, setDirectors] = useState<any[]>([]);
 
-  const scrollY = useSharedValue(0);
+  const similarCardWidth = isTablet ? 160 : width * 0.3;
+  const castCardWidth = isTablet ? 120 : width * 0.26;
+  const episodeThumbWidth = isTablet ? 200 : width * 0.34;
 
-  const similarCardWidth = isTablet ? 160 : width * 0.32;
-  const castCardWidth = isTablet ? 120 : width * 0.24;
-  const episodeThumbWidth = isTablet ? 200 : width * 0.32;
-
-  // --- EFFECTS ---
   useEffect(() => {
-    AsyncStorage.getItem('settings_auto_ai').then(val => {
+    AsyncStorage.getItem('settings_auto_ai').then((val) => {
       if (val !== null) setAutoAiEnabled(JSON.parse(val));
     });
   }, []);
@@ -112,7 +261,11 @@ const DetailPage = () => {
   const fetchAiRecommendations = async () => {
     if (!movie.title && !movie.name) return;
     setLoadingAi(true);
-    const aiData = await getGeminiMoviesSimilarTo(movie.title || movie.name, movie.media_type, movie.id);
+    const aiData = await getGeminiMoviesSimilarTo(
+      movie.title || movie.name,
+      movie.media_type,
+      movie.id,
+    );
     setAiRecommendations(aiData);
     setLoadingAi(false);
   };
@@ -122,7 +275,6 @@ const DetailPage = () => {
     setLensLoading(true);
     setLensError(null);
     setLensInsight(null);
-
     try {
       const response = await fetch('https://watcher-api-rho.vercel.app/api/gemini', {
         method: 'POST',
@@ -136,17 +288,11 @@ const DetailPage = () => {
           customApiKey: GLOBAL_CONFIG.customApiKey,
         }),
       });
-
       const data = await response.json();
-      if (data?.result) {
-        setLensInsight(data.result);
-      } else {
-        setLensError(data?.error || 'No insight returned.');
-        console.error('Lens: no result in response', data);
-      }
+      if (data?.result) setLensInsight(data.result);
+      else setLensError(data?.error || 'No insight returned.');
     } catch (e: any) {
       setLensError(e.message || 'Failed to fetch Lens insight.');
-      console.error('Lens fetch failed:', e.message);
     } finally {
       setLensLoading(false);
     }
@@ -174,7 +320,11 @@ const DetailPage = () => {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch(testUrl, { method: 'HEAD', signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const response = await fetch(testUrl, {
+          method: 'HEAD',
+          signal: controller.signal,
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+        });
         clearTimeout(timeoutId);
         if (response.status === 200 || response.status === 302) {
           setWorkingSourceIndex(i);
@@ -182,11 +332,14 @@ const DetailPage = () => {
           foundWorking = true;
           break;
         }
-      } catch (e) {}
+      } catch {}
     }
     if (!foundWorking) {
       if (movie.media_type === 'movie' && !externalIds.imdb_id) setSourceStatus('unavailable');
-      else { setSourceStatus('available'); setWorkingSourceIndex(0); }
+      else {
+        setSourceStatus('available');
+        setWorkingSourceIndex(0);
+      }
     }
   };
 
@@ -203,7 +356,7 @@ const DetailPage = () => {
         if (!isActive) return;
         setLastWatched(progress);
         if (progress && movie.media_type === 'tv') {
-          setSelectedSeason(prev => {
+          setSelectedSeason((prev) => {
             if (prev !== progress.lastSeason) {
               fetchEpisodes(progress.lastSeason);
               return progress.lastSeason;
@@ -213,11 +366,15 @@ const DetailPage = () => {
         }
       };
       const task = requestIdleCallback(() => checkProgress());
-      return () => { isActive = false; cancelIdleCallback(task); };
-    }, [movie.id])
+      return () => {
+        isActive = false;
+        cancelIdleCallback(task);
+      };
+    }, [movie.id]),
   );
 
   const loadDeepDetails = async () => {
+    setLoadingDetails(true);
     try {
       checkIfInWatchlist();
       checkIfWatched();
@@ -232,19 +389,54 @@ const DetailPage = () => {
       setGenres(genresData);
       setSimilarMovies(similarData);
       setExternalIds(idsData);
-      if (initialMovie.media_type === 'tv' && Array.isArray(fullDetails.seasons) && fullDetails.seasons.length > 0) {
+
+      const detailData = fullDetails as any;
+      const merged: any[] = [];
+
+      if (detailData?.director) {
+        merged.push({
+          ...detailData.director,
+          role: detailData.director.job || (initialMovie.media_type === 'tv' ? 'Creator' : 'Director'),
+        });
+      }
+
+      const crew = detailData?.crew || detailData?.credits?.crew || [];
+      const creators = detailData?.created_by || [];
+      const dirFromCrew = crew.filter(
+        (p: any) => p.job === 'Director' || p.department === 'Directing',
+      );
+
+      [...creators, ...dirFromCrew].forEach((person: any) => {
+        if (!person?.id) return;
+        if (!merged.find((entry) => entry.id === person.id)) {
+          merged.push({
+            ...person,
+            role: person.job || (initialMovie.media_type === 'tv' ? 'Creator' : 'Director'),
+          });
+        }
+      });
+
+      setDirectors(merged);
+
+      if (
+        initialMovie.media_type === 'tv' &&
+        Array.isArray(fullDetails.seasons) &&
+        fullDetails.seasons.length > 0
+      ) {
         const storedProgress = await getProgress(initialMovie.id);
         let seasonToLoad = 1;
-        if (storedProgress) {
-          seasonToLoad = storedProgress.lastSeason;
-        } else {
+        if (storedProgress) seasonToLoad = storedProgress.lastSeason;
+        else {
           const valid = fullDetails.seasons.filter((s: any) => s.season_number > 0);
           seasonToLoad = valid.length > 0 ? valid[0].season_number : fullDetails.seasons[0].season_number;
         }
         setSelectedSeason(seasonToLoad);
         fetchEpisodes(seasonToLoad);
       }
-    } catch (e) {}
+    } catch {}
+    finally {
+      setLoadingDetails(false);
+    }
   };
 
   const fetchEpisodes = async (seasonNumber: number) => {
@@ -252,13 +444,15 @@ const DetailPage = () => {
     try {
       const data = await getSeasonEpisodes(movie.id, seasonNumber);
       setEpisodes(data);
-    } catch (e) {} finally { setLoadingEpisodes(false); }
+    } catch {}
+    finally {
+      setLoadingEpisodes(false);
+    }
   };
 
-  // --- ACTIONS ---
-  const handlePlay = (episode?: TMDBEpisode) => {
+  const handlePlay = useCallback((episode?: TMDBEpisode) => {
     if (sourceStatus === 'unavailable') {
-      Alert.alert('Error', 'No streaming source found for this content.');
+      Alert.alert('Unavailable', 'No streaming source found for this content.');
       return;
     }
     let targetSeason = 1, targetEpisode = 1;
@@ -273,21 +467,24 @@ const DetailPage = () => {
       targetEpisode = episodes[0].episode_number;
     }
     navigation.navigate('Player', {
-      tmdbId: movie.id, imdbId: externalIds.imdb_id,
-      title: movie.title || movie.name, mediaType: movie.media_type,
-      season: targetSeason, episode: targetEpisode,
+      tmdbId: movie.id,
+      imdbId: externalIds.imdb_id,
+      title: movie.title || movie.name,
+      mediaType: movie.media_type,
+      season: targetSeason,
+      episode: targetEpisode,
       poster: movie.poster_path,
       episodeName: episode ? episode.name : `Episode ${targetEpisode}`,
       startIndex: workingSourceIndex,
     });
-  };
+  }, [sourceStatus, movie, externalIds, lastWatched, episodes, workingSourceIndex, navigation]);
 
   const checkIfInWatchlist = async () => {
     try {
       const stored = await AsyncStorage.getItem('watchlist');
       const list = stored ? JSON.parse(stored) : [];
       setIsInWatchlist(list.some((item: any) => item.id === movie.id));
-    } catch (e) {}
+    } catch {}
   };
 
   const toggleWatchlist = async () => {
@@ -300,7 +497,7 @@ const DetailPage = () => {
       setIsInWatchlist(!exists);
       if (Platform.OS === 'android')
         ToastAndroid.show(exists ? 'Removed from Watchlist' : 'Added to Watchlist', ToastAndroid.SHORT);
-    } catch (e) {}
+    } catch {}
   };
 
   const checkIfWatched = async () => {
@@ -308,7 +505,7 @@ const DetailPage = () => {
       const stored = await AsyncStorage.getItem('history');
       const list = stored ? JSON.parse(stored) : [];
       setIsWatched(list.some((item: any) => item.id === movie.id));
-    } catch (e) {}
+    } catch {}
   };
 
   const toggleWatched = async () => {
@@ -319,14 +516,16 @@ const DetailPage = () => {
       const newList = exists ? list.filter((item: any) => item.id !== movie.id) : [...list, movie];
       await AsyncStorage.setItem('history', JSON.stringify(newList));
       setIsWatched(!exists);
-    } catch (e) {}
+    } catch {}
   };
 
   const openTelegramSearch = () => {
     const title = movie.title || movie.name;
     const year = (movie.release_date || movie.first_air_date)?.substring(0, 4) || '';
     const message = encodeURIComponent(`${title} ${year}`);
-    Linking.openURL(`tg://msg?text=${message}`).catch(() => Linking.openURL(`https://t.me/share/url?text=${message}`));
+    Linking.openURL(`tg://msg?text=${message}`).catch(() =>
+      Linking.openURL(`https://t.me/share/url?text=${message}`),
+    );
   };
 
   const openTorrentSearch = () => {
@@ -341,438 +540,527 @@ const DetailPage = () => {
     else Alert.alert('Copied', text);
   };
 
-  const scrollHandler = useAnimatedScrollHandler(e => { scrollY.value = e.contentOffset.y; });
-
-  const heroStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: interpolate(scrollY.value, [-120, 0], [1.15, 1], Extrapolate.CLAMP) }],
-    opacity: interpolate(scrollY.value, [0, HEADER_HEIGHT * 0.45], [1, 0.3], Extrapolate.CLAMP),
-  }));
-
   const displayTitle = movie.title || movie.name;
   const releaseYear = (movie.release_date || movie.first_air_date)?.split('-')[0] || '';
 
   const getPlayLabel = () => {
-    if (sourceStatus === 'checking') return 'Finding stream…';
+    if (sourceStatus === 'checking') return 'Finding stream';
     if (sourceStatus === 'unavailable') return 'Unavailable';
-    if (movie.media_type === 'movie') return lastWatched ? 'Resume' : 'Watch Now';
-    if (lastWatched) return `Resume S${lastWatched.lastSeason}:E${lastWatched.lastEpisode}`;
-    return 'Start Watching';
+    if (movie.media_type === 'movie') return lastWatched ? 'Resume' : 'Play';
+    if (lastWatched) return `Resume S${lastWatched.lastSeason} · E${lastWatched.lastEpisode}`;
+    return 'Play';
   };
 
-  return (
-    <View style={styles.root}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+  // --- RENDERING HELPERS FOR MEMOIZATION ---
 
-      {/* ── FLOATING TOP BAR ── */}
-      <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.glassBtn}>
-            <Ionicons name="chevron-back" size={22} color="#FFF" />
-        </TouchableOpacity>
+  const keyExtractorId = useCallback((item: any) => String(item.id), []);
+
+  const getSimilarItemLayout = useCallback((_: any, index: number) => ({
+    length: similarCardWidth + 12, offset: (similarCardWidth + 12) * index, index,
+  }), [similarCardWidth]);
+
+  const getCastItemLayout = useCallback((_: any, index: number) => ({
+    length: castCardWidth + 12, offset: (castCardWidth + 12) * index, index,
+  }), [castCardWidth]);
+
+  const handleMoviePress = useCallback((item: any) => navigation.push('Detail', { movie: item }), [navigation]);
+  const handlePersonPress = useCallback((id: string) => navigation.push('CastDetails', { personId: id }), [navigation]);
+
+  const renderAiItem = useCallback(({ item, index }: any) => (
+    <MemoizedSimilarCard item={item} index={index} cardWidth={similarCardWidth} onPress={handleMoviePress} />
+  ), [similarCardWidth, handleMoviePress]);
+
+  const renderDirectorItem = useCallback(({ item, index }: any) => (
+    <MemoizedDirectorCard item={item} index={index} mediaType={movie.media_type} onPress={handlePersonPress} />
+  ), [movie.media_type, handlePersonPress]);
+
+  const renderCastItem = useCallback(({ item, index }: any) => (
+    <MemoizedCastCard item={item} index={index} cardWidth={castCardWidth} onPress={handlePersonPress} />
+  ), [castCardWidth, handlePersonPress]);
+
+  const renderSimilarMovieItem = useCallback(({ item, index }: any) => (
+    <MemoizedSimilarCard item={item} index={index} cardWidth={similarCardWidth} onPress={handleMoviePress} />
+  ), [similarCardWidth, handleMoviePress]);
+
+
+  // --- LIST HEADER COMPONENT (Everything above episodes) ---
+  const renderHeader = () => (
+    <>
+      <View style={{ height: HEADER_HEIGHT, overflow: 'hidden' }}>
+        <Image
+          source={{ uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+        />
+        <LinearGradient
+          colors={['rgba(10,10,11,0.15)', 'transparent', 'rgba(10,10,11,0.6)', C.bg]}
+          locations={[0, 0.35, 0.75, 1]}
+          style={StyleSheet.absoluteFill}
+        />
       </View>
 
-      {/* ── SCROLL CONTENT ── */}
-      <Animated.ScrollView
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 120 }}
-      >
-        {/* HERO */}
-        <View style={{ height: HEADER_HEIGHT }}>
-          <Animated.Image
-            source={{ uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }}
-            style={[StyleSheet.absoluteFill, heroStyle]}
-            resizeMode="cover"
-          />
-          <LinearGradient
-            colors={['transparent', 'rgba(13,13,13,0.4)', 'rgba(13,13,13,0.8)', C.bg]}
-            locations={[0, 0.3, 0.6, 1]}
-            style={StyleSheet.absoluteFill}
-          />
+      <View style={styles.cardTop}>
+        {releaseYear ? (
+          <Text style={styles.heroEyebrow}>
+            {movie.media_type === 'tv' ? 'SERIES' : 'FILM'} · {releaseYear}
+          </Text>
+        ) : null}
+        <View style={styles.titleRow}>
+          <Text style={styles.title} numberOfLines={3}>
+            {displayTitle}
+          </Text>
+          <TouchableOpacity onPress={copyTitle} style={styles.copyBtn}>
+            <Feather name="copy" size={16} color={C.muted} />
+          </TouchableOpacity>
         </View>
 
-        {/* ── CONTENT CARD ── */}
-        <View style={styles.card}>
-
-          {/* Title row */}
-          <View style={styles.titleRow}>
-            <Text style={styles.title} numberOfLines={3}>{displayTitle}</Text>
-            <TouchableOpacity onPress={copyTitle} style={styles.copyBtn}>
-              <Feather name="copy" size={18} color={C.muted} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Meta pills */}
-          <View style={styles.titleRow}>
-          <View style={styles.metaRow}>
-            {releaseYear ? <View style={styles.pill}><Text style={styles.pillText}>{releaseYear}</Text></View> : null}
-            {movie.runtime > 0 && (
-              <View style={styles.pill}>
-                <Text style={styles.pillText}>{Math.floor(movie.runtime / 60)}h {movie.runtime % 60}m</Text>
+        <View style={styles.metaRow}>
+          {releaseYear ? <Text style={styles.metaText}>{releaseYear}</Text> : null}
+          {movie.runtime > 0 && (
+            <>
+              <Text style={styles.metaDot}>·</Text>
+              <Text style={styles.metaText}>
+                {Math.floor(movie.runtime / 60)}h {movie.runtime % 60}m
+              </Text>
+            </>
+          )}
+          {movie.vote_average > 0 && (
+            <>
+              <Text style={styles.metaDot}>·</Text>
+              <Ionicons name="star" size={11} color={C.gold} />
+              <Text style={[styles.metaText, { marginLeft: 4 }]}>{movie.vote_average.toFixed(1)}</Text>
+            </>
+          )}
+          {movie.certification ? (
+            <>
+              <Text style={styles.metaDot}>·</Text>
+              <View style={styles.certPill}>
+                <Text style={styles.certText}>{movie.certification}</Text>
               </View>
-            )}
-            {movie.vote_average > 0 && (
-              <View style={styles.pill}>
-                <Ionicons name="star" size={11} color={C.gold} style={styles.pillstar} />
-                <Text style={styles.pillText}>{movie.vote_average.toFixed(2)}</Text>
-              </View>
-            )}
-            {movie.certification ? <View style={[styles.pill, styles.pillOutline]}><Text style={styles.pillText}>{movie.certification}</Text></View> : null}
-            {movie.media_type === 'tv' && movie.number_of_seasons ? (
-              <View style={styles.pill}><Text style={styles.pillText}>{movie.number_of_seasons} Seasons</Text></View>
-            ) : null}
-          </View>
-          <TouchableOpacity onPress={toggleWatchlist} style={styles.glassBtn}>
-            <Ionicons name={isInWatchlist ? 'heart' : 'heart-outline'} size={25} color={isInWatchlist ? C.accent : '#FFF'} />
-          </TouchableOpacity>
-          </View>
+            </>
+          ) : null}
+          {movie.media_type === 'tv' && movie.number_of_seasons ? (
+            <>
+              <Text style={styles.metaDot}>·</Text>
+              <Text style={styles.metaText}>{movie.number_of_seasons} Seasons</Text>
+            </>
+          ) : null}
+        </View>
 
-          {/* Genres */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.genreRow}>
-            {genres.map((g, i) => (
+        {genres.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.genreRow} contentContainerStyle={{ gap: 6 }}>
+            {genres.map((g) => (
               <TouchableOpacity
                 key={g.id}
+                style={styles.genreChip}
                 onPress={() => navigation.navigate('ViewAll', { title: g.name, genreId: g.id, type: `genre/${g.id}`, data: [] })}
               >
-                <Text style={styles.genreChip}>{g.name}{i < genres.length - 1 ? '  ·  ' : ''}</Text>
+                <Text style={styles.genreChipText}>{g.name}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
+        )}
 
-          {/* ── PRIMARY PLAY BUTTON ── */}
-          <TouchableOpacity
-            style={[styles.playBtn, sourceStatus === 'unavailable' && styles.playBtnDisabled]}
-            onPress={() => handlePlay()}
-            disabled={sourceStatus !== 'available'}
-            activeOpacity={0.85}
-          >
-            {sourceStatus === 'checking' ? (
-              <ActivityIndicator color="#000" size="small" />
-            ) : (
-              <Ionicons name={lastWatched ? 'play-skip-forward' : 'play'} size={20} color="#000" />
-            )}
-            <Text style={styles.playBtnText}>{getPlayLabel()}</Text>
+        <TouchableOpacity
+          style={[styles.playBtn, sourceStatus === 'unavailable' && styles.playBtnDisabled]}
+          onPress={() => handlePlay()}
+          disabled={sourceStatus !== 'available'}
+          activeOpacity={0.85}
+        >
+          {sourceStatus === 'checking' ? (
+            <ActivityIndicator color="#000" size="small" />
+          ) : (
+            <Ionicons name={lastWatched ? 'play-skip-forward' : 'play'} size={20} color="#000" />
+          )}
+          <Text style={styles.playBtnText}>{getPlayLabel()}</Text>
+        </TouchableOpacity>
+
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={[styles.actionBtn, isInWatchlist && styles.actionBtnActive]} onPress={toggleWatchlist}>
+            <Ionicons name={isInWatchlist ? 'bookmark' : 'bookmark-outline'} size={18} color={isInWatchlist ? C.gold : C.white} />
+            <Text style={[styles.actionBtnText, isInWatchlist && { color: C.gold }]}>Watchlist</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionBtn, isWatched && styles.actionBtnActive]} onPress={toggleWatched}>
+            <Ionicons name={isWatched ? 'checkmark-circle' : 'checkmark-circle-outline'} size={18} color={isWatched ? C.green : C.mutedSoft} />
+            <Text style={[styles.actionBtnText, isWatched && { color: C.green }]}>Watched</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={openTelegramSearch}>
+            <Ionicons name="paper-plane-outline" size={17} color={C.mutedSoft} />
+            <Text style={styles.actionBtnText}>Telegram</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={openTorrentSearch}>
+            <Feather name="download" size={17} color={C.mutedSoft} />
+            <Text style={styles.actionBtnText}>Torrent</Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* ── SECONDARY ACTION ROW ── */}
-          <View style={styles.actionRow}>
-            {/* LENS — AI Insight */}
-            <TouchableOpacity style={[styles.actionBtn, styles.actionBtnLens]} onPress={fetchLensInsight}>
-              <MaterialCommunityIcons name="creation" size={17} color={C.aiAccent} />
-              <Text style={[styles.actionBtnText, { color: C.aiAccent }]}>Lens</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionBtn, isWatched && styles.actionBtnGreen]}
-              onPress={toggleWatched}
-            >
-              <Ionicons name={isWatched ? 'checkmark-circle' : 'checkmark-circle-outline'} size={17} color={isWatched ? C.green : C.muted} />
-              <Text style={[styles.actionBtnText, isWatched && { color: C.green }]}>Watched</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionBtn} onPress={openTelegramSearch}>
-              <Ionicons name="paper-plane-outline" size={17} color={C.muted} />
-              <Text style={styles.actionBtnText}>Telegram</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionBtn} onPress={openTorrentSearch}>
-              <Feather name="download" size={17} color={C.muted} />
-              <Text style={styles.actionBtnText}>Torrent</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ── OVERVIEW ── */}
+        {movie.overview ? (
           <View style={styles.section}>
             <Text style={styles.overviewText}>
-              {showFullOverview || (movie.overview?.length || 0) <= 200
-                ? movie.overview
-                : `${movie.overview?.slice(0, 200)}…`}
+              {showFullOverview || movie.overview.length <= 220 ? movie.overview : `${movie.overview.slice(0, 220)}…`}
             </Text>
-            {(movie.overview?.length || 0) > 200 && (
+            {movie.overview.length > 220 && (
               <TouchableOpacity onPress={() => setShowFullOverview(!showFullOverview)}>
-                <Text style={styles.readMore}>{showFullOverview ? 'Show less' : 'Read more'}</Text>
+                <Text style={styles.readMore}>{showFullOverview ? 'Less' : 'Read more'}</Text>
               </TouchableOpacity>
             )}
           </View>
+        ) : null}
 
-          {/* ── LENS INLINE CARD (UPDATED) ── */}
-          <View style={styles.lensInlineCard}>
-            <View style={styles.lensInlineHeader}>
-              <MaterialCommunityIcons name="creation" size={16} color="#D97706" />
-              <Text style={styles.lensInlineTitle}>Lens Insight</Text>
+        <View style={styles.aiPanel}>
+          <View style={styles.aiHeader}>
+            <View style={styles.aiHeaderLeft}>
+              <MaterialCommunityIcons name="creation" size={18} color={C.ai} />
+              <Text style={styles.aiHeaderTitle}>AI Insights</Text>
             </View>
-
-            {lensLoading ? (
-              <View style={styles.lensInlineLoading}>
-                <ActivityIndicator color="#D97706" />
-                <Text style={styles.lensInlineText}>Analyzing with Lens...</Text>
-              </View>
-            ) : lensError ? (
-              <View style={styles.lensInlineMessage}>
-                <Text style={styles.lensInlineText}>Could not load insight.</Text>
-                <Text style={styles.lensInlineNote}>{lensError}</Text>
-              </View>
-            ) : lensInsight ? (
-              <>
-                <View style={[styles.lensInlineBadge, { borderColor: '#FBBF24' }]}>
-                  <Text style={styles.lensInlineBadgeText}>{lensInsight.worthIt}</Text>
-                </View>
-                
-                <Text style={styles.lensInlineReason}>{lensInsight.friendVerdict}</Text>
-                
-                <View style={styles.lensInlineField}>
-                  <Text style={styles.lensInlineLabel}>Vibe</Text>
-                  <Text style={styles.lensInlineValue}>{lensInsight.vibe}</Text>
-                </View>
-                
-                <View style={styles.lensInlineField}>
-                  <Text style={styles.lensInlineLabel}>What It's Actually About</Text>
-                  <Text style={styles.lensInlineValue}>{lensInsight.whatItsActuallyAbout}</Text>
-                </View>
-
-                <View style={styles.lensInlineField}>
-                  <Text style={styles.lensInlineLabel}>What You'll See</Text>
-                  <Text style={styles.lensInlineValue}>{lensInsight.whatYoullSee}</Text>
-                </View>
-
-                {lensInsight.spoilerOverview ? (
-                  <View style={styles.lensSpoilerBox}>
-                    <Text style={styles.lensSpoilerLabel}>⚠️ Spoiler Overview</Text>
-                    <Text style={styles.lensInlineValue}>{lensInsight.spoilerOverview}</Text>
-                  </View>
-                ) : null}
-              </>
-            ) : (
-              <Text style={styles.lensInlineNote}>Tap Lens above to generate a quick, honest AI breakdown.</Text>
-            )}
+            <View style={styles.aiTabs}>
+              <TouchableOpacity style={[styles.aiTab, aiTab === 'lens' && styles.aiTabActive]} onPress={() => { setAiTab('lens'); if (!lensInsight && !lensLoading) fetchLensInsight(); }}>
+                <Text style={[styles.aiTabText, aiTab === 'lens' && styles.aiTabTextActive]}>Lens</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.aiTab, aiTab === 'vibe' && styles.aiTabActive]} onPress={() => setAiTab('vibe')}>
+                <Text style={[styles.aiTabText, aiTab === 'vibe' && styles.aiTabTextActive]}>Vibe</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* ── CAST ── */}
-          {movie.cast && movie.cast.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Cast</Text>
-              <FlatList
-                horizontal
-                data={movie.cast.slice(0, 12)}
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={item => String(item.id)}
-                renderItem={({ item, index }) => (
-                  <Animated.View entering={FadeInDown.delay(index * 40)}>
-                    <TouchableOpacity
-                      style={[styles.castCard, { width: castCardWidth }]}
-                      onPress={() => navigation.push('CastDetails', { personId: item.id })}
-                    >
-                      <Image
-                        source={{ uri: item.profile_path ? getImageUrl(item.profile_path, IMAGE_SIZES.THUMBNAIL) : 'https://via.placeholder.com/150' }}
-                        style={[styles.castImg, { width: castCardWidth, height: castCardWidth * 1.4 }]}
-                      />
-                      <Text style={styles.castName} numberOfLines={2}>{item.name}</Text>
-                    </TouchableOpacity>
-                  </Animated.View>
-                )}
-              />
+          {aiTab === 'lens' ? (
+            <View>
+              {lensLoading ? (
+                <View style={{ paddingTop: 6 }}>
+                  <AIShimmerBar width="40%" height={14} delay={0} />
+                  <AIShimmerBar width="100%" delay={80} />
+                  <AIShimmerBar width="92%" delay={160} />
+                  <AIShimmerBar width="70%" delay={240} />
+                </View>
+              ) : lensError ? (
+                <View>
+                  <Text style={styles.aiErrorText}>Couldn't load insight.</Text>
+                  <TouchableOpacity onPress={fetchLensInsight} style={styles.aiRetry}>
+                    <Feather name="rotate-cw" size={13} color={C.ai} />
+                    <Text style={styles.aiRetryText}>Try again</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : lensInsight ? (
+                <View>
+                  <View style={styles.aiVerdictPill}>
+                    <View style={styles.aiVerdictDot} />
+                    <Text style={styles.aiVerdictText}>{lensInsight.worthIt}</Text>
+                  </View>
+                  <Text style={styles.aiFriendVerdict}>
+                    "{lensInsight.friendVerdict}"
+                  </Text>
+                  {[
+                    { label: 'Vibe', value: lensInsight.vibe, delay: 160 },
+                    { label: "What it's really about", value: lensInsight.whatItsActuallyAbout, delay: 240 },
+                    { label: "What you'll see", value: lensInsight.whatYoullSee, delay: 320 },
+                  ].map((row) => row.value ? (
+                      <View key={row.label} style={styles.aiField}>
+                        <Text style={styles.aiFieldLabel}>{row.label}</Text>
+                        <Text style={styles.aiFieldValue}>{row.value}</Text>
+                      </View>
+                    ) : null,
+                  )}
+                  {lensInsight.spoilerOverview ? (
+                    <View style={styles.aiSpoiler}>
+                      <Text style={styles.aiSpoilerLabel}>⚠ Spoilers</Text>
+                      <Text style={styles.aiFieldValue}>{lensInsight.spoilerOverview}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : (
+                <TouchableOpacity onPress={fetchLensInsight} style={styles.aiGenerateBtn}>
+                  <MaterialCommunityIcons name="creation" size={16} color={C.ai} />
+                  <Text style={styles.aiGenerateText}>Generate Lens insight</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <View>
+              {loadingAi ? (
+                <View style={{ flexDirection: 'row', gap: 10, paddingTop: 6 }}>
+                  {[1, 2, 3].map((i) => <View key={i} style={{ flex: 1 }}><CardShimmer width="100%" height={similarCardWidth * 1.5} /></View>)}
+                </View>
+              ) : aiRecommendations.length > 0 ? (
+                <FlatList
+                  horizontal
+                  data={aiRecommendations}
+                  showsHorizontalScrollIndicator={false}
+                  keyExtractor={keyExtractorId}
+                  contentContainerStyle={{ paddingTop: 4 }}
+                  renderItem={renderAiItem}
+                  initialNumToRender={4}
+                  maxToRenderPerBatch={4}
+                  windowSize={3}
+                  removeClippedSubviews={true}
+                  getItemLayout={getSimilarItemLayout}
+                />
+              ) : (
+                <TouchableOpacity onPress={fetchAiRecommendations} style={styles.aiGenerateBtn}>
+                  <MaterialCommunityIcons name="creation" size={16} color={C.ai} />
+                  <Text style={styles.aiGenerateText}>Find similar vibes</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
+        </View>
 
-          {/* ── EPISODES ── */}
-          {movie.media_type === 'tv' && movie.seasons && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Episodes</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 14 }}>
-                {movie.seasons.filter((s: any) => s.season_number > 0).map((s: any) => (
+        {loadingDetails ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{movie.media_type === 'tv' ? 'Created by' : 'Directed by'}</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {[1, 2, 3].map((i) => <DirectorShimmer key={i} />)}
+            </ScrollView>
+          </View>
+        ) : directors.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              {movie.media_type === 'tv' ? 'Created by' : 'Directed by'}
+            </Text>
+            <FlatList
+              horizontal
+              data={directors}
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={keyExtractorId}
+              contentContainerStyle={{ gap: 12 }}
+              renderItem={renderDirectorItem}
+              initialNumToRender={3}
+              maxToRenderPerBatch={4}
+              windowSize={3}
+              removeClippedSubviews={true}
+            />
+          </View>
+        )}
+
+        {loadingDetails ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Cast</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {[1, 2, 3, 4].map((i) => <CardShimmer key={i} width={castCardWidth} height={castCardWidth * 1.35} />)}
+            </ScrollView>
+          </View>
+        ) : movie.cast && movie.cast.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Cast</Text>
+            <FlatList
+              horizontal
+              data={movie.cast.slice(0, 15)}
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={keyExtractorId}
+              contentContainerStyle={{ gap: 12 }}
+              renderItem={renderCastItem}
+              initialNumToRender={4}
+              maxToRenderPerBatch={4}
+              windowSize={3}
+              removeClippedSubviews={true}
+              getItemLayout={getCastItemLayout}
+            />
+          </View>
+        )}
+
+        {movie.media_type === 'tv' && movie.seasons && (
+          <View style={{ marginBottom: 14 }}>
+            <Text style={styles.sectionTitle}>Episodes</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 14 }}>
+              {movie.seasons.filter((s: any) => s.season_number > 0).map((s: any) => (
                   <TouchableOpacity
                     key={s.id}
                     style={[styles.seasonPill, selectedSeason === s.season_number && styles.seasonPillActive]}
                     onPress={() => { setSelectedSeason(s.season_number); fetchEpisodes(s.season_number); }}
                   >
-                    <Text style={[styles.seasonPillText, selectedSeason === s.season_number && styles.seasonPillTextActive]}>{s.name}</Text>
+                    <Text style={[styles.seasonPillText, selectedSeason === s.season_number && styles.seasonPillTextActive]}>
+                      {s.name}
+                    </Text>
                   </TouchableOpacity>
                 ))}
-              </ScrollView>
-
-              {loadingEpisodes ? <ActivityIndicator color={C.accent} /> : (
-                episodes.map(ep => {
-                  const isActive = lastWatched?.lastSeason === ep.season_number && lastWatched?.lastEpisode === ep.episode_number;
-                  return (
-                    <TouchableOpacity
-                      key={ep.id}
-                      style={[styles.epRow, isActive && styles.epRowActive]}
-                      onPress={() => handlePlay(ep)}
-                      activeOpacity={0.75}
-                    >
-                      <View style={{ position: 'relative' }}>
-                        <Image
-                          source={{ uri: ep.still_path ? getImageUrl(ep.still_path, IMAGE_SIZES.STILL) : 'https://via.placeholder.com/100' }}
-                          style={[styles.epThumb, { width: episodeThumbWidth, height: episodeThumbWidth * 0.56 }]}
-                        />
-                        <View style={styles.epPlayOverlay}>
-                          <Ionicons name="play" size={18} color="#FFF" />
-                        </View>
-                        {isActive && (
-                          <View style={styles.epActiveDot} />
-                        )}
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.epNum, isActive && { color: C.accent }]}>E{ep.episode_number}</Text>
-                        <Text style={styles.epTitle} numberOfLines={2}>{ep.name}</Text>
-                        <Text style={styles.epOverview} numberOfLines={2}>{ep.overview}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </View>
-          )}
-
-          {/* ── VIBE MATCH AI ── */}
-          <View style={styles.section}>
-            <View style={styles.sectionTitleRow}>
-              <MaterialCommunityIcons name="creation" size={16} color={C.gold} />
-              <Text style={[styles.sectionTitle, { color: C.gold, marginBottom: 0, marginLeft: 6 }]}>Vibe Match</Text>
-            </View>
-
-            {!autoAiEnabled && aiRecommendations.length === 0 && !loadingAi && (
-              <TouchableOpacity style={styles.vibeBtn} onPress={fetchAiRecommendations}>
-                <Text style={styles.vibeBtnText}>Generate Suggestions</Text>
-              </TouchableOpacity>
-            )}
-
-            {loadingAi ? <ActivityIndicator color={C.gold} style={{ marginTop: 16 }} /> : (
-              aiRecommendations.length > 0 && (
-                <FlatList
-                  horizontal
-                  data={aiRecommendations}
-                  showsHorizontalScrollIndicator={false}
-                  keyExtractor={(_, i) => String(i)}
-                  renderItem={({ item, index }) => (
-                    <Animated.View entering={FadeInDown.delay(index * 80)}>
-                      <TouchableOpacity
-                        style={[styles.similarCard, { width: similarCardWidth }]}
-                        onPress={() => navigation.push('Detail', { movie: item })}
-                      >
-                        <Image
-                          source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }}
-                          style={[styles.similarImg, { width: similarCardWidth, height: similarCardWidth * 1.5 }]}
-                        />
-                        <View style={styles.ratingBadge}>
-                          <Ionicons name="star" size={9} color={C.gold} />
-                          <Text style={styles.ratingText}>{item.vote_average?.toFixed(1)}</Text>
-                        </View>
-                        <Text style={styles.similarTitle} numberOfLines={2}>{item.title || item.name}</Text>
-                      </TouchableOpacity>
-                    </Animated.View>
-                  )}
-                />
-              )
+            </ScrollView>
+            
+            {loadingEpisodes && (
+              <View style={{ marginTop: 10, gap: 10 }}>
+                {[1, 2, 3, 4].map((i) => <EpisodeShimmer key={i} thumbWidth={episodeThumbWidth} />)}
+              </View>
             )}
           </View>
+        )}
+      </View>
+    </>
+  );
 
-          {/* ── MORE LIKE THIS ── */}
-          {similarMovies.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>More Like This</Text>
-              <FlatList
-                horizontal
-                data={similarMovies}
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={item => String(item.id)}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={[styles.similarCard, { width: similarCardWidth }]}
-                    onPress={() => navigation.push('Detail', { movie: item })}
-                  >
-                    <Image
-                      source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }}
-                      style={[styles.similarImg, { width: similarCardWidth, height: similarCardWidth * 1.5 }]}
-                    />
-                    <View style={styles.ratingBadge}>
-                      <Ionicons name="star" size={9} color={C.gold} />
-                      <Text style={styles.ratingText}>{item.vote_average?.toFixed(1)}</Text>
-                    </View>
-                    <Text style={styles.similarTitle} numberOfLines={2}>{item.title || item.name}</Text>
-                  </TouchableOpacity>
-                )}
-              />
-            </View>
-          )}
+  // --- LIST FOOTER COMPONENT (Everything below episodes) ---
+  const renderFooter = () => (
+    <View style={styles.listBody}>
+      {loadingDetails ? (
+        <View style={[styles.section, { marginTop: 24 }]}>
+          <Text style={styles.sectionTitle}>More like this</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {[1, 2, 3, 4].map((i) => <CardShimmer key={i} width={similarCardWidth} height={similarCardWidth * 1.5} />)}
+          </ScrollView>
         </View>
-      </Animated.ScrollView>
+      ) : similarMovies.length > 0 && (
+        <View style={[styles.section, { marginTop: 24 }]}>
+          <Text style={styles.sectionTitle}>More like this</Text>
+          <FlatList
+            horizontal
+            data={similarMovies}
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={keyExtractorId}
+            contentContainerStyle={{ gap: 12 }}
+            renderItem={renderSimilarMovieItem}
+            initialNumToRender={4}
+            maxToRenderPerBatch={4}
+            windowSize={3}
+            removeClippedSubviews={true}
+            getItemLayout={getSimilarItemLayout}
+          />
+        </View>
+      )}
+    </View>
+  );
 
+  // --- EPISODE RENDER ITEM ---
+  const renderEpisodeItem = useCallback(({ item, index }: any) => {
+    const isActive = lastWatched?.lastSeason === item.season_number && lastWatched?.lastEpisode === item.episode_number;
+    return (
+      <View style={styles.listBody}>
+        <MemoizedEpisodeRow 
+          ep={item} 
+          index={index} 
+          isActive={isActive} 
+          episodeThumbWidth={episodeThumbWidth} 
+          onPlay={handlePlay} 
+        />
+      </View>
+    );
+  }, [lastWatched, episodeThumbWidth, handlePlay]);
+
+  return (
+    <View style={styles.root}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+
+      <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.glassBtn} activeOpacity={0.7}>
+          <Ionicons name="chevron-back" size={22} color={C.white} />
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        data={movie.media_type === 'tv' && !loadingEpisodes ? episodes : []}
+        keyExtractor={keyExtractorId}
+        renderItem={renderEpisodeItem}
+        ListHeaderComponent={renderHeader}
+        ListFooterComponent={renderFooter}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 140 }}
+      />
     </View>
   );
 };
 
-// ─── STYLES ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
 
-  // Top bar
   topBar: {
-    position: 'absolute', top: 0, left: 0, right: 0,
-    flexDirection: 'row', justifyContent: 'space-between',
-    paddingHorizontal: 16, zIndex: 100,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    zIndex: 100,
   },
-  glassBtn: { borderRadius: 20, overflow: 'hidden' },
-  glassBtnInner: { padding: 10, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.25)' },
-
-  // Hero
-  heroBadge: {
-    position: 'absolute', top: 16, right: 16,
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 8,
-    paddingHorizontal: 8, paddingVertical: 5,
+  glassBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  heroBadgeText: { color: C.gold, fontSize: 12, fontWeight: '700' },
 
-  // Card (the scrollable content below hero)
-  card: {
-    marginTop: -32,
+  heroEyebrow: {
+    color: C.mutedSoft,
+    fontSize: 11,
+    letterSpacing: 2,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  heroTitle: {
+    color: C.white,
+    fontSize: 34,
+    fontWeight: '800',
+    lineHeight: 38,
+    letterSpacing: -0.8,
+  },
+
+  cardTop: {
+    marginTop: -40,
     backgroundColor: C.bg,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     paddingHorizontal: 20,
-    paddingTop: 28,
+    paddingTop: 24,
+  },
+  listBody: {
+    backgroundColor: C.bg,
+    paddingHorizontal: 20,
   },
 
-  // Title
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',marginBottom: 10 },
-  title: { flex: 1, fontSize: 28, fontWeight: '800', color: C.white, lineHeight: 34, letterSpacing: -0.5 },
-  copyBtn: { padding: 6, marginTop: 2 },
-
-  // Meta pills
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, },
-  pill: { backgroundColor: C.surface2, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, flexDirection:'row',gap:'3' },
-  pillOutline: { borderWidth: 1, borderColor: C.border, backgroundColor: 'transparent' },
-  pillText: { color: C.muted, fontSize: 12, fontWeight: '600' , alignSelf:'center' },
-  pillstar:{
-    alignSelf:'center',
-    paddingVertical: 5
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    gap: 8,
   },
+  title: {
+    flex: 1,
+    fontSize: 24,
+    fontWeight: '800',
+    color: C.white,
+    lineHeight: 30,
+    letterSpacing: -0.4,
+  },
+  copyBtn: { padding: 6, marginTop: 4 },
 
-  // Genre
-  genreRow: { marginBottom: 22 },
-  genreChip: { color: C.muted, fontSize: 13, fontWeight: '500' },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginBottom: 14 },
+  metaText: { color: C.mutedSoft, fontSize: 12.5, fontWeight: '500' },
+  metaDot: { color: C.muted, fontSize: 12, marginHorizontal: 4 },
+  certPill: {
+    borderWidth: 1,
+    borderColor: C.borderStrong,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    marginLeft: 4,
+  },
+  certText: { color: C.mutedSoft, fontSize: 10, fontWeight: '700' },
 
-  // Play button — full width, prominent
+  genreRow: { marginBottom: 18 },
+  genreChip: {
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 100,
+    backgroundColor: C.surface,
+  },
+  genreChipText: { color: C.text, fontSize: 12, fontWeight: '500' },
+
   playBtn: {
     backgroundColor: C.white,
-    borderRadius: 14,
+    borderRadius: 16,
     height: 54,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    marginBottom: 12,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    marginBottom: 10,
   },
-  playBtnDisabled: { backgroundColor: C.surface2, opacity: 0.6 },
-  playBtnText: { color: '#000', fontSize: 16, fontWeight: '800', letterSpacing: 0.2 },
+  playBtnDisabled: { backgroundColor: C.surface2, opacity: 0.5 },
+  playBtnText: { color: '#000', fontSize: 15, fontWeight: '700', letterSpacing: 0.2 },
 
-  // Secondary action row
   actionRow: { flexDirection: 'row', gap: 8, marginBottom: 28 },
   actionBtn: {
     flex: 1,
@@ -780,183 +1068,199 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    backgroundColor: C.surface,
     paddingVertical: 12,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: C.border,
-  },
-  actionBtnLens: {
-    borderColor: 'rgba(167, 139, 250, 0.35)',
-    backgroundColor: 'rgba(167, 139, 250, 0.08)',
-  },
-  actionBtnGreen: {
-    borderColor: 'rgba(76, 175, 80, 0.35)',
-    backgroundColor: 'rgba(76, 175, 80, 0.08)',
-  },
-  actionBtnText: { color: C.muted, fontSize: 11, fontWeight: '600' },
-
-  // Overview
-  section: { marginBottom: 32 },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  sectionTitle: { fontSize: 18, color: C.white, fontWeight: '700', marginBottom: 14 },
-  overviewText: { color: '#C0C0C0', fontSize: 14, lineHeight: 22 },
-  readMore: { color: C.accent, fontWeight: '700', marginTop: 6, fontSize: 13 },
-
-  // Cast
-  castCard: { marginRight: 12 },
-  castImg: { borderRadius: 12, backgroundColor: C.surface2, marginBottom: 6 },
-  castName: { color: '#CCC', fontSize: 11, fontWeight: '500', textAlign: 'center' },
-
-  // Season pills
-  seasonPill: {
-    paddingHorizontal: 16, paddingVertical: 8,
-    borderRadius: 20, backgroundColor: C.surface2,
-    borderWidth: 1, borderColor: 'transparent',
-  },
-  seasonPillActive: { borderColor: C.white },
-  seasonPillText: { color: C.muted, fontSize: 13, fontWeight: '500' },
-  seasonPillTextActive: { color: C.white, fontWeight: '700' },
-
-  // Episodes
-  epRow: {
-    flexDirection: 'row', gap: 12, alignItems: 'center',
-    marginBottom: 14, padding: 8, borderRadius: 14,
     backgroundColor: C.surface,
   },
-  epRowActive: { borderWidth: 1, borderColor: 'rgba(229,9,20,0.4)', backgroundColor: 'rgba(229,9,20,0.06)' },
-  epThumb: { borderRadius: 10, backgroundColor: C.surface2 },
-  epPlayOverlay: {
-    ...StyleSheet.absoluteFill,
-    justifyContent: 'center', alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 10,
+  actionBtnActive: {
+    borderColor: 'rgba(48,209,88,0.35)',
+    backgroundColor: 'rgba(48,209,88,0.08)',
   },
-  epActiveDot: {
-    position: 'absolute', top: 6, left: 6,
-    width: 8, height: 8, borderRadius: 4, backgroundColor: C.accent,
-  },
-  epNum: { color: C.muted, fontSize: 11, fontWeight: '700', marginBottom: 2 },
-  epTitle: { color: C.white, fontSize: 13, fontWeight: '700', marginBottom: 4 },
-  epOverview: { color: C.muted, fontSize: 11, lineHeight: 16 },
+  actionBtnText: { color: C.mutedSoft, fontSize: 11, fontWeight: '600' },
 
-  // Similar / Vibe
-  vibeBtn: {
-    backgroundColor: 'rgba(255,215,0,0.08)',
-    borderWidth: 1, borderColor: C.gold,
-    borderRadius: 14, paddingVertical: 14,
-    alignItems: 'center',
+  section: { marginBottom: 32 },
+  sectionTitle: {
+    fontSize: 15,
+    color: C.white,
+    fontWeight: '700',
+    marginBottom: 14,
+    letterSpacing: -0.2,
   },
-  vibeBtnText: { color: C.gold, fontWeight: '700', fontSize: 14 },
-  similarCard: { marginRight: 12 },
-  similarImg: { borderRadius: 12, backgroundColor: C.surface2 },
-  similarTitle: { color: C.white, fontSize: 12, fontWeight: '600', marginTop: 8, lineHeight: 17 },
-  ratingBadge: {
-    position: 'absolute', top: 6, right: 6,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingHorizontal: 6, paddingVertical: 3,
-    borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 3,
-  },
-  ratingText: { color: C.white, fontSize: 10, fontWeight: '700' },
+  overviewText: { color: C.text, fontSize: 14.5, lineHeight: 23 },
+  readMore: { color: C.white, fontWeight: '700', marginTop: 8, fontSize: 13 },
 
-  // ── LENS INLINE CARD (UPDATED STYLES) ──
-  lensInlineCard: {
-    backgroundColor: '#F59E0B',
+  aiPanel: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.aiBorder,
     borderRadius: 20,
     padding: 16,
     marginBottom: 32,
-    borderWidth: 1,
-    borderColor: '#FBBF24',
   },
-  lensInlineHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  lensInlineTitle: { color: '#92400E', fontSize: 16, fontWeight: '800' },
-  lensInlineLoading: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
-  lensInlineMessage: { paddingVertical: 8 },
-  lensInlineText: { color: '#6B2100', fontSize: 13 },
-  lensInlineNote: { color: '#78350F', fontSize: 12, marginTop: 6, lineHeight: 18 },
-  lensInlineBadge: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    marginBottom: 10,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+  aiHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  aiHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  aiHeaderTitle: { color: C.white, fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+  aiTabs: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 100,
+    padding: 3,
+  },
+  aiTab: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 100 },
+  aiTabActive: { backgroundColor: C.aiSoft, borderWidth: 1, borderColor: C.aiBorder },
+  aiTabText: { color: C.muted, fontSize: 11.5, fontWeight: '700' },
+  aiTabTextActive: { color: C.ai },
+
+  aiVerdictPill: {
     alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: C.aiSoft,
+    borderWidth: 1,
+    borderColor: C.aiBorder,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 100,
+    marginBottom: 12,
   },
-  lensInlineBadgeText: { color: '#92400E', fontSize: 13, fontWeight: '700' },
-  lensInlineReason: { color: '#6B2100', fontSize: 14, marginBottom: 12, lineHeight: 20 },
-  lensInlineField: { marginBottom: 12 },
-  lensInlineLabel: { color: '#78350F', fontSize: 11, fontWeight: '700', marginBottom: 4, textTransform: 'uppercase' },
-  lensInlineValue: { color: '#4B250E', fontSize: 14, lineHeight: 20 },
-  
-  // Custom Spoiler Box Styles
-  lensSpoilerBox: {
-    marginTop: 8,
+  aiVerdictDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.ai },
+  aiVerdictText: { color: C.ai, fontSize: 11.5, fontWeight: '700', letterSpacing: 0.3 },
+  aiFriendVerdict: {
+    color: C.white,
+    fontSize: 16,
+    fontWeight: '600',
+    lineHeight: 23,
+    fontStyle: 'italic',
+    marginBottom: 16,
+  },
+  aiField: { marginBottom: 12 },
+  aiFieldLabel: {
+    color: C.muted,
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  aiFieldValue: { color: C.text, fontSize: 13.5, lineHeight: 20 },
+  aiSpoiler: {
+    marginTop: 6,
     padding: 12,
-    backgroundColor: 'rgba(0,0,0,0.15)',
+    backgroundColor: 'rgba(255,69,58,0.06)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.3)',
+    borderColor: 'rgba(255,69,58,0.25)',
   },
-  lensSpoilerLabel: {
-    color: '#B91C1C',
-    fontSize: 11,
-    fontWeight: '800',
-    marginBottom: 6,
-    textTransform: 'uppercase',
+  aiSpoilerLabel: { color: C.red, fontSize: 10.5, fontWeight: '800', letterSpacing: 1, marginBottom: 6 },
+  aiErrorText: { color: C.mutedSoft, fontSize: 13, marginBottom: 8 },
+  aiRetry: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
+  aiRetryText: { color: C.ai, fontSize: 13, fontWeight: '600' },
+  aiGenerateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: C.aiBorder,
   },
+  aiGenerateText: { color: C.ai, fontSize: 13, fontWeight: '700' },
 
-  // ── LENS MODAL (Legacy, left in case you reuse classes) ──
-  lensOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
+  directorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 100,
+    paddingRight: 16,
+    paddingLeft: 4,
+    paddingVertical: 4,
   },
-  lensSheet: {
-    backgroundColor: '#111',
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: 20, paddingBottom: 40,
-    maxHeight: '85%',
-  },
-  lensHandle: {
-    width: 36, height: 4, backgroundColor: C.border,
-    borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 20,
-  },
-  lensHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  lensHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  lensTitle: { color: C.aiAccent, fontSize: 18, fontWeight: '800', letterSpacing: 0.5 },
-  lensClose: { padding: 4 },
-  lensSubtitle: { color: C.muted, fontSize: 13, marginBottom: 20 },
-  lensLoader: { paddingVertical: 40, alignItems: 'center', gap: 12 },
-  lensLoadingText: { color: C.muted, fontSize: 13 },
+  directorImg: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.surface2 },
+  directorName: { color: C.white, fontSize: 13, fontWeight: '700' },
+  directorRole: { color: C.muted, fontSize: 11, fontWeight: '500' },
 
-  lensWorthBadge: {
-    borderWidth: 1, borderRadius: 16,
-    padding: 16, marginBottom: 20,
-  },
-  lensWorthLabel: { fontSize: 16, fontWeight: '800', marginBottom: 6 },
-  lensWorthReason: { color: '#CCC', fontSize: 13, lineHeight: 20 },
+  castImg: { borderRadius: 12, backgroundColor: C.surface2, marginBottom: 8 },
+  castName: { color: C.white, fontSize: 12.5, fontWeight: '600', textAlign: 'left' },
+  castCharacter: { color: C.muted, fontSize: 11, fontWeight: '400', marginTop: 2, textAlign: 'left' },
 
-  lensBlock: { marginBottom: 18 },
-  lensBlockLabel: { color: C.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
-  lensBlockValue: { color: C.white, fontSize: 15, fontWeight: '600' },
-  lensBodyText: { color: '#CCC', fontSize: 13, lineHeight: 20 },
-
-  lensFlags: { flexDirection: 'row', gap: 10, marginBottom: 10 },
-  lensFlagPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 12, paddingVertical: 8,
-    backgroundColor: C.surface2, borderRadius: 10,
-    borderWidth: 1, borderColor: C.border,
+  seasonPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 100,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
   },
-  lensFlagActive: { borderColor: 'rgba(239,68,68,0.4)', backgroundColor: 'rgba(239,68,68,0.08)' },
-  lensFlagGoreActive: { borderColor: 'rgba(249,115,22,0.4)', backgroundColor: 'rgba(249,115,22,0.08)' },
-  lensFlagText: { fontSize: 12, fontWeight: '600' },
-  lensNote: { color: C.muted, fontSize: 12, marginBottom: 18, marginTop: 4 },
+  seasonPillActive: { backgroundColor: C.white, borderColor: C.white },
+  seasonPillText: { color: C.mutedSoft, fontSize: 12.5, fontWeight: '600' },
+  seasonPillTextActive: { color: '#000', fontWeight: '700' },
 
-  lensRefetch: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'center', marginTop: 8, padding: 8,
+  epRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+    marginBottom: 10,
+    padding: 8,
+    borderRadius: 14,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
   },
-  lensRefetchText: { color: C.aiAccent, fontSize: 13, fontWeight: '600' },
+  epRowActive: { borderColor: 'rgba(255,214,10,0.4)', backgroundColor: 'rgba(255,214,10,0.05)' },
+  epThumb: { borderRadius: 10, backgroundColor: C.surface2 },
+  epPlayOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 10,
+  },
+  epActiveDot: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.gold,
+  },
+  epNum: { color: C.muted, fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 3 },
+  epTitle: { color: C.white, fontSize: 13.5, fontWeight: '700', marginBottom: 3 },
+  epOverview: { color: C.mutedSoft, fontSize: 11.5, lineHeight: 16 },
+  
+  similarCard: { marginRight: 12 },
+  similarImg: { borderRadius: 12, backgroundColor: C.surface2 },
+  similarTitle: { color: C.white, fontSize: 12, fontWeight: '600', marginTop: 8, lineHeight: 16 },
+  ratingBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  ratingText: { color: C.white, fontSize: 10, fontWeight: '700' },
 });
 
 export default DetailPage;

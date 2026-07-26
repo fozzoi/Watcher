@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform, Dimensions, View, StyleSheet, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 
 // Import your existing tab screens
 import History from '../app/history';
@@ -21,8 +22,8 @@ import SimilarMoviesPage from './SimilarMoviesPage';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-const DOCK_MARGIN_BOTTOM = Platform.OS === 'ios' ? 30 : 20;
-const TAB_BAR_HEIGHT = 70; 
+const DOCK_MARGIN_BOTTOM = Platform.OS === 'ios' ? 25 : 16;
+const TAB_BAR_HEIGHT = 63;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const stackScreenOptions = {
@@ -124,6 +125,8 @@ const CustomTabBar: React.FC<BottomTabBarProps> = (props) => {
                     const isFocused = state.index === index;
 
                     const onPress = () => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
                         const event = navigation.emit({
                             type: 'tabPress',
                             target: route.key,
@@ -175,20 +178,20 @@ const localStyles = StyleSheet.create({
         bottom: 0,
         left: 0,
         right: 0,
-        height: 140, 
+        height: 120, 
     },
     pillContainer: {
-        width: Math.min(SCREEN_WIDTH - 60, 350), 
+        width: Math.min(SCREEN_WIDTH - 100, 260), 
         height: TAB_BAR_HEIGHT,
         marginBottom: DOCK_MARGIN_BOTTOM,
-        borderRadius: 35, 
+        borderRadius: 27, 
         overflow: 'hidden',
         borderColor: 'rgb(22, 22, 22)',
         borderWidth: 1,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.5,
-        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.45,
+        shadowRadius: 8,
         elevation: 10,
         backgroundColor: 'rgb(10, 10, 10)', 
     },
