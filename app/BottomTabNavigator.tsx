@@ -22,8 +22,8 @@ import SimilarMoviesPage from './SimilarMoviesPage';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-const DOCK_MARGIN_BOTTOM = Platform.OS === 'ios' ? 25 : 16;
-const TAB_BAR_HEIGHT = 63;
+const DOCK_MARGIN_BOTTOM = Platform.OS === 'ios' ? 25 : 25;
+const TAB_BAR_HEIGHT = 68;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const stackScreenOptions = {
