@@ -1,3 +1,4 @@
+// app/DetailPage.tsx
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
@@ -34,7 +35,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { STREAM_SOURCES, makeStreamUrl } from '../src/utils/sources';
+import { startDownload } from '../src/utils/downloadManager';
+import { VideoInterceptor } from '../src/utils/VideoInterceptor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 const IMAGE_SIZES = { THUMBNAIL: 'w154', POSTER_DETAIL: 'w780', STILL: 'w300', ORIGINAL: 'original' };
@@ -231,7 +233,6 @@ const DetailPage = () => {
   const [loadingAi, setLoadingAi] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(true);
   const [autoAiEnabled, setAutoAiEnabled] = useState(true);
-  const [workingSourceIndex, setWorkingSourceIndex] = useState(0);
   const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [isWatched, setIsWatched] = useState(false);
   const [showFullOverview, setShowFullOverview] = useState(false);
@@ -247,6 +248,7 @@ const DetailPage = () => {
   const [lensError, setLensError] = useState<string | null>(null);
   const [aiTab, setAiTab] = useState<'lens' | 'vibe'>('lens');
   const [directors, setDirectors] = useState<any[]>([]);
+  const [downloadTarget, setDownloadTarget] = useState<string | null>(null);
 
   const similarCardWidth = isTablet ? 160 : width * 0.3;
   const castCardWidth = isTablet ? 120 : width * 0.26;
@@ -305,43 +307,37 @@ const DetailPage = () => {
     }
   }, [movie.id, autoAiEnabled]);
 
-  useEffect(() => {
-    if (externalIds && (externalIds.imdb_id || movie.id)) prefetchSources();
-  }, [externalIds, movie.id]);
-
-  const prefetchSources = async () => {
+  // 🎯 Replaces old source checking logic with direct Vercel API check
+  const prefetchSources = useCallback(async (seasonToTry = 1, episodeToTry = 1) => {
     setSourceStatus('checking');
-    const tmdbId = movie.id;
-    const imdbId = externalIds?.imdb_id;
-    let foundWorking = false;
-    for (let i = 0; i < STREAM_SOURCES.length; i++) {
-      const source = STREAM_SOURCES[i];
-      const testUrl = makeStreamUrl(source.url, movie.media_type, tmdbId, imdbId, 1, 1);
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch(testUrl, {
-          method: 'HEAD',
-          signal: controller.signal,
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-        });
-        clearTimeout(timeoutId);
-        if (response.status === 200 || response.status === 302) {
-          setWorkingSourceIndex(i);
-          setSourceStatus('available');
-          foundWorking = true;
-          break;
-        }
-      } catch {}
-    }
-    if (!foundWorking) {
-      if (movie.media_type === 'movie' && !externalIds.imdb_id) setSourceStatus('unavailable');
-      else {
+    try {
+      const baseUrl = "https://watcher-api-rho.vercel.app";
+      const encodedTitle = encodeURIComponent(movie.title || movie.name || '');
+      const endpoint = `${baseUrl}/api/get_stream?tmdb_id=${movie.id}&media_type=${movie.media_type}&title=${encodedTitle}&season=${seasonToTry}&episode=${episodeToTry}`;
+
+      const response = await fetch(endpoint);
+      const data = await response.json();
+
+      if (data.status === "success" && data.stream_url) {
         setSourceStatus('available');
-        setWorkingSourceIndex(0);
+      } else {
+        setSourceStatus('unavailable');
       }
+    } catch (e) {
+      setSourceStatus('unavailable');
     }
-  };
+  }, [movie]);
+
+  useEffect(() => {
+    if (movie.id) {
+        let s = 1, e = 1;
+        if (movie.media_type === 'tv') {
+            s = lastWatched?.lastSeason || 1;
+            e = lastWatched?.lastEpisode || 1;
+        }
+        prefetchSources(s, e);
+    }
+  }, [movie.id, lastWatched, prefetchSources]);
 
   useEffect(() => {
     const task = requestIdleCallback(() => loadDeepDetails());
@@ -475,9 +471,8 @@ const DetailPage = () => {
       episode: targetEpisode,
       poster: movie.poster_path,
       episodeName: episode ? episode.name : `Episode ${targetEpisode}`,
-      startIndex: workingSourceIndex,
     });
-  }, [sourceStatus, movie, externalIds, lastWatched, episodes, workingSourceIndex, navigation]);
+  }, [sourceStatus, movie, externalIds, lastWatched, episodes, navigation]);
 
   const checkIfInWatchlist = async () => {
     try {
@@ -665,7 +660,7 @@ const DetailPage = () => {
           style={[styles.playBtn, sourceStatus === 'unavailable' && styles.playBtnDisabled]}
           onPress={() => handlePlay()}
           disabled={sourceStatus !== 'available'}
-          activeOpacity={0.85}
+          activeOpacity={0.5}
         >
           {sourceStatus === 'checking' ? (
             <ActivityIndicator color="#000" size="small" />
@@ -674,6 +669,54 @@ const DetailPage = () => {
           )}
           <Text style={styles.playBtnText}>{getPlayLabel()}</Text>
         </TouchableOpacity>
+        
+        <TouchableOpacity
+            style={[styles.downloadBtn, sourceStatus === 'unavailable' && styles.playBtnDisabled]}
+            disabled={sourceStatus !== 'available'}
+            onPress={async () => {
+              if (Platform.OS === 'android') ToastAndroid.show('Fetching download link...', ToastAndroid.SHORT);
+              
+              try {
+                const baseUrl = "https://watcher-api-rho.vercel.app"; 
+                const encodedTitle = encodeURIComponent(displayTitle);
+                const targetSeason = selectedSeason || 1;
+                const targetEpisode = (episodes && episodes.length > 0) ? episodes[0].episode_number : 1;
+
+                const endpoint = `${baseUrl}/api/get_stream?tmdb_id=${movie.id}&media_type=${movie.media_type}&title=${encodedTitle}&season=${targetSeason}&episode=${targetEpisode}`;
+                
+                const response = await fetch(endpoint);
+                const data = await response.json();
+
+                if (data.status === "success") {
+                  if (data.is_m3u8 || data.stream_url.endsWith('.mp4')) {
+                    startDownload(data.stream_url, displayTitle);
+                  } else {
+                    setDownloadTarget(data.stream_url);
+                  }
+                } else {
+                  Alert.alert("Error", "Could not find a valid stream to download.");
+                }
+              } catch (error) {
+                console.error("Download fetch error", error);
+                Alert.alert("Error", "Network issue while fetching the link.");
+              }
+            }}
+            activeOpacity={0.85}>
+            {sourceStatus === 'checking' ? (
+                <ActivityIndicator color="#FAFAFA" size="small" />
+            ) : (
+                <Feather name="download-cloud" size={20} color="#FAFAFA" />
+            )}
+            <Text style={styles.downloadBtnText}>Download</Text>
+        </TouchableOpacity>
+
+        {downloadTarget && (
+        <VideoInterceptor 
+          targetUrl={downloadTarget} 
+          fileName={displayTitle} 
+          onComplete={() => setDownloadTarget(null)}
+        />
+      )}
 
         <View style={styles.actionRow}>
           <TouchableOpacity style={[styles.actionBtn, isInWatchlist && styles.actionBtnActive]} onPress={toggleWatchlist}>
@@ -951,6 +994,7 @@ const DetailPage = () => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 140 }}
       />
+      
     </View>
   );
 };
@@ -1057,6 +1101,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
     marginBottom: 10,
+  },
+  downloadBtn: {
+    backgroundColor: C.surface2,
+    borderWidth: 1,
+    borderColor: C.borderStrong,
+    borderRadius: 16,
+    height: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  downloadBtnText: {
+    color: C.white,
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   playBtnDisabled: { backgroundColor: C.surface2, opacity: 0.5 },
   playBtnText: { color: '#000', fontSize: 15, fontWeight: '700', letterSpacing: 0.2 },

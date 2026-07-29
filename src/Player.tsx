@@ -7,7 +7,7 @@ import { useRoute, useNavigation } from "@react-navigation/native";
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
 import { saveProgress } from '../src/utils/progress';
-import { Ionicons } from '@expo/vector-icons';
+
 
 const generateHlsHtml = (url: string) => `
   <!DOCTYPE html>
@@ -68,12 +68,9 @@ export default function Player() {
     const fetchStream = async () => {
       setLoading(true);
       try {
-        // 🎯 Pointing directly to your Vercel deployment
         const baseUrl = "https://watcher-api-rho.vercel.app"; 
         const encodedTitle = encodeURIComponent(title);
-        
         const endpoint = `${baseUrl}/api/get_stream?tmdb_id=${tmdbId}&media_type=${mediaType.toLowerCase()}&title=${encodedTitle}&season=${season || 1}&episode=${episode || 1}`;     
-        console.log("📡 Fetching:", endpoint);
         
         const response = await fetch(endpoint);
         const data = await response.json();
@@ -83,14 +80,9 @@ export default function Player() {
                 setActiveProvider("Direct Link (Ad-Free)");
                 setStreamData(generateHlsHtml(data.stream_url));
             } else {
-                setActiveProvider("Iframe Fallback");
-                setStreamData(`
-                  <html>
-                    <body style="margin:0;background:black;">
-                      <iframe src="${data.stream_url}" width="100%" height="100%" frameborder="0" allowfullscreen allow="autoplay; encrypted-media"></iframe>
-                    </body>
-                  </html>
-                `);
+                setActiveProvider("Web Player");
+                // 🎯 Pass the raw URL directly instead of building an iframe
+                setStreamData(data.stream_url); 
             }
         }
       } catch (error) {
@@ -137,22 +129,19 @@ export default function Player() {
       {streamData ? (
           <WebView
             key={tmdbId}
-            source={{ html: streamData }}
+            // 🎯 Check if it's a direct URL or HTML code
+            source={streamData.startsWith('http') ? { uri: streamData } : { html: streamData }}
             style={styles.webview}
             containerStyle={{ backgroundColor: 'black' }}
             javaScriptEnabled={true}
             domStorageEnabled={true}
             allowsFullscreenVideo={true}
             mediaPlaybackRequiresUserAction={false}
-            injectedJavaScript={`
-              window.open = function() { return null; };
-              window.onbeforeunload = function() { return "Prevented"; };
-              true;
-            `}
+            setSupportMultipleWindows={false}
             onShouldStartLoadWithRequest={(request) => {
-              const isMainHtml = request.url === 'about:blank' || request.url.startsWith('data:');
-              const isSafe = request.url.includes('cdn') || request.url.includes('m3u8') || request.url.includes('vidsrc');
-              return isMainHtml || isSafe;
+              const url = request.url;
+              // Only allow the main player, data streams, and safe CDNs
+              return url === 'about:blank' || url.startsWith('data:') || url.startsWith('blob:') || url.includes('embed.su') || url.includes('vidsrc');
             }}
           />
       ) : null}
@@ -163,11 +152,6 @@ export default function Player() {
           <Text style={styles.loadingText}>Connecting to {activeProvider}...</Text>
         </View>
       )}
-
-      {/* Exit Button */}
-      <TouchableOpacity style={styles.backButton} onPress={() => { exitFullScreen().then(() => navigation.goBack()) }}>
-        <Ionicons name="close" size={28} color="white" />
-      </TouchableOpacity>
     </View>
   );
 }

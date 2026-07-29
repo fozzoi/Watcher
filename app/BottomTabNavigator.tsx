@@ -7,17 +7,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
 // Import your existing tab screens
-import History from '../app/history';
+import History from './history';
 import Explore from './Explore';
-import Index from '../app/index';
-import WatchListPage from '../app/WatchListPage';
-import SettingsPage from '../app/Settings'; 
+import Index from './index';
+import WatchListPage from './WatchListPage';
+import SettingsPage from './Settings'; 
 
 // Import your detail screens
 import DetailPage from './DetailPage';
 import CastDetails from './CastDetails';
 import ViewAllPage from './ViewAllPage';
 import SimilarMoviesPage from './SimilarMoviesPage';
+import DownloadManagerScreen from './screens/DownloadManagerScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -71,6 +72,7 @@ const SearchStack = () => (
         <Stack.Screen name="ViewAll" component={ViewAllPage} />
         <Stack.Screen name="SimilarMovies" component={SimilarMoviesPage} />
         <Stack.Screen name="history" component={History} />
+        <Stack.Screen name="DownloadManager" component={DownloadManagerScreen} />
     </Stack.Navigator>
 );
 
@@ -82,6 +84,7 @@ const WatchlistStack = () => (
         <Stack.Screen name="ViewAll" component={ViewAllPage} />
         <Stack.Screen name="SimilarMovies" component={SimilarMoviesPage} />
         <Stack.Screen name="history" component={History} />
+        <Stack.Screen name="DownloadManager" component={DownloadManagerScreen} />
     </Stack.Navigator>
 );
 
@@ -94,7 +97,8 @@ const ExploreStack = () => (
         <Stack.Screen name="SimilarMovies" component={SimilarMoviesPage} />
         <Stack.Screen name="history" component={History} />
         <Stack.Screen name="Settings" component={SettingsStack} />
-        <Stack.Screen name="AiSearch" component={require('../app/AiSearch').default} />
+        <Stack.Screen name="AiSearch" component={require('../app/AiChat').default} />
+        <Stack.Screen name="DownloadManager" component={DownloadManagerScreen} />
     </Stack.Navigator>
 );
 
@@ -104,6 +108,7 @@ const SettingsStack = () => (
         <Stack.Screen name="Detail" component={DetailPage} />
         <Stack.Screen name="CastDetails" component={CastDetails} />
         <Stack.Screen name="history" component={History} />
+        
     </Stack.Navigator>
 );
 
@@ -225,7 +230,9 @@ const RootTabNavigator = () => {
                         iconName = focused ? 'bookmark' : 'bookmark-outline';
                     } else if (route.name === 'Explore') {
                         iconName = focused ? 'compass' : 'compass-outline';
-                    }
+                    } else if (route.name === 'DownloadManager') {
+                        iconName = focused ? 'download' : 'download-outline';
+                    }   
                     return <Ionicons name={iconName} size={size} color={color} />;
                 },
                 headerShown: false,
@@ -234,7 +241,9 @@ const RootTabNavigator = () => {
             })}>
             <Tab.Screen name="Explore" component={ExploreStack} />
             <Tab.Screen name="Watchlist" component={WatchlistStack} />
+            <Tab.Screen name="DownloadManager" component={DownloadManagerScreen}/>
             <Tab.Screen name="Search" component={SearchStack} />
+            
         </Tab.Navigator>
     );
 };

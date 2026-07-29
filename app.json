@@ -18,7 +18,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.thewatcher",
+      "package": "com.thewatcher.dev",
       "runtimeVersion": "1.0.0",
       "permissions": [
         "android.permission.INTERNET",
@@ -32,6 +32,14 @@
       "backgroundColor": "#000000"
     },
     "plugins": [
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos.",
+          "savePhotosPermission": "Allow $(PRODUCT_NAME) to save photos.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
       "expo-brightness",
       [
         "expo-splash-screen",
