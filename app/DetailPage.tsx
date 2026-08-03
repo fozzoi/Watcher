@@ -35,8 +35,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { startDownload } from '../src/utils/downloadManager';
-import { VideoInterceptor } from '../src/utils/VideoInterceptor';
+
+
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 const IMAGE_SIZES = { THUMBNAIL: 'w154', POSTER_DETAIL: 'w780', STILL: 'w300', ORIGINAL: 'original' };
@@ -248,7 +248,6 @@ const DetailPage = () => {
   const [lensError, setLensError] = useState<string | null>(null);
   const [aiTab, setAiTab] = useState<'lens' | 'vibe'>('lens');
   const [directors, setDirectors] = useState<any[]>([]);
-  const [downloadTarget, setDownloadTarget] = useState<string | null>(null);
 
   const similarCardWidth = isTablet ? 160 : width * 0.3;
   const castCardWidth = isTablet ? 120 : width * 0.26;
@@ -670,53 +669,8 @@ const DetailPage = () => {
           <Text style={styles.playBtnText}>{getPlayLabel()}</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity
-            style={[styles.downloadBtn, sourceStatus === 'unavailable' && styles.playBtnDisabled]}
-            disabled={sourceStatus !== 'available'}
-            onPress={async () => {
-              if (Platform.OS === 'android') ToastAndroid.show('Fetching download link...', ToastAndroid.SHORT);
-              
-              try {
-                const baseUrl = "https://watcher-api-rho.vercel.app"; 
-                const encodedTitle = encodeURIComponent(displayTitle);
-                const targetSeason = selectedSeason || 1;
-                const targetEpisode = (episodes && episodes.length > 0) ? episodes[0].episode_number : 1;
 
-                const endpoint = `${baseUrl}/api/get_stream?tmdb_id=${movie.id}&media_type=${movie.media_type}&title=${encodedTitle}&season=${targetSeason}&episode=${targetEpisode}`;
-                
-                const response = await fetch(endpoint);
-                const data = await response.json();
 
-                if (data.status === "success") {
-                  if (data.is_m3u8 || data.stream_url.endsWith('.mp4')) {
-                    startDownload(data.stream_url, displayTitle);
-                  } else {
-                    setDownloadTarget(data.stream_url);
-                  }
-                } else {
-                  Alert.alert("Error", "Could not find a valid stream to download.");
-                }
-              } catch (error) {
-                console.error("Download fetch error", error);
-                Alert.alert("Error", "Network issue while fetching the link.");
-              }
-            }}
-            activeOpacity={0.85}>
-            {sourceStatus === 'checking' ? (
-                <ActivityIndicator color="#FAFAFA" size="small" />
-            ) : (
-                <Feather name="download-cloud" size={20} color="#FAFAFA" />
-            )}
-            <Text style={styles.downloadBtnText}>Download</Text>
-        </TouchableOpacity>
-
-        {downloadTarget && (
-        <VideoInterceptor 
-          targetUrl={downloadTarget} 
-          fileName={displayTitle} 
-          onComplete={() => setDownloadTarget(null)}
-        />
-      )}
 
         <View style={styles.actionRow}>
           <TouchableOpacity style={[styles.actionBtn, isInWatchlist && styles.actionBtnActive]} onPress={toggleWatchlist}>
@@ -983,6 +937,9 @@ const DetailPage = () => {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.glassBtn} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={22} color={C.white} />
         </TouchableOpacity>
+        <TouchableOpacity onPress={() => setShowLogModal(true)} style={styles.glassBtn} activeOpacity={0.7}>
+          <Feather name="info" size={20} color={C.white} />
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -994,7 +951,6 @@ const DetailPage = () => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 140 }}
       />
-      
     </View>
   );
 };
@@ -1021,6 +977,42 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'flex-end'
+  },
+  modalContent: {
+    backgroundColor: C.surface,
+    height: '70%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16
+  },
+  modalTitle: {
+    color: C.white,
+    fontSize: 18,
+    fontWeight: '700'
+  },
+  logContainer: {
+    flex: 1,
+    backgroundColor: C.surface2,
+    borderRadius: 8,
+    padding: 12
+  },
+  logText: {
+    color: C.text,
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    marginBottom: 6
   },
 
   heroEyebrow: {

@@ -1,23 +1,59 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { startDownload } from './downloadManager'; 
 
-export const VideoInterceptor = ({ targetUrl, fileName, onComplete }: { targetUrl: string, fileName: string, onComplete: () => void }) => {
+export const VideoInterceptor = ({ targetUrl, fileName, onComplete, onLog, onError, onSuccess }: { targetUrl: string, fileName: string, onComplete: () => void, onLog?: (msg: string) => void, onError?: (msg: string) => void, onSuccess?: (url: string) => void }) => {
   const webViewRef = useRef(null);
+
+  useEffect(() => {
+    onLog?.(`[VideoInterceptor] Initialized for: ${targetUrl}`);
+    
+    const timeout = setTimeout(() => {
+      onLog?.(`[VideoInterceptor] 15s Timeout reached. Failed to intercept video URL.`);
+      onError?.(`Timeout: Could not find a valid video stream. The site might be using blob URLs or iframe players.`);
+      onComplete(); // clean up
+    }, 15000);
+
+    return () => clearTimeout(timeout);
+  }, [targetUrl]);
 
   const INJECTED_JAVASCRIPT = `
     (function() {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'log', message: 'Injected script started. Hooking network requests...' }));
+      
+      var origOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(method, url) {
+        if (typeof url === 'string' && (url.includes('.m3u8') || url.includes('.mp4'))) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'log', message: 'Intercepted XHR: ' + url }));
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'success', url: url }));
+        }
+        return origOpen.apply(this, arguments);
+      };
+
+      var origFetch = window.fetch;
+      window.fetch = async function() {
+        var url = arguments[0];
+        if (typeof url === 'string' && (url.includes('.m3u8') || url.includes('.mp4'))) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'log', message: 'Intercepted Fetch: ' + url }));
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'success', url: url }));
+        }
+        return origFetch.apply(this, arguments);
+      };
+
+      var attempts = 0;
       var checkVideo = setInterval(function() {
+        attempts++;
         var video = document.querySelector('video');
         if (video && video.src && !video.src.startsWith('blob:')) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'log', message: 'Found direct video URL! (' + video.src + ')' }));
           clearInterval(checkVideo);
-          window.ReactNativeWebView.postMessage(video.src);
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'success', url: video.src }));
+        } else if (attempts % 5 === 0) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'log', message: 'Searching for video stream... (Attempt ' + attempts + ')' }));
         }
       }, 1000);
       
-      // Stop trying after 15 seconds to prevent infinite loops
-      setTimeout(function() { clearInterval(checkVideo); }, 15000);
+      setTimeout(function() { clearInterval(checkVideo); }, 14500);
     })();
     true;
   `;
@@ -28,11 +64,33 @@ export const VideoInterceptor = ({ targetUrl, fileName, onComplete }: { targetUr
         ref={webViewRef}
         source={{ uri: targetUrl }}
         injectedJavaScript={INJECTED_JAVASCRIPT}
+        onLoadStart={() => onLog?.(`[WebView] Load Started`)}
+        onLoadEnd={() => onLog?.(`[WebView] Load Ended`)}
+        onError={(e) => {
+          onLog?.(`[WebView Error] ${e.nativeEvent.description}`);
+          onError?.(`WebView failed to load: ${e.nativeEvent.description}`);
+          onComplete();
+        }}
         onMessage={(event) => {
-          const videoUrl = event.nativeEvent.data;
-          console.log('Intercepted URL:', videoUrl);
-          startDownload(videoUrl, fileName);
-          onComplete(); // Clean up target state
+          try {
+            const data = JSON.parse(event.nativeEvent.data);
+            if (data.type === 'log') {
+               onLog?.(`[Injected] ${data.message}`);
+            } else if (data.type === 'success') {
+               const videoUrl = data.url;
+               onLog?.(`[Interceptor] Intercepted successfully: ${videoUrl}`);
+               onSuccess?.(videoUrl);
+               onComplete(); // Clean up target state
+            }
+          } catch (e) {
+            // legacy fallback
+            const videoUrl = event.nativeEvent.data;
+            if (videoUrl.startsWith('http')) {
+               onLog?.(`[Interceptor] Intercepted successfully (legacy): ${videoUrl}`);
+               onSuccess?.(videoUrl);
+               onComplete();
+            }
+          }
         }}
         javaScriptEnabled={true}
         domStorageEnabled={true}

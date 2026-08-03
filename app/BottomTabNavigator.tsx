@@ -18,7 +18,7 @@ import DetailPage from './DetailPage';
 import CastDetails from './CastDetails';
 import ViewAllPage from './ViewAllPage';
 import SimilarMoviesPage from './SimilarMoviesPage';
-import DownloadManagerScreen from './screens/DownloadManagerScreen';
+
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -72,7 +72,6 @@ const SearchStack = () => (
         <Stack.Screen name="ViewAll" component={ViewAllPage} />
         <Stack.Screen name="SimilarMovies" component={SimilarMoviesPage} />
         <Stack.Screen name="history" component={History} />
-        <Stack.Screen name="DownloadManager" component={DownloadManagerScreen} />
     </Stack.Navigator>
 );
 
@@ -84,7 +83,6 @@ const WatchlistStack = () => (
         <Stack.Screen name="ViewAll" component={ViewAllPage} />
         <Stack.Screen name="SimilarMovies" component={SimilarMoviesPage} />
         <Stack.Screen name="history" component={History} />
-        <Stack.Screen name="DownloadManager" component={DownloadManagerScreen} />
     </Stack.Navigator>
 );
 
@@ -98,7 +96,6 @@ const ExploreStack = () => (
         <Stack.Screen name="history" component={History} />
         <Stack.Screen name="Settings" component={SettingsStack} />
         <Stack.Screen name="AiSearch" component={require('../app/AiChat').default} />
-        <Stack.Screen name="DownloadManager" component={DownloadManagerScreen} />
     </Stack.Navigator>
 );
 
@@ -114,6 +111,17 @@ const SettingsStack = () => (
 
 const CustomTabBar: React.FC<BottomTabBarProps> = (props) => {
   const { state, navigation, descriptors } = props;
+
+  // Hide tab bar when AiSearch screen is active in any stack
+  const focusedRoute = state.routes[state.index];
+  const focusedNavState = focusedRoute?.state;
+  if (focusedNavState) {
+    const activeStackRoute =
+      focusedNavState.routes?.[focusedNavState.index ?? 0];
+    if (activeStackRoute?.name === 'AiSearch') {
+      return null;
+    }
+  }
 
   return (
     <View style={localStyles.overlayContainer} pointerEvents="box-none">
@@ -230,8 +238,6 @@ const RootTabNavigator = () => {
                         iconName = focused ? 'bookmark' : 'bookmark-outline';
                     } else if (route.name === 'Explore') {
                         iconName = focused ? 'compass' : 'compass-outline';
-                    } else if (route.name === 'DownloadManager') {
-                        iconName = focused ? 'download' : 'download-outline';
                     }   
                     return <Ionicons name={iconName} size={size} color={color} />;
                 },
@@ -241,7 +247,6 @@ const RootTabNavigator = () => {
             })}>
             <Tab.Screen name="Explore" component={ExploreStack} />
             <Tab.Screen name="Watchlist" component={WatchlistStack} />
-            <Tab.Screen name="DownloadManager" component={DownloadManagerScreen}/>
             <Tab.Screen name="Search" component={SearchStack} />
             
         </Tab.Navigator>

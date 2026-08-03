@@ -61,3 +61,16 @@ export async function setUserMemory(memory: string): Promise<void> {
 export async function clearUserMemory(): Promise<void> {
   await AsyncStorage.removeItem(MEMORY_KEY);
 }
+
+// ── AI assistant name ───────────────────────────────────────────
+// Let the user pick a custom name for their movie assistant.
+
+const AI_NAME_KEY = 'watcher.chat.aiName.v1';
+
+export async function getAiName(): Promise<string> {
+  return (await AsyncStorage.getItem(AI_NAME_KEY)) ?? '';
+}
+
+export async function setAiName(name: string): Promise<void> {
+  await AsyncStorage.setItem(AI_NAME_KEY, name.trim());
+}
