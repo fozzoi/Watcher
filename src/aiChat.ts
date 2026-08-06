@@ -44,6 +44,7 @@ export async function getGeminiChatReply(
   });
 
   const parsed: RawReply = response.data.reply;
+  console.log('🤖 RAW GEMINI REPLY:', JSON.stringify(parsed, null, 2));
 
   switch (parsed.kind) {
     case 'text':

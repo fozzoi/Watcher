@@ -2,7 +2,7 @@
   "expo": {
     "name": "Watcher",
     "slug": "Watcher",
-    "version": "2.0.2",
+    "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "myapp",
@@ -18,7 +18,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.thewatcher",
+      "package": "com.thewatcher.dev",
       "runtimeVersion": "1.0.0",
       "permissions": [
         "android.permission.INTERNET",
@@ -55,14 +55,14 @@
         {
           "android": {
             "enableProguardInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true,
-            "useLegacyPackaging": true
+            "enableShrinkResourcesInReleaseBuilds": true
           }
         }
       ],
       "expo-font",
       "expo-sharing",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-notifications"
     ],
     "extra": {
       "eas": {
@@ -72,6 +72,11 @@
     "ios": {
       "backgroundColor": "#000000",
       "bundleIdentifier": "com.WatcherApp",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "fetch"
+        ]
+      },
       "runtimeVersion": {
         "policy": "appVersion"
       }

@@ -12,6 +12,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as Brightness from 'expo-brightness';
 import { ThemeProvider, DarkTheme, NavigationContainer } from '@react-navigation/native'; // ✅ Imported ThemeProvider
 import AppNavigator from "./app/AppNavigator";
+import { registerBackgroundFetchAsync } from "./src/notifications";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -45,6 +46,13 @@ function RootLayout() {
         } catch (e) {
           console.log("Error requesting brightness permission:", e);
         }
+      }
+      
+      // Register background fetch for notifications
+      try {
+        await registerBackgroundFetchAsync();
+      } catch (e) {
+        console.log("Error registering background fetch:", e);
       }
     })();
   }, []);

@@ -1,5 +1,5 @@
-// app/DetailPage.tsx
 import React, { useEffect, useState, useCallback } from 'react';
+import dayjs from 'dayjs';
 import {
   View,
   TouchableOpacity,
@@ -200,9 +200,16 @@ const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay
         {isActive && <View style={styles.epActiveDot} />}
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.epNum, isActive && { color: C.gold }]}>
-          EPISODE {ep.episode_number}
-        </Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={[styles.epNum, isActive && { color: C.gold }]}>
+            EPISODE {ep.episode_number}
+          </Text>
+          {ep.air_date ? (
+            <Text style={{ fontSize: 11, color: C.muted, fontFamily: 'GoogleSansFlex-Regular' }}>
+              {dayjs(ep.air_date).format('MMM D, YYYY')}
+            </Text>
+          ) : null}
+        </View>
         <Text style={styles.epTitle} numberOfLines={1}>
           {ep.name}
         </Text>
@@ -609,7 +616,11 @@ const DetailPage = () => {
         </View>
 
         <View style={styles.metaRow}>
-          {releaseYear ? <Text style={styles.metaText}>{releaseYear}</Text> : null}
+          {releaseYear ? (
+            <Text style={styles.metaText}>
+              {movie.release_date || movie.first_air_date ? dayjs(movie.release_date || movie.first_air_date).format('MMM D, YYYY') : releaseYear}
+            </Text>
+          ) : null}
           {movie.runtime > 0 && (
             <>
               <Text style={styles.metaDot}>·</Text>
