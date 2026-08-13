@@ -50,7 +50,7 @@ const HistoryCard: React.FC<CardProps> = ({ item, onRemove, navigation }) => {
 
       {/* ── TOP: Poster — tap to resume playback ── */}
       <TouchableOpacity
-        activeOpacity={0.88}
+        activeOpacity={0.95}
         onPress={() =>
           navigation.navigate('Player', {
             tmdbId: item.tmdbId,
@@ -119,7 +119,7 @@ const HistoryCard: React.FC<CardProps> = ({ item, onRemove, navigation }) => {
 
       {/* ── BOTTOM: Info — tap to open Detail page ── */}
       <TouchableOpacity
-        activeOpacity={0.7}
+        activeOpacity={0.95}
         style={styles.body}
         onPress={() =>
           navigation.navigate('Detail', {
@@ -146,7 +146,7 @@ const HistoryCard: React.FC<CardProps> = ({ item, onRemove, navigation }) => {
       </TouchableOpacity>
 
       {/* ── REMOVE: X button — top right, sits over the poster ── */}
-      <TouchableOpacity
+      <TouchableOpacity activeOpacity={0.95}
         style={styles.removeBtn}
         onPress={e => {
           e.stopPropagation();

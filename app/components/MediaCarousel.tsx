@@ -33,7 +33,7 @@ const MediaCarousel = memo(({ title, type, data, navigation, savedIds, toggleWat
         <Text style={styles.sectionTitle}>{title}</Text>
 
         {/* ✅ FIX 3: Passed 'type' into the ViewAll navigation params */}
-        <TouchableOpacity onPress={() => navigation.navigate('ViewAll', { title, data, type })}>
+        <TouchableOpacity activeOpacity={0.95} onPress={() => navigation.navigate('ViewAll', { title, data, type })}>
           <MaterialIcons name="chevron-right" size={24} color={C.mutedSoft} />
         </TouchableOpacity>
       </View>

@@ -422,7 +422,7 @@ const WatchListPage = () => {
     return (
       <View style={styles.cardWrapper}>
         <TouchableOpacity
-          activeOpacity={0.7}
+          activeOpacity={0.95}
           onPress={() => {
              if (item.media_type === 'collection') {
                navigation.navigate('CollectionDetails', { collectionId: item.id, collectionName: item.name });
@@ -441,7 +441,7 @@ const WatchListPage = () => {
                 <Text style={styles.cardSubtitle} numberOfLines={1}>{subtitle}</Text>
             </View>
 
-            <TouchableOpacity 
+            <TouchableOpacity activeOpacity={0.95} 
                 style={styles.unsaveButton}
                 onPress={() => handleRemove(item.id, itemType)}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -476,15 +476,15 @@ const WatchListPage = () => {
 
             <Animated.View style={[styles.activePill, animatedTabStyle]} />
             
-            <TouchableOpacity style={styles.tabButton} onPress={() => handleTabChange(0)}>
+            <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => handleTabChange(0)}>
                 <Text style={[styles.tabText, activeTab === 0 && styles.activeTabText]}>Watchlist</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.tabButton} onPress={() => handleTabChange(1)}>
+            <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => handleTabChange(1)}>
                 <Text style={[styles.tabText, activeTab === 1 && styles.activeTabText]}>Artists</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.tabButton} onPress={() => handleTabChange(2)}>
+            <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => handleTabChange(2)}>
                 <Text style={[styles.tabText, activeTab === 2 && styles.activeTabText]}>Watched</Text>
             </TouchableOpacity>
         </View>
@@ -493,7 +493,7 @@ const WatchListPage = () => {
       {/* SUB-TABS for Watchlist and Watched */}
       {(activeTab === 0 || activeTab === 2) && (
         <View style={styles.subTabContainer}>
-            <TouchableOpacity 
+            <TouchableOpacity activeOpacity={0.95} 
                 style={[styles.subTabButton, activeSubTab === 'movies' && styles.activeSubTabButton]}
                 onPress={() => setActiveSubTab('movies')}
             >
@@ -501,7 +501,7 @@ const WatchListPage = () => {
                 <Text style={[styles.subTabText, activeSubTab === 'movies' && styles.activeSubTabText]}>Movies & TV</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity 
+            <TouchableOpacity activeOpacity={0.95} 
                 style={[styles.subTabButton, activeSubTab === 'collections' && styles.activeSubTabButton]}
                 onPress={() => setActiveSubTab('collections')}
             >
@@ -516,7 +516,7 @@ const WatchListPage = () => {
           <View style={styles.toolbarContainer}>
               {activeTab === 0 && (
                   <View style={styles.toolbarLeft}>
-                      <TouchableOpacity style={styles.iconButton} onPress={() => { setIsImportMenuOpen(!isImportMenuOpen); setIsSortMenuOpen(false); }}>
+                      <TouchableOpacity activeOpacity={0.95} style={styles.iconButton} onPress={() => { setIsImportMenuOpen(!isImportMenuOpen); setIsSortMenuOpen(false); }}>
                           <Feather name="file-plus" size={20} color={isImportMenuOpen ? "#E50914" : "#FFF"} />
                           <Text style={styles.iconButtonText}>Import</Text>
                       </TouchableOpacity>
@@ -526,7 +526,7 @@ const WatchListPage = () => {
               <View style={styles.toolbarRight}>
                   {/* Sort Direction Toggle Button */}
                   {sortBy !== 'default' && (
-                      <TouchableOpacity 
+                      <TouchableOpacity activeOpacity={0.95} 
                           style={styles.iconButton} 
                           onPress={() => setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc')}
                       >
@@ -534,11 +534,11 @@ const WatchListPage = () => {
                       </TouchableOpacity>
                   )}
                   
-                  <TouchableOpacity style={styles.iconButton} onPress={() => { setIsSortMenuOpen(!isSortMenuOpen); setIsImportMenuOpen(false); }}>
+                  <TouchableOpacity activeOpacity={0.95} style={styles.iconButton} onPress={() => { setIsSortMenuOpen(!isSortMenuOpen); setIsImportMenuOpen(false); }}>
                       <MaterialIcons name="sort" size={20} color={isSortMenuOpen ? "#E50914" : "#FFF"} />
                       <Text style={styles.iconButtonText}>Sort</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.iconButton} onPress={handleClearAll}>
+                  <TouchableOpacity activeOpacity={0.95} style={styles.iconButton} onPress={handleClearAll}>
                       <Feather name="trash-2" size={18} color="#FF4444" />
                   </TouchableOpacity>
               </View>
@@ -547,15 +547,15 @@ const WatchListPage = () => {
           {/* ABSOLUTE DROPDOWN MENUS (Overlay Fix) */}
           {isImportMenuOpen && activeTab === 0 && (
               <View style={[styles.dropdownMenu, styles.dropdownLeft]}>
-                  <TouchableOpacity style={styles.dropdownItem} onPress={handleAddLink}>
+                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={handleAddLink}>
                       <MaterialIcons name="link" size={18} color="#FFF" />
                       <Text style={styles.dropdownText}>Sync Link</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.dropdownItem} onPress={handleImportFile}>
+                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={handleImportFile}>
                       <Ionicons name="document-text-outline" size={18} color="#FFF" />
                       <Text style={styles.dropdownText}>Import Text/JSON File</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.dropdownItem} onPress={handleImportImage}>
+                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={handleImportImage}>
                       <Feather name="image" size={18} color="#FFF" />
                       <Text style={styles.dropdownText}>Scan Picture</Text>
                   </TouchableOpacity>
@@ -564,16 +564,16 @@ const WatchListPage = () => {
 
           {isSortMenuOpen && (
               <View style={[styles.dropdownMenu, styles.dropdownRight, { alignItems: 'flex-end' }]}>
-                  <TouchableOpacity style={styles.dropdownItem} onPress={() => { setSortBy('default'); setIsSortMenuOpen(false); }}>
+                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={() => { setSortBy('default'); setIsSortMenuOpen(false); }}>
                       <Text style={[styles.dropdownText, sortBy === 'default' && styles.activeDropdownText]}>Date Added</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.dropdownItem} onPress={() => { setSortBy('year'); setIsSortMenuOpen(false); }}>
+                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={() => { setSortBy('year'); setIsSortMenuOpen(false); }}>
                       <Text style={[styles.dropdownText, sortBy === 'year' && styles.activeDropdownText]}>Release Year</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.dropdownItem} onPress={() => { setSortBy('rating'); setIsSortMenuOpen(false); }}>
+                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={() => { setSortBy('rating'); setIsSortMenuOpen(false); }}>
                       <Text style={[styles.dropdownText, sortBy === 'rating' && styles.activeDropdownText]}>Rating</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.dropdownItem} onPress={() => { setSortBy('type'); setIsSortMenuOpen(false); }}>
+                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={() => { setSortBy('type'); setIsSortMenuOpen(false); }}>
                       <Text style={[styles.dropdownText, sortBy === 'type' && styles.activeDropdownText]}>Movie / TV Show</Text>
                   </TouchableOpacity>
               </View>
@@ -630,7 +630,7 @@ const WatchListPage = () => {
       {/* URL Link Modal */}
       <Modal visible={isLinkModalVisible} transparent={true} animationType="fade" onRequestClose={() => setIsLinkModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsLinkModalVisible(false)} />
+          <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={0.95} onPress={() => setIsLinkModalVisible(false)} />
           <View style={styles.modalContentContainer}>
             <BlurView intensity={Platform.OS === 'android' ? 25 : 60} tint="dark" style={StyleSheet.absoluteFill} />
             <View style={{ ...StyleSheet.absoluteFill, backgroundColor: 'rgba(30,30,30,0.65)' }} />
@@ -642,10 +642,10 @@ const WatchListPage = () => {
                 value={syncLinkInput} onChangeText={setSyncLinkInput} autoFocus={true} keyboardType="url" autoCapitalize="none" autoCorrect={false}
               />
               <View style={styles.modalButtonsRow}>
-                <TouchableOpacity style={[styles.modalButton, styles.modalCancelButton]} onPress={() => setIsLinkModalVisible(false)}>
+                <TouchableOpacity activeOpacity={0.95} style={[styles.modalButton, styles.modalCancelButton]} onPress={() => setIsLinkModalVisible(false)}>
                   <Text style={styles.modalCancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.modalButton, styles.modalSyncButton]} onPress={handleSaveAndSyncLink}>
+                <TouchableOpacity activeOpacity={0.95} style={[styles.modalButton, styles.modalSyncButton]} onPress={handleSaveAndSyncLink}>
                   <Text style={styles.modalSyncButtonText}>Sync Now</Text>
                 </TouchableOpacity>
               </View>
@@ -683,7 +683,7 @@ const WatchListPage = () => {
                   </View>
               )}
 
-              <TouchableOpacity 
+              <TouchableOpacity activeOpacity={0.95} 
                 style={[styles.modalButton, styles.modalSyncButton, { width: '100%', marginTop: 20 }]} 
                 onPress={() => setImportSummary({...importSummary, visible: false})}
               >

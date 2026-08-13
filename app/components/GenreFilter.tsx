@@ -16,7 +16,7 @@ const GenreFilter = memo(({ selectedGenre, onSelectGenre }: GenreFilterProps) =>
       contentContainerStyle={styles.genreFilterContent}
       renderItem={({ item }) => (
         <TouchableOpacity 
-          activeOpacity={0.7} 
+          activeOpacity={0.95} 
           onPress={() => onSelectGenre(item.id)} 
           style={[styles.genreChip, selectedGenre === item.id && styles.genreChipActive]}
         >

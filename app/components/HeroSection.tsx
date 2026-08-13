@@ -34,7 +34,7 @@ const HeroOverlay = memo(({ item, navigation, toggleWatchlist, isAdded }: {
 
   return (
     <TouchableOpacity
-      activeOpacity={0.9}
+      activeOpacity={0.95}
       onPress={handlePress}
       style={StyleSheet.absoluteFill}
     >

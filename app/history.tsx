@@ -133,7 +133,7 @@ const HistoryPage = () => {
     return (
       <View key={index} style={styles.swipeContainer}>
         <Animated.View style={[styles.historyItemContainer, animatedStyle]} {...panHandlers}>
-          <TouchableOpacity
+          <TouchableOpacity activeOpacity={0.95}
             style={styles.historyItem}
             onPress={() => navigation.navigate("index", { prefillQuery: item.query })}
           >
@@ -141,7 +141,7 @@ const HistoryPage = () => {
             <Text style={styles.dateText}>{formatDate(item.date)}</Text>
           </TouchableOpacity>
         </Animated.View>
-        <TouchableOpacity style={styles.deleteButton} onPress={() => deleteHistoryItem(itemIndex)}>
+        <TouchableOpacity activeOpacity={0.95} style={styles.deleteButton} onPress={() => deleteHistoryItem(itemIndex)}>
           <Text style={styles.deleteButtonText}>Delete</Text>
         </TouchableOpacity>
       </View>
@@ -157,10 +157,10 @@ const HistoryPage = () => {
             <Text style={styles.modalTitle}>Clear History</Text>
             <Text style={styles.modalMessage}>Clear all search history?</Text>
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalButton} onPress={() => setIsAlertVisible(false)}>
+              <TouchableOpacity activeOpacity={0.95} style={styles.modalButton} onPress={() => setIsAlertVisible(false)}>
                 <Text style={styles.modalButtonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalButton, styles.modalButtonDanger]} onPress={handleClearHistory}>
+              <TouchableOpacity activeOpacity={0.95} style={[styles.modalButton, styles.modalButtonDanger]} onPress={handleClearHistory}>
                 <Text style={[styles.modalButtonText, { fontWeight: 'bold' }]}>Clear</Text>
               </TouchableOpacity>
             </View>
@@ -170,7 +170,7 @@ const HistoryPage = () => {
 
       <View style={styles.header}>
         <Text style={styles.title}>Search History</Text>
-        <TouchableOpacity onPress={() => setIsAlertVisible(true)} style={styles.clearButtonContainer}>
+        <TouchableOpacity activeOpacity={0.95} onPress={() => setIsAlertVisible(true)} style={styles.clearButtonContainer}>
           <Text style={styles.clearButton}>Clear</Text>
         </TouchableOpacity>
       </View>

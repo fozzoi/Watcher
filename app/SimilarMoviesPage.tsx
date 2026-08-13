@@ -75,7 +75,7 @@ const SimilarMoviesPage = () => {
   }, [fetchSimilarMovies]);
 
   const renderMovieItem = ({ item }: { item: TMDBResult }) => (
-    <TouchableOpacity
+    <TouchableOpacity activeOpacity={0.95}
       style={styles.movieItem}
       onPress={() => navigation.navigate('Details', { movie: item })}
     >
@@ -120,7 +120,7 @@ const SimilarMoviesPage = () => {
     <View style={styles.container}>
       {/* Header with back button */}
       <View style={styles.header}>
-        <TouchableOpacity
+        <TouchableOpacity activeOpacity={0.95}
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >

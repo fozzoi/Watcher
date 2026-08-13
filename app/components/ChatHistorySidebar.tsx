@@ -33,7 +33,7 @@ const ChatHistorySidebar = ({ visible, conversations, activeId, onClose, onSelec
         exiting={SlideOutLeft.duration(180)}
         style={[styles.panel, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}
       >
-        <TouchableOpacity style={styles.newChatBtn} onPress={onNewChat}>
+        <TouchableOpacity activeOpacity={0.95} style={styles.newChatBtn} onPress={onNewChat}>
           <Ionicons name="add-circle-outline" size={18} color="#FF3B3B" />
           <Text style={styles.newChatText}>New chat</Text>
         </TouchableOpacity>
@@ -46,7 +46,7 @@ const ChatHistorySidebar = ({ visible, conversations, activeId, onClose, onSelec
           contentContainerStyle={{ paddingBottom: 20 }}
           ListEmptyComponent={<Text style={styles.emptyText}>No past chats yet.</Text>}
           renderItem={({ item }) => (
-            <TouchableOpacity
+            <TouchableOpacity activeOpacity={0.95}
               style={[styles.row, item.id === activeId && styles.rowActive]}
               onPress={() => onSelect(item.id)}
             >
@@ -54,7 +54,7 @@ const ChatHistorySidebar = ({ visible, conversations, activeId, onClose, onSelec
               <Text numberOfLines={1} style={[styles.rowText, item.id === activeId && { color: 'white' }]}>
                 {item.title}
               </Text>
-              <TouchableOpacity hitSlop={10} onPress={() => onDelete(item.id)}>
+              <TouchableOpacity activeOpacity={0.95} hitSlop={10} onPress={() => onDelete(item.id)}>
                 <Ionicons name="trash-outline" size={15} color="#555" />
               </TouchableOpacity>
             </TouchableOpacity>

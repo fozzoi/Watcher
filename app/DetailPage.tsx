@@ -18,6 +18,7 @@ import {
 import { Text } from 'react-native-paper';
 import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
+import { WebView } from 'react-native-webview';
 import {
   getImageUrl,
   getMovieGenres,
@@ -29,6 +30,8 @@ import {
   getExternalIds,
   getGeminiMoviesSimilarTo,
   GLOBAL_CONFIG,
+  getTrailers,
+  getCollectionDetails,
 } from '../src/tmdb';
 import { getProgress } from '../src/utils/progress';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -105,10 +108,10 @@ const DirectorShimmer = React.memo(() => (
 // --- MEMOIZED RENDER COMPONENTS ---
 
 const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => (
-  <TouchableOpacity
+  <TouchableOpacity activeOpacity={0.95}
     style={[styles.similarCard, { width: cardWidth }]}
     onPress={() => onPress(item)}
-    activeOpacity={0.55}
+    activeOpacity={0.95}
   >
     <Image
       source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }}
@@ -126,10 +129,10 @@ const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => (
 
 const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => (
   <View>
-    <TouchableOpacity
+    <TouchableOpacity activeOpacity={0.95}
       style={styles.directorCard}
       onPress={() => onPress(item.id)}
-      activeOpacity={0.55}
+      activeOpacity={0.95}
     >
       <Image
         source={{
@@ -153,10 +156,10 @@ const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => (
 
 const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => (
   <View>
-    <TouchableOpacity
+    <TouchableOpacity activeOpacity={0.95}
       style={{ width: cardWidth }}
       onPress={() => onPress(item.id)}
-      activeOpacity={0.55}
+      activeOpacity={0.95}
     >
       <Image
         source={{
@@ -180,10 +183,10 @@ const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => (
 
 const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay }: any) => (
   <View>
-    <TouchableOpacity
+    <TouchableOpacity activeOpacity={0.95}
       style={[styles.epRow, isActive && styles.epRowActive]}
       onPress={() => onPlay(ep)}
-      activeOpacity={0.75}
+      activeOpacity={0.95}
     >
       <View style={{ position: 'relative' }}>
         <Image
@@ -255,6 +258,14 @@ const DetailPage = () => {
   const [lensError, setLensError] = useState<string | null>(null);
   const [aiTab, setAiTab] = useState<'lens' | 'vibe'>('lens');
   const [directors, setDirectors] = useState<any[]>([]);
+  const [collectionData, setCollectionData] = useState<any>(null);
+
+  // Trailer states
+  const webViewRef = React.useRef<any>(null);
+  const [trailerKey, setTrailerKey] = useState<string | null>(null);
+  const [showTrailer, setShowTrailer] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [trailerRes, setTrailerRes] = useState('1080');
 
   const similarCardWidth = isTablet ? 160 : width * 0.3;
   const castCardWidth = isTablet ? 120 : width * 0.26;
@@ -263,6 +274,9 @@ const DetailPage = () => {
   useEffect(() => {
     AsyncStorage.getItem('settings_auto_ai').then((val) => {
       if (val !== null) setAutoAiEnabled(JSON.parse(val));
+    });
+    AsyncStorage.getItem('settings_trailer_res').then((val) => {
+      if (val !== null) setTrailerRes(val);
     });
   }, []);
 
@@ -420,6 +434,12 @@ const DetailPage = () => {
 
       setDirectors(merged);
 
+      if (fullDetails.belongs_to_collection) {
+        getCollectionDetails(fullDetails.belongs_to_collection.id).then(col => {
+          setCollectionData(col);
+        }).catch(() => {});
+      }
+
       if (
         initialMovie.media_type === 'tv' &&
         Array.isArray(fullDetails.seasons) &&
@@ -435,6 +455,24 @@ const DetailPage = () => {
         setSelectedSeason(seasonToLoad);
         fetchEpisodes(seasonToLoad);
       }
+
+      // Fetch trailers
+      const trailers = await getTrailers(initialMovie.id, initialMovie.media_type);
+      const mainTrailer = trailers.find(t => t.type === 'Trailer' && t.site === 'YouTube');
+      if (mainTrailer) {
+        setTrailerKey(mainTrailer.key);
+        
+        // Check auto-play setting
+        const autoPlayStr = await AsyncStorage.getItem('settings_autoplay_trailer');
+        const autoPlay = autoPlayStr !== null ? JSON.parse(autoPlayStr) : true;
+        
+        if (autoPlay) {
+          setTimeout(() => {
+            setShowTrailer(true);
+          }, 2500); // Wait 2.5 seconds before showing trailer
+        }
+      }
+
     } catch {}
     finally {
       setLoadingDetails(false);
@@ -587,6 +625,20 @@ const DetailPage = () => {
     return 'Play';
   };
 
+  const handleMuteToggle = () => {
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+    if (webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        var video = document.querySelector("video");
+        if (video) {
+          video.muted = ${newMutedState};
+        }
+        true;
+      `);
+    }
+  };
+
   // --- RENDERING HELPERS FOR MEMOIZATION ---
 
   const keyExtractorId = useCallback((item: any) => String(item.id), []);
@@ -622,17 +674,48 @@ const DetailPage = () => {
   // --- LIST HEADER COMPONENT (Everything above episodes) ---
   const renderHeader = () => (
     <>
-      <View style={{ height: HEADER_HEIGHT, overflow: 'hidden' }}>
-        <Image
-          source={{ uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-        />
+      <View style={{ height: HEADER_HEIGHT, overflow: 'hidden', backgroundColor: '#000' }}>
+        {showTrailer && trailerKey ? (
+          <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
+            <WebView
+              ref={webViewRef}
+              source={{ 
+                uri: `https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&loop=1&playlist=${trailerKey}&vq=hd${trailerRes === 'Auto' ? '1080' : trailerRes}&playsinline=1&origin=https://www.youtube.com`,
+                headers: {
+                  'Referer': 'https://www.youtube.com/'
+                }
+              }}
+              style={{ width: '100%', height: '100%', transform: [{ scale: 1.4 }] }}
+              allowsInlineMediaPlayback={true}
+              mediaPlaybackRequiresUserAction={false}
+              pointerEvents="none"
+              scrollEnabled={false}
+            />
+          </View>
+        ) : (
+          <Image
+            source={{ uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+        )}
+        
         <LinearGradient
           colors={['rgba(10,10,11,0.15)', 'transparent', 'rgba(10,10,11,0.6)', C.bg]}
           locations={[0, 0.35, 0.75, 1]}
           style={StyleSheet.absoluteFill}
+          pointerEvents="none"
         />
+
+        {showTrailer && trailerKey && (
+          <TouchableOpacity 
+            style={styles.muteButton} 
+            onPress={handleMuteToggle}
+            activeOpacity={0.95}
+          >
+            <Ionicons name={isMuted ? "volume-mute" : "volume-high"} size={20} color="#FFF" />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.cardTop}>
@@ -645,7 +728,7 @@ const DetailPage = () => {
           <Text style={styles.title} numberOfLines={3}>
             {displayTitle}
           </Text>
-          <TouchableOpacity onPress={copyTitle} style={styles.copyBtn}>
+          <TouchableOpacity activeOpacity={0.95} onPress={copyTitle} style={styles.copyBtn}>
             <Feather name="copy" size={16} color={C.muted} />
           </TouchableOpacity>
         </View>
@@ -690,7 +773,7 @@ const DetailPage = () => {
         {genres.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.genreRow} contentContainerStyle={{ gap: 6 }}>
             {genres.map((g) => (
-              <TouchableOpacity
+              <TouchableOpacity activeOpacity={0.95}
                 key={g.id}
                 style={styles.genreChip}
                 onPress={() => navigation.navigate('ViewAll', { title: g.name, genreId: g.id, type: `genre/${g.id}`, data: [] })}
@@ -701,11 +784,11 @@ const DetailPage = () => {
           </ScrollView>
         )}
 
-        <TouchableOpacity
+        <TouchableOpacity activeOpacity={0.95}
           style={[styles.playBtn, sourceStatus === 'unavailable' && styles.playBtnDisabled]}
           onPress={() => handlePlay()}
           disabled={sourceStatus !== 'available'}
-          activeOpacity={0.5}
+          activeOpacity={0.95}
         >
           {sourceStatus === 'checking' ? (
             <ActivityIndicator color="#000" size="small" />
@@ -719,19 +802,19 @@ const DetailPage = () => {
 
 
         <View style={styles.actionRow}>
-          <TouchableOpacity style={[styles.actionBtn, isInWatchlist && styles.actionBtnActive]} onPress={toggleWatchlist}>
+          <TouchableOpacity activeOpacity={0.95} style={[styles.actionBtn, isInWatchlist && styles.actionBtnActive]} onPress={toggleWatchlist}>
             <Ionicons name={isInWatchlist ? 'bookmark' : 'bookmark-outline'} size={18} color={isInWatchlist ? C.gold : C.white} />
             <Text style={[styles.actionBtnText, isInWatchlist && { color: C.gold }]}>Watchlist</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn, isWatched && styles.actionBtnActive]} onPress={toggleWatched}>
+          <TouchableOpacity activeOpacity={0.95} style={[styles.actionBtn, isWatched && styles.actionBtnActive]} onPress={toggleWatched}>
             <Ionicons name={isWatched ? 'checkmark-circle' : 'checkmark-circle-outline'} size={18} color={isWatched ? C.green : C.mutedSoft} />
             <Text style={[styles.actionBtnText, isWatched && { color: C.green }]}>Watched</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={openTelegramSearch}>
+          <TouchableOpacity activeOpacity={0.95} style={styles.actionBtn} onPress={openTelegramSearch}>
             <Ionicons name="paper-plane-outline" size={17} color={C.mutedSoft} />
             <Text style={styles.actionBtnText}>Telegram</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={openTorrentSearch}>
+          <TouchableOpacity activeOpacity={0.95} style={styles.actionBtn} onPress={openTorrentSearch}>
             <Feather name="download" size={17} color={C.mutedSoft} />
             <Text style={styles.actionBtnText}>Torrent</Text>
           </TouchableOpacity>
@@ -743,7 +826,7 @@ const DetailPage = () => {
               {showFullOverview || movie.overview.length <= 220 ? movie.overview : `${movie.overview.slice(0, 220)}…`}
             </Text>
             {movie.overview.length > 220 && (
-              <TouchableOpacity onPress={() => setShowFullOverview(!showFullOverview)}>
+              <TouchableOpacity activeOpacity={0.95} onPress={() => setShowFullOverview(!showFullOverview)}>
                 <Text style={styles.readMore}>{showFullOverview ? 'Less' : 'Read more'}</Text>
               </TouchableOpacity>
             )}
@@ -751,7 +834,7 @@ const DetailPage = () => {
         ) : null}
 
         {movie.belongs_to_collection && (
-          <TouchableOpacity
+          <TouchableOpacity activeOpacity={0.95}
             style={styles.collectionBanner}
             onPress={() =>
               navigation.push('CollectionDetails', {
@@ -759,7 +842,7 @@ const DetailPage = () => {
                 collectionName: movie.belongs_to_collection.name,
               })
             }
-            activeOpacity={0.7}
+            activeOpacity={0.95}
           >
             <Image
               source={{ uri: getImageUrl(movie.belongs_to_collection.backdrop_path, 'w780') }}
@@ -767,19 +850,20 @@ const DetailPage = () => {
               resizeMode="cover"
             />
             <LinearGradient
-              colors={['rgba(10,10,11,0.3)', 'rgba(10,10,11,0.85)', C.surface]}
-              locations={[0, 0.55, 1]}
+              colors={['transparent', 'rgba(10,10,11,0.5)', 'rgba(10,10,11,0.9)', '#141414']}
+              locations={[0, 0.4, 0.8, 1]}
               style={StyleSheet.absoluteFill}
             />
-            <View style={styles.collectionContent}>
-              <Text style={styles.collectionSubtitle}>Part of the franchise</Text>
+            <View style={[StyleSheet.absoluteFill, styles.collectionContent]}>
+              <View style={styles.collectionSubtitleRow}>
+                <Ionicons name="film-outline" size={12} color={C.gold} style={{ marginRight: 6 }} />
+                <Text style={styles.collectionSubtitle}>
+                  Part of a Collection {collectionData?.parts?.length ? `• ${collectionData.parts.length} Movies` : ''}
+                </Text>
+              </View>
               <Text style={styles.collectionName} numberOfLines={2}>
                 {movie.belongs_to_collection.name}
               </Text>
-              <View style={styles.collectionBtn}>
-                <Text style={styles.collectionBtnText}>View Collection</Text>
-                <Ionicons name="chevron-forward" size={14} color={C.white} />
-              </View>
             </View>
           </TouchableOpacity>
         )}
@@ -791,10 +875,10 @@ const DetailPage = () => {
               <Text style={styles.aiHeaderTitle}>AI Insights</Text>
             </View>
             <View style={styles.aiTabs}>
-              <TouchableOpacity style={[styles.aiTab, aiTab === 'lens' && styles.aiTabActive]} onPress={() => { setAiTab('lens'); if (!lensInsight && !lensLoading) fetchLensInsight(); }}>
+              <TouchableOpacity activeOpacity={0.95} style={[styles.aiTab, aiTab === 'lens' && styles.aiTabActive]} onPress={() => { setAiTab('lens'); if (!lensInsight && !lensLoading) fetchLensInsight(); }}>
                 <Text style={[styles.aiTabText, aiTab === 'lens' && styles.aiTabTextActive]}>Lens</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.aiTab, aiTab === 'vibe' && styles.aiTabActive]} onPress={() => setAiTab('vibe')}>
+              <TouchableOpacity activeOpacity={0.95} style={[styles.aiTab, aiTab === 'vibe' && styles.aiTabActive]} onPress={() => setAiTab('vibe')}>
                 <Text style={[styles.aiTabText, aiTab === 'vibe' && styles.aiTabTextActive]}>Vibe</Text>
               </TouchableOpacity>
             </View>
@@ -812,7 +896,7 @@ const DetailPage = () => {
               ) : lensError ? (
                 <View>
                   <Text style={styles.aiErrorText}>Couldn't load insight.</Text>
-                  <TouchableOpacity onPress={fetchLensInsight} style={styles.aiRetry}>
+                  <TouchableOpacity activeOpacity={0.95} onPress={fetchLensInsight} style={styles.aiRetry}>
                     <Feather name="rotate-cw" size={13} color={C.ai} />
                     <Text style={styles.aiRetryText}>Try again</Text>
                   </TouchableOpacity>
@@ -845,7 +929,7 @@ const DetailPage = () => {
                   ) : null}
                 </View>
               ) : (
-                <TouchableOpacity onPress={fetchLensInsight} style={styles.aiGenerateBtn}>
+                <TouchableOpacity activeOpacity={0.95} onPress={fetchLensInsight} style={styles.aiGenerateBtn}>
                   <MaterialCommunityIcons name="creation" size={16} color={C.ai} />
                   <Text style={styles.aiGenerateText}>Generate Lens insight</Text>
                 </TouchableOpacity>
@@ -872,7 +956,7 @@ const DetailPage = () => {
                   getItemLayout={getSimilarItemLayout}
                 />
               ) : (
-                <TouchableOpacity onPress={fetchAiRecommendations} style={styles.aiGenerateBtn}>
+                <TouchableOpacity activeOpacity={0.95} onPress={fetchAiRecommendations} style={styles.aiGenerateBtn}>
                   <MaterialCommunityIcons name="creation" size={16} color={C.ai} />
                   <Text style={styles.aiGenerateText}>Find similar vibes</Text>
                 </TouchableOpacity>
@@ -939,7 +1023,7 @@ const DetailPage = () => {
             <Text style={styles.sectionTitle}>Episodes</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 14 }}>
               {movie.seasons.filter((s: any) => s.season_number > 0).map((s: any) => (
-                  <TouchableOpacity
+                  <TouchableOpacity activeOpacity={0.95}
                     key={s.id}
                     style={[styles.seasonPill, selectedSeason === s.season_number && styles.seasonPillActive]}
                     onPress={() => { setSelectedSeason(s.season_number); fetchEpisodes(s.season_number); }}
@@ -1014,11 +1098,22 @@ const DetailPage = () => {
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.glassBtn} activeOpacity={0.7}>
+        <TouchableOpacity activeOpacity={0.95} onPress={() => navigation.goBack()} style={styles.glassBtn} activeOpacity={0.95}>
           <Ionicons name="chevron-back" size={22} color={C.white} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setShowLogModal(true)} style={styles.glassBtn} activeOpacity={0.7}>
-          <Feather name="info" size={20} color={C.white} />
+        <TouchableOpacity activeOpacity={0.95} 
+          onPress={() => {
+            if (trailerKey) {
+              Linking.openURL(`https://www.youtube.com/watch?v=${trailerKey}`);
+            } else {
+              const query = encodeURIComponent(`${movie.title || movie.name} trailer`);
+              Linking.openURL(`https://www.youtube.com/results?search_query=${query}`);
+            }
+          }} 
+          style={styles.glassBtn} 
+          activeOpacity={0.95}
+        >
+          <Feather name="youtube" size={20} color={C.white} />
         </TouchableOpacity>
       </View>
 
@@ -1215,56 +1310,67 @@ const styles = StyleSheet.create({
   actionBtnText: { color: C.mutedSoft, fontSize: 11, fontWeight: '600' },
 
   collectionBanner: {
-    borderRadius: 20,
+    borderRadius: 24,
     overflow: 'hidden',
     marginBottom: 32,
-    height: 160,
-    backgroundColor: C.surface,
+    height: 180,
+    backgroundColor: '#0A0A0A',
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: 'rgba(255,255,255,0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 15,
+    elevation: 8,
   },
   collectionBackdrop: {
     ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
+    opacity: 0.8,
   },
   collectionContent: {
     flex: 1,
     justifyContent: 'flex-end',
-    padding: 16,
+    padding: 20,
+  },
+  collectionSubtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
   },
   collectionSubtitle: {
-    color: C.mutedSoft,
+    color: C.gold,
     fontSize: 10.5,
-    fontWeight: '700',
-    letterSpacing: 1.5,
+    fontWeight: '800',
+    letterSpacing: 2,
     textTransform: 'uppercase',
-    marginBottom: 4,
   },
   collectionName: {
     color: C.white,
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '800',
-    lineHeight: 23,
-    letterSpacing: -0.3,
-    marginBottom: 8,
+    lineHeight: 28,
+    letterSpacing: -0.5,
+    marginBottom: 12,
   },
   collectionBtn: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 100,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.15)',
   },
   collectionBtnText: {
     color: C.white,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
 
   section: { marginBottom: 32 },
@@ -1432,6 +1538,21 @@ const styles = StyleSheet.create({
   epTitle: { color: C.white, fontSize: 13.5, fontWeight: '700', marginBottom: 3 },
   epOverview: { color: C.mutedSoft, fontSize: 11.5, lineHeight: 16 },
   
+  muteButton: {
+    position: 'absolute',
+    bottom: 40,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+
   similarCard: { marginRight: 12 },
   similarImg: { borderRadius: 12, backgroundColor: C.surface2 },
   similarTitle: { color: C.white, fontSize: 12, fontWeight: '600', marginTop: 8, lineHeight: 16 },

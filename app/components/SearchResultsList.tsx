@@ -25,7 +25,7 @@ const SearchResultsList = memo(({ peopleResults, tmdbResults, savedIds, toggleWa
             <FlatList
               horizontal data={peopleResults} keyExtractor={item => `person-${item.id}`} showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 4 }}
               renderItem={({ item }) => (
-                <TouchableOpacity style={styles.personItem} onPress={() => navigation.navigate('CastDetails', { personId: item.id })}>
+                <TouchableOpacity activeOpacity={0.95} style={styles.personItem} onPress={() => navigation.navigate('CastDetails', { personId: item.id })}>
                   <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.personImage} />
                   <Text style={styles.personName} numberOfLines={1}>{item.name}</Text>
                 </TouchableOpacity>
@@ -39,7 +39,14 @@ const SearchResultsList = memo(({ peopleResults, tmdbResults, savedIds, toggleWa
           {tmdbResults.map((result: any) => (
             <MovieCard
               key={result.id} item={result} isSearchMode={true} isAdded={savedIds.has(result.id)} toggleWatchlist={toggleWatchlist}
-              onPress={async () => { const fullDetails = await getFullDetails(result); navigation.navigate('Detail', { movie: fullDetails }); }}
+              onPress={async () => { 
+                if (result.media_type === 'collection') {
+                  navigation.navigate('CollectionDetails', { collectionId: result.id, collectionName: result.name || result.title });
+                } else {
+                  const fullDetails = await getFullDetails(result); 
+                  navigation.navigate('Detail', { movie: fullDetails }); 
+                }
+              }}
             />
           ))}
         </View>

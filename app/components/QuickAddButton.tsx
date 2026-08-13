@@ -9,7 +9,7 @@ interface QuickAddButtonProps {
 
 const QuickAddButton = memo(({ isAdded, onPress }: QuickAddButtonProps) => (
   <TouchableOpacity
-    activeOpacity={0.7}
+    activeOpacity={0.95}
     onPress={(e) => { e.stopPropagation(); onPress(); }}
     style={styles.quickAddWrapper}
     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}

@@ -171,7 +171,7 @@ const CustomTabBar: React.FC<BottomTabBarProps> = (props) => {
                             accessibilityState={isFocused ? { selected: true } : {}}
                             onPress={onPress}
                             style={localStyles.tabButton} 
-                            activeOpacity={0.7}
+                            activeOpacity={0.95}
                         >
                             {iconComponent}
                         </TouchableOpacity>

@@ -123,7 +123,7 @@ const ViewAllPage = () => {
 
   // --- RENDERERS ---
   const renderMovieCard = ({ item }: { item: TMDBResult }) => (
-    <TouchableOpacity
+    <TouchableOpacity activeOpacity={0.95}
       style={styles.cardContainer}
       onPress={async () => {
         const fullDetails = await getFullDetails(item);
@@ -157,13 +157,13 @@ const ViewAllPage = () => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+        <TouchableOpacity activeOpacity={0.95} onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
         
         {/* Filter Button */}
-        <TouchableOpacity onPress={() => setShowFilters(true)} style={styles.filterButton}>
+        <TouchableOpacity activeOpacity={0.95} onPress={() => setShowFilters(true)} style={styles.filterButton}>
           <Feather name="sliders" size={20} color={filters.year || filters.language || filters.rating ? '#E50914' : 'white'} />
         </TouchableOpacity>
       </View>
@@ -193,7 +193,7 @@ const ViewAllPage = () => {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Filters</Text>
-              <TouchableOpacity onPress={() => setShowFilters(false)}>
+              <TouchableOpacity activeOpacity={0.95} onPress={() => setShowFilters(false)}>
                 <Ionicons name="close" size={24} color="white" />
               </TouchableOpacity>
             </View>
@@ -204,7 +204,7 @@ const ViewAllPage = () => {
                 <Text style={styles.filterSectionTitle}>Release Year</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                   {years.map(y => (
-                    <TouchableOpacity 
+                    <TouchableOpacity activeOpacity={0.95} 
                       key={y} 
                       style={[styles.filterChip, filters.year === y && styles.filterChipActive]}
                       onPress={() => setFilters({...filters, year: filters.year === y ? '' : y})}
@@ -220,7 +220,7 @@ const ViewAllPage = () => {
                 <Text style={styles.filterSectionTitle}>Language</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                   {languages.map(lang => (
-                    <TouchableOpacity 
+                    <TouchableOpacity activeOpacity={0.95} 
                       key={lang.code} 
                       style={[styles.filterChip, filters.language === lang.code && styles.filterChipActive]}
                       onPress={() => setFilters({...filters, language: filters.language === lang.code ? '' : lang.code})}
@@ -236,7 +236,7 @@ const ViewAllPage = () => {
                 <Text style={styles.filterSectionTitle}>Minimum Rating</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                   {ratings.map(r => (
-                    <TouchableOpacity 
+                    <TouchableOpacity activeOpacity={0.95} 
                       key={r} 
                       style={[styles.filterChip, filters.rating === r && styles.filterChipActive]}
                       onPress={() => setFilters({...filters, rating: filters.rating === r ? 0 : r})}
@@ -252,10 +252,10 @@ const ViewAllPage = () => {
             </ScrollView>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.resetButton} onPress={resetFilters}>
+              <TouchableOpacity activeOpacity={0.95} style={styles.resetButton} onPress={resetFilters}>
                 <Text style={styles.resetText}>Reset</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.applyButton} onPress={applyFilters}>
+              <TouchableOpacity activeOpacity={0.95} style={styles.applyButton} onPress={applyFilters}>
                 <Text style={styles.applyText}>Apply Filters</Text>
               </TouchableOpacity>
             </View>

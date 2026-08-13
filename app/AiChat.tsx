@@ -172,11 +172,11 @@ const AiNameSetup = ({ onComplete }: { onComplete: (name: string) => void }) => 
         {/* Suggestions */}
         <Animated.View entering={FadeInUp.delay(900).springify()} style={setupStyles.suggestionsRow}>
           {AI_NAME_SUGGESTIONS.map((sug, i) => (
-            <TouchableOpacity
+            <TouchableOpacity activeOpacity={0.95}
               key={sug}
               style={[setupStyles.suggestionChip, name === sug && setupStyles.suggestionChipActive]}
               onPress={() => { Haptics.selectionAsync(); setName(sug); }}
-              activeOpacity={0.7}
+              activeOpacity={0.95}
             >
               <Text style={[setupStyles.suggestionText, name === sug && { color: 'white' }]}>{sug}</Text>
             </TouchableOpacity>
@@ -188,7 +188,7 @@ const AiNameSetup = ({ onComplete }: { onComplete: (name: string) => void }) => 
           <TouchableOpacity
             style={[setupStyles.continueBtn, !name.trim() && { opacity: 0.5 }]}
             onPress={handleSubmit}
-            activeOpacity={0.8}
+            activeOpacity={0.95}
           >
             <LinearGradient
               colors={[ACCENT, '#CC2020']}
@@ -538,7 +538,7 @@ const AiChat = () => {
         {m.movies.map((item) => {
           const watched = isMovieWatched(item);
           return (
-            <TouchableOpacity key={String(item.id)} activeOpacity={0.85} style={styles.detailCard} onPress={() => openMovie(item)}>
+            <TouchableOpacity key={String(item.id)} activeOpacity={0.95} style={styles.detailCard} onPress={() => openMovie(item)}>
               <Image
                 source={{ uri: getImageUrl(item.poster_path, 'w92') }}
                 style={styles.detailGlow}
@@ -595,7 +595,7 @@ const AiChat = () => {
         contentContainerStyle={{ paddingHorizontal: 16, gap: 16, paddingVertical: 8 }}
         renderItem={({ item, index }) => (
           <Animated.View entering={FadeInUp.delay(index * 80).springify()}>
-            <TouchableOpacity activeOpacity={0.85} style={styles.actorCard} onPress={() => openActor(item)}>
+            <TouchableOpacity activeOpacity={0.95} style={styles.actorCard} onPress={() => openActor(item)}>
               <View style={styles.actorAvatarContainer}>
                 <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.actorAvatar} />
                 <LinearGradient
@@ -621,7 +621,7 @@ const AiChat = () => {
             <Text style={styles.bubbleBotText}>{m.text}</Text>
           </View>
         )}
-        <TouchableOpacity activeOpacity={0.85} style={styles.detailCard} onPress={() => openMovie(m.movie)}>
+        <TouchableOpacity activeOpacity={0.95} style={styles.detailCard} onPress={() => openMovie(m.movie)}>
           <Image
             source={{ uri: getImageUrl(m.movie.poster_path, 'w92') }}
             style={styles.detailGlow}
@@ -702,7 +702,7 @@ const AiChat = () => {
 
       {/* ── Header ── */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity onPress={() => { Haptics.selectionAsync(); setSidebarOpen(true); }} hitSlop={10}>
+        <TouchableOpacity activeOpacity={0.95} onPress={() => { Haptics.selectionAsync(); setSidebarOpen(true); }} hitSlop={10}>
           <Ionicons name="menu" size={22} color="white" />
         </TouchableOpacity>
 
@@ -713,11 +713,11 @@ const AiChat = () => {
 
         <View style={{ flex: 1 }} />
 
-        <TouchableOpacity onPress={() => { Haptics.selectionAsync(); navigation.goBack(); }} hitSlop={10}>
+        <TouchableOpacity activeOpacity={0.95} onPress={() => { Haptics.selectionAsync(); navigation.goBack(); }} hitSlop={10}>
           <Ionicons name="close" size={22} color="rgba(255,255,255,0.6)" />
         </TouchableOpacity>
 
-        <TouchableOpacity
+        <TouchableOpacity activeOpacity={0.95}
           onPress={() => { Haptics.selectionAsync(); startNewChat(); }}
           hitSlop={10}
           style={{ marginLeft: 14 }}
@@ -755,10 +755,10 @@ const AiChat = () => {
         <Animated.View entering={FadeIn.delay(300)} style={styles.chipsContainer}>
           {STARTER_PROMPTS.map((p, i) => (
             <Animated.View key={p.label} entering={FadeInUp.delay(400 + i * 80).springify()}>
-              <TouchableOpacity
+              <TouchableOpacity activeOpacity={0.95}
                 style={styles.chip}
                 onPress={() => { Haptics.selectionAsync(); handleSend(`${p.emoji} ${p.label}`); }}
-                activeOpacity={0.7}
+                activeOpacity={0.95}
               >
                 <Text style={styles.chipEmoji}>{p.emoji}</Text>
                 <Text style={styles.chipText}>{p.label}</Text>
@@ -787,11 +787,11 @@ const AiChat = () => {
         </Animated.View>
 
         <Animated.View style={sendBtnAnimStyle}>
-          <TouchableOpacity
+          <TouchableOpacity activeOpacity={0.95}
             style={[styles.sendBtn, (!input.trim() || sending) && { opacity: 0.35 }]}
             onPress={() => handleSend()}
             disabled={!input.trim() || sending}
-            activeOpacity={0.8}
+            activeOpacity={0.95}
           >
             <LinearGradient
               colors={[ACCENT, '#CC2020']}

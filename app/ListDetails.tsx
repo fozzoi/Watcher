@@ -341,7 +341,7 @@ const ListDetails = ({ route, navigation }) => {
   };
 
   const renderMovieCard = ({ item }) => (
-    <TouchableOpacity 
+    <TouchableOpacity activeOpacity={0.95} 
       style={styles.movieCard}
       onPress={() => handleMoviePress(item)}
     >
@@ -398,13 +398,13 @@ const ListDetails = ({ route, navigation }) => {
             </View>
             
             <View style={styles.heroActionRow}>
-              <TouchableOpacity style={styles.heroIcon} onPress={openTelegramSearch}>
+              <TouchableOpacity activeOpacity={0.95} style={styles.heroIcon} onPress={openTelegramSearch}>
                 <Ionicons name="paper-plane-outline" size={20} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.heroIcon} onPress={openTorrentSearch}>
+              <TouchableOpacity activeOpacity={0.95} style={styles.heroIcon} onPress={openTorrentSearch}>
                 <Feather name="download" size={20} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.heroIcon} onPress={toggleWatchlist}>
+              <TouchableOpacity activeOpacity={0.95} style={styles.heroIcon} onPress={toggleWatchlist}>
                 <MaterialIcons 
                   name={isInWatchlist ? "bookmark" : "bookmark-outline"} 
                   size={20} 
@@ -426,7 +426,7 @@ const ListDetails = ({ route, navigation }) => {
         {selectedMovie.media_type === 'movie' && selectedMovie.director && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Director</Text>
-            <TouchableOpacity 
+            <TouchableOpacity activeOpacity={0.95} 
               style={styles.directorContainer}
               onPress={() => navigation.navigate('CastDetails', { personId: selectedMovie.director.id })}
             >
@@ -445,7 +445,7 @@ const ListDetails = ({ route, navigation }) => {
               data={castData.slice(0, 6)} 
               keyExtractor={(item) => `cast-${item.id}`} 
               renderItem={({ item }) => ( 
-                <TouchableOpacity 
+                <TouchableOpacity activeOpacity={0.95} 
                   style={styles.castItem}
                   onPress={() => navigation.navigate('CastDetails', { personId: item.id })}
                 >
@@ -478,7 +478,7 @@ const ListDetails = ({ route, navigation }) => {
               nestedScrollEnabled={true} 
             >
               {(selectedMovie.seasons.filter(s => s.season_number > 0) || selectedMovie.seasons).map((season) => (
-                <TouchableOpacity
+                <TouchableOpacity activeOpacity={0.95}
                   key={`season-${season.id}`}
                   style={[
                     styles.seasonTab,
@@ -539,7 +539,7 @@ const ListDetails = ({ route, navigation }) => {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Similar Movies</Text>
         {similarMovies.length > 0 && (
-          <TouchableOpacity onPress={() => navigation.push('ListDetails', { 
+          <TouchableOpacity activeOpacity={0.95} onPress={() => navigation.push('ListDetails', { 
             movies: similarMovies,
             contentType: 'similar',
             title: `Similar to ${selectedMovie?.title || selectedMovie?.name}`
@@ -559,7 +559,7 @@ const ListDetails = ({ route, navigation }) => {
           keyExtractor={(item) => `similar-${item.id}`}
           showsHorizontalScrollIndicator={false}
           renderItem={({ item }) => (
-            <TouchableOpacity 
+            <TouchableOpacity activeOpacity={0.95} 
               style={styles.similarItem}
               onPress={() => navigation.push('ListDetails', { 
                 movies: similarMovies,

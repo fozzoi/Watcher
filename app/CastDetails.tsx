@@ -217,7 +217,7 @@ export default function CastDetails() {
       style={[styles.creditCard, { width: CARD_WIDTH, marginRight: (index + 1) % 3 === 0 ? 0 : CARD_GAP }]}
     >
       <TouchableOpacity
-        activeOpacity={0.55}
+        activeOpacity={0.95}
         onPress={async () => {
           try {
             const fullData = await getFullDetails(item);
@@ -269,7 +269,7 @@ export default function CastDetails() {
           <StatusBar hidden />
 
           <View style={styles.modalHeader}>
-            <TouchableOpacity style={styles.glassBtn} onPress={() => setGalleryVisible(false)}>
+            <TouchableOpacity activeOpacity={0.95} style={styles.glassBtn} onPress={() => setGalleryVisible(false)}>
               <Ionicons name="close" size={22} color={C.white} />
             </TouchableOpacity>
 
@@ -277,7 +277,7 @@ export default function CastDetails() {
               {currentImageIndex + 1} / {imagesToRender.length}
             </Text>
 
-            <TouchableOpacity style={styles.glassBtn} onPress={handleGalleryShare}>
+            <TouchableOpacity activeOpacity={0.95} style={styles.glassBtn} onPress={handleGalleryShare}>
               <Ionicons name="share-outline" size={19} color={C.white} />
             </TouchableOpacity>
           </View>
@@ -319,7 +319,7 @@ export default function CastDetails() {
                 keyExtractor={(_, index) => `modal-thumb-${index}`}
                 contentContainerStyle={{ paddingHorizontal: 20 }}
                 renderItem={({ item, index }) => (
-                  <TouchableOpacity
+                  <TouchableOpacity activeOpacity={0.95}
                     onPress={() => {
                       setCurrentImageIndex(index);
                       mainGalleryRef.current?.scrollToIndex({ index, animated: true });
@@ -384,10 +384,10 @@ export default function CastDetails() {
         </Animated.View>
 
         <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.glassBtn} activeOpacity={0.7}>
+          <TouchableOpacity activeOpacity={0.95} onPress={() => navigation.goBack()} style={styles.glassBtn} activeOpacity={0.95}>
             <Ionicons name="chevron-back" size={22} color={C.white} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleLovePress} style={styles.glassBtn} activeOpacity={0.7}>
+          <TouchableOpacity onPress={handleLovePress} style={styles.glassBtn} activeOpacity={0.95}>
             <Animated.View style={animatedHeartStyle}>
               <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={20} color={isLiked ? C.red : C.white} />
             </Animated.View>
@@ -412,7 +412,7 @@ export default function CastDetails() {
             <Text style={styles.title} numberOfLines={2}>
               {person.name}
             </Text>
-            <TouchableOpacity onPress={copyName} style={styles.copyBtn}>
+            <TouchableOpacity activeOpacity={0.95} onPress={copyName} style={styles.copyBtn}>
               <Feather name="copy" size={16} color={C.muted} />
             </TouchableOpacity>
           </View>
@@ -437,18 +437,18 @@ export default function CastDetails() {
             </View>
           ) : null}
 
-          <TouchableOpacity style={styles.playBtn} onPress={handleLovePress} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.playBtn} onPress={handleLovePress} activeOpacity={0.95}>
             <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={20} color="#000" />
             <Text style={styles.playBtnText}>{isLiked ? 'Favorited' : 'Add to Favorites'}</Text>
           </TouchableOpacity>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.actionBtn} onPress={handleGalleryShare}>
+            <TouchableOpacity activeOpacity={0.95} style={styles.actionBtn} onPress={handleGalleryShare}>
               <Feather name="share-2" size={17} color={C.mutedSoft} />
               <Text style={styles.actionBtnText}>Share</Text>
             </TouchableOpacity>
             {personImages.length > 0 && (
-              <TouchableOpacity
+              <TouchableOpacity activeOpacity={0.95}
                 style={styles.actionBtn}
                 onPress={() => {
                   setCurrentImageIndex(0);
@@ -467,7 +467,7 @@ export default function CastDetails() {
               {person.biography || 'No biography available for this person.'}
             </Text>
             {person.biography && person.biography.length > 220 && (
-              <TouchableOpacity onPress={() => setIsBioExpanded(!isBioExpanded)}>
+              <TouchableOpacity activeOpacity={0.95} onPress={() => setIsBioExpanded(!isBioExpanded)}>
                 <Text style={styles.readMore}>{isBioExpanded ? 'Less' : 'Read more'}</Text>
               </TouchableOpacity>
             )}

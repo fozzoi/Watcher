@@ -228,7 +228,7 @@ const ExplorePage = () => {
               {searchLoading ? (
                 <ActivityIndicator color="#E50914" size={18} />
               ) : query.length > 0 ? (
-                <TouchableOpacity onPress={() => setQuery('')}>
+                <TouchableOpacity activeOpacity={0.95} onPress={() => setQuery('')}>
                   <MaterialIcons name="close" size={22} color="#8C8C8C" />
                 </TouchableOpacity>
               ) : (
@@ -237,7 +237,7 @@ const ExplorePage = () => {
             </View>
           </View>
 
-          <TouchableOpacity onPress={() => navigation.navigate('AiSearch')} style={styles.iconButtonAi}>
+          <TouchableOpacity activeOpacity={0.95} onPress={() => navigation.navigate('AiSearch')} style={styles.iconButtonAi}>
             <LinearGradient
               colors={['#2a1b40', '#121212']} // Subtle dark purple to dark gray gradient
               start={{ x: 0, y: 0 }}
@@ -248,7 +248,7 @@ const ExplorePage = () => {
             </LinearGradient>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={styles.iconButton}>
+          <TouchableOpacity activeOpacity={0.95} onPress={() => navigation.navigate('Settings')} style={styles.iconButton}>
             <Ionicons name="settings-outline" size={24} color="#FFFFFF" />
           </TouchableOpacity>
         </View>

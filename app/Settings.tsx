@@ -18,6 +18,9 @@ const Settings = () => {
   const [isNsfwFilter, setIsNsfwFilter] = useState(true);
   const [isAutoAi, setIsAutoAi] = useState(true);
   const [customApiKey, setCustomApiKey] = useState('');
+  
+  const [isAutoPlayTrailer, setIsAutoPlayTrailer] = useState(true);
+  const [trailerResolution, setTrailerResolution] = useState('1080');
 
   useEffect(() => {
     loadSettings();
@@ -29,6 +32,8 @@ const Settings = () => {
       const savedNsfw = await AsyncStorage.getItem('settings_nsfw');
       const savedAutoAi = await AsyncStorage.getItem('settings_auto_ai');
       const savedKey = await AsyncStorage.getItem('settings_custom_key');
+      const savedAutoPlayTrailer = await AsyncStorage.getItem('settings_autoplay_trailer');
+      const savedTrailerRes = await AsyncStorage.getItem('settings_trailer_res');
       
       if (savedHiRes !== null) {
         const val = JSON.parse(savedHiRes);
@@ -46,6 +51,12 @@ const Settings = () => {
       if (savedKey !== null) {
         setCustomApiKey(savedKey);
         setGlobalConfig('customApiKey', savedKey);
+      }
+      if (savedAutoPlayTrailer !== null) {
+        setIsAutoPlayTrailer(JSON.parse(savedAutoPlayTrailer));
+      }
+      if (savedTrailerRes !== null) {
+        setTrailerResolution(savedTrailerRes);
       }
     } catch (e) { console.log("Failed to load settings"); }
   };
@@ -71,6 +82,16 @@ const Settings = () => {
     setCustomApiKey(text);
     setGlobalConfig('customApiKey', text);
     await AsyncStorage.setItem('settings_custom_key', text);
+  };
+
+  const toggleAutoPlayTrailer = async (value: boolean) => {
+    setIsAutoPlayTrailer(value);
+    await AsyncStorage.setItem('settings_autoplay_trailer', JSON.stringify(value));
+  };
+
+  const changeTrailerResolution = async (res: string) => {
+    setTrailerResolution(res);
+    await AsyncStorage.setItem('settings_trailer_res', res);
   };
 
   const handleHowToGetKey = () => {
@@ -244,6 +265,32 @@ const Settings = () => {
           <Text style={{ color: '#888', fontSize: 14, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>Content</Text>
           <SettingToggleRow iconFamily={Feather} iconName="image" title="Hi-Res Posters" subtitle="Higher quality (uses more data)" value={isHiRes} onValueChange={toggleHiRes} />
           <SettingToggleRow iconFamily={Feather} iconName="eye-off" title="NSFW Filter" subtitle="Hide explicit/adult content" value={isNsfwFilter} onValueChange={toggleNsfw} />
+          <SettingToggleRow iconFamily={Feather} iconName="play-circle" title="Auto-Play Trailers" subtitle="Play trailers silently on details page" value={isAutoPlayTrailer} onValueChange={toggleAutoPlayTrailer} />
+          
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', padding: 16, marginBottom: 12, borderRadius: 12, borderWidth: 1, borderColor: '#333' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+              <View style={{ padding: 8, backgroundColor: '#333', borderRadius: 8 }}>
+                <Feather name="monitor" size={20} color="white" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>Trailer Resolution</Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {['Auto', '720', '1080'].map((res) => (
+                <TouchableOpacity activeOpacity={0.95} 
+                  key={res}
+                  onPress={() => changeTrailerResolution(res)}
+                  style={{ 
+                    paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8,
+                    backgroundColor: trailerResolution === res ? '#ef4444' : '#333' 
+                  }}
+                >
+                  <Text style={{ color: 'white', fontSize: 12, fontWeight: '600' }}>{res}{res !== 'Auto' && 'p'}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
         </View>
 
         <View style={{ marginBottom: 24 }}>
@@ -252,7 +299,7 @@ const Settings = () => {
           <View style={{ backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#333' }}>
               <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8}}>
                   <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>Custom API Key</Text>
-                  <TouchableOpacity onPress={handleHowToGetKey}>
+                  <TouchableOpacity activeOpacity={0.95} onPress={handleHowToGetKey}>
                       <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: 'bold' }}>How to get it?</Text>
                   </TouchableOpacity>
               </View>
@@ -264,7 +311,7 @@ const Settings = () => {
         <View style={{ marginBottom: 20 }}>
           <Text style={{ color: '#888', fontSize: 14, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>Data & Storage</Text>
           
-          <TouchableOpacity onPress={handleExportPrompt} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#333', marginBottom: 12 }}>
+          <TouchableOpacity activeOpacity={0.95} onPress={handleExportPrompt} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#333', marginBottom: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <View style={{ padding: 8, backgroundColor: 'rgba(59, 130, 246, 0.2)', borderRadius: 8 }}>
                 <Feather name="upload" size={20} color="#3B82F6" />
@@ -277,7 +324,7 @@ const Settings = () => {
             <Feather name="chevron-right" color="#666" size={20} />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={handleRestoreBackup} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#333', marginBottom: 12 }}>
+          <TouchableOpacity activeOpacity={0.95} onPress={handleRestoreBackup} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#333', marginBottom: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <View style={{ padding: 8, backgroundColor: 'rgba(34, 197, 94, 0.2)', borderRadius: 8 }}>
                 <Feather name="download" size={20} color="#22C55E" />
@@ -290,7 +337,7 @@ const Settings = () => {
             <Feather name="chevron-right" color="#666" size={20} />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={handleClearCache} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#333' }}>
+          <TouchableOpacity activeOpacity={0.95} onPress={handleClearCache} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#333' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <View style={{ padding: 8, backgroundColor: 'rgba(239, 68, 68, 0.2)', borderRadius: 8 }}>
                 <Feather name="trash-2" size={20} color="#EF4444" />

@@ -67,14 +67,14 @@ const DownloadsScreen = () => {
             </Text>
           </View>
           
-          <TouchableOpacity 
+          <TouchableOpacity activeOpacity={0.95} 
             style={[styles.actionBtn, { marginRight: 8 }]} 
             onPress={() => setSelectedLogsId(item.id)}
           >
             <Feather name="info" size={16} color={C.white} />
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity activeOpacity={0.95} 
             style={[styles.actionBtn, { marginRight: 8 }]}
             onPress={() => {
               Alert.alert(
@@ -94,7 +94,7 @@ const DownloadsScreen = () => {
             <Feather name="trash-2" size={16} color={C.red} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionBtn}>
+          <TouchableOpacity activeOpacity={0.95} style={styles.actionBtn}>
             <Ionicons name={item.status === 'Completed' ? 'play' : 'pause'} size={16} color={C.white} />
           </TouchableOpacity>
         </View>
@@ -114,7 +114,7 @@ const DownloadsScreen = () => {
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
       
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.glassBtn} activeOpacity={0.7}>
+        <TouchableOpacity activeOpacity={0.95} onPress={() => navigation.goBack()} style={styles.glassBtn} activeOpacity={0.95}>
           <Ionicons name="chevron-back" size={22} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Downloads</Text>
@@ -164,7 +164,7 @@ const DownloadsScreen = () => {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Download Debug Logs</Text>
               <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
-                <TouchableOpacity onPress={() => {
+                <TouchableOpacity activeOpacity={0.95} onPress={() => {
                   const allLogs = selectedItem?.logs?.join('\n') || '';
                   if (allLogs) {
                     Clipboard.setStringAsync(allLogs);
@@ -173,7 +173,7 @@ const DownloadsScreen = () => {
                 }}>
                   <Feather name="copy" size={20} color={C.white} />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => setSelectedLogsId(null)}>
+                <TouchableOpacity activeOpacity={0.95} onPress={() => setSelectedLogsId(null)}>
                   <Feather name="x" size={24} color={C.white} />
                 </TouchableOpacity>
               </View>

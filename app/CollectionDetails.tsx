@@ -135,10 +135,10 @@ const CollectionDetails = () => {
   const renderMovieItem = ({ item }: { item: TMDBResult }) => {
     const year = item.release_date?.split('-')[0] || '';
     return (
-      <TouchableOpacity
+      <TouchableOpacity activeOpacity={0.95}
         style={styles.movieCard}
         onPress={() => handleMoviePress(item)}
-        activeOpacity={0.6}
+        activeOpacity={0.95}
       >
         <Image
           source={{ uri: getImageUrl(item.poster_path, 'w185') }}
@@ -214,7 +214,7 @@ const CollectionDetails = () => {
         </View>
 
         <View style={styles.actionsRow}>
-          <TouchableOpacity 
+          <TouchableOpacity activeOpacity={0.95} 
             style={[styles.actionBtn, isInWatchlist && styles.actionBtnActive]} 
             onPress={toggleWatchlist}
           >
@@ -223,7 +223,7 @@ const CollectionDetails = () => {
               {isInWatchlist ? "Saved" : "Save"}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity activeOpacity={0.95} 
             style={[styles.actionBtn, isWatched && styles.actionBtnActive]} 
             onPress={toggleWatched}
           >
@@ -252,10 +252,10 @@ const CollectionDetails = () => {
 
       {/* Back button */}
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-        <TouchableOpacity
+        <TouchableOpacity activeOpacity={0.95}
           onPress={() => navigation.goBack()}
           style={styles.glassBtn}
-          activeOpacity={0.7}
+          activeOpacity={0.95}
         >
           <Ionicons name="chevron-back" size={22} color={C.white} />
         </TouchableOpacity>

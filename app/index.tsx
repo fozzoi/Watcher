@@ -236,7 +236,7 @@ export default function Index() {
           </View>
           
           <View style={styles.actionRow}>
-                <TouchableOpacity 
+                <TouchableOpacity activeOpacity={0.95} 
                     style={styles.shareBtn} 
                     onPress={() => handleShareAsFile(item.url, item.name)}
                     disabled={downloadingFile}
@@ -244,7 +244,7 @@ export default function Index() {
                     {downloadingFile ? <ActivityIndicator size="small" color="#AAA" /> : <Feather name="share-2" size={18} color="#AAA" />}
                 </TouchableOpacity>
 
-                <TouchableOpacity 
+                <TouchableOpacity activeOpacity={0.95} 
                     style={styles.downloadBtn} 
                     onPress={async () => {
                          const supported = await Linking.canOpenURL(item.url);
@@ -279,7 +279,7 @@ export default function Index() {
             <View style={styles.brandContainer}>
                 <MaterialCommunityIcons name="magnet-on" size={60} color="#E50914" style={{ marginBottom: 16 }} />
                 <Text style={styles.brandTitle}>Torrent Search</Text>
-                <TouchableOpacity 
+                <TouchableOpacity activeOpacity={0.95} 
                     onPress={() => navigation.navigate("history")}
                     style={styles.historyPill}
                 >
@@ -303,7 +303,7 @@ export default function Index() {
                     keyboardAppearance="dark"
                 />
                 {searchQuery.length > 0 && (
-                    <TouchableOpacity onPress={handleClear} style={{ padding: 10 }}>
+                    <TouchableOpacity activeOpacity={0.95} onPress={handleClear} style={{ padding: 10 }}>
                         <Ionicons name="close-circle" size={18} color="#666" />
                     </TouchableOpacity>
                 )}
@@ -318,7 +318,7 @@ export default function Index() {
             >
                 <View style={styles.resultsHeader}>
                      <Text style={styles.resultsTitle}>{loading ? 'Searching...' : 'Results'}</Text>
-                     <TouchableOpacity onPress={() => navigation.navigate("history")}>
+                     <TouchableOpacity activeOpacity={0.95} onPress={() => navigation.navigate("history")}>
                         <MaterialIcons name="history" size={24} color="#666" />
                      </TouchableOpacity>
                 </View>
@@ -337,7 +337,7 @@ export default function Index() {
                         )}
                         
                         {results.length > 5 && (
-                            <TouchableOpacity onPress={() => setShowMore(!showMore)} style={styles.showMoreBtn}>
+                            <TouchableOpacity activeOpacity={0.95} onPress={() => setShowMore(!showMore)} style={styles.showMoreBtn}>
                                 <Text style={styles.showMoreText}>{showMore ? "Show Less" : "Show More Results"}</Text>
                                 <Feather name={showMore ? "chevron-up" : "chevron-down"} size={16} color="#888" />
                             </TouchableOpacity>

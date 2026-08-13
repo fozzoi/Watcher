@@ -30,7 +30,7 @@ const MovieCard = memo(({ item, onPress, isSearchMode = false, isAdded, toggleWa
 
   return (
     <TouchableOpacity
-      activeOpacity={0.7}
+      activeOpacity={0.95}
       onPress={onPress}
       style={{ width: cardWidth, marginRight: isSearchMode ? 0 : GAP_SIZE, marginBottom: isSearchMode ? 16 : 0 }}
     >
