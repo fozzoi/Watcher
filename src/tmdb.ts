@@ -11,8 +11,8 @@ const GEMINI_MODEL = "gemini-flash-latest";
 export let GLOBAL_CONFIG = {
   hiRes: false,
   nsfwFilterEnabled: true,
-  aiEnabled: true,       
-  customApiKey: ""       
+  aiEnabled: true,        
+  customApiKey: ""        
 };
 
 export const setGlobalConfig = (key: keyof typeof GLOBAL_CONFIG, value: any) => {
@@ -119,6 +119,15 @@ export interface TMDBCollection {
   backdrop_path: string | null;
 }
 
+export interface TMDBCollectionDetails {
+  id: number;
+  name: string;
+  overview: string;
+  poster_path: string | null;
+  backdrop_path: string | null;
+  parts: TMDBResult[];
+}
+
 export interface TMDBResult {
   id: number;
   title?: string;
@@ -222,8 +231,8 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
   if (GLOBAL_CONFIG.nsfwFilterEnabled) {
     params.include_adult = false;
     if (endpoint.includes('discover')) {
-      params.certification_country = "IN"; 
-      params['certification.lte'] = "UA"; 
+      params.certification_country = "US"; 
+      params['certification.lte'] = "PG-13"; 
     }
   } else {
     params.include_adult = true; 
@@ -438,7 +447,7 @@ export const getAnimatedMovies = async (page: number = 1, genreId?: number): Pro
 };
 
 export const getUpcomingMovies = async (page: number = 1): Promise<TMDBResult[]> => {
-  const params: any = { region: 'IN' };
+  const params: any = { region: 'US' }; // Updated to match Tauri
   if (page === 1) return await fetchDoublePage("/movie/upcoming", params, "movie");
 
   params.page = page;
@@ -642,11 +651,23 @@ export const getPersonDetails = async (personId: number): Promise<TMDBPerson> =>
 
 export const getPersonCombinedCredits = async (personId: number): Promise<TMDBResult[]> => {
   const data = await fetchWithCache(`/person/${personId}/combined_credits`);
+  
   const castItems = data.cast || [];
-  return castItems.map((item: any) => ({
+  const crewItems = data.crew || [];
+
+  // Filter the crew array to only get items where they were the Director
+  const directorialWorks = crewItems.filter((item: any) => item.job === "Director");
+
+  // Combine acting and directing arrays
+  const combined = [...castItems, ...directorialWorks];
+  
+  // Remove duplicates (e.g., if they act and direct in the same movie)
+  const uniqueItems = Array.from(new Map(combined.map((item: any) => [item.id, item])).values());
+
+  return uniqueItems.map((item: any) => ({
     ...formatBasicItemData(item),
     media_type: item.media_type || (item.title ? "movie" : "tv"),
-    character: item.character || null
+    character: item.character || item.job || null
   }));
 };
 
@@ -677,6 +698,23 @@ export const getTrailers = async (id: number, mediaType: "movie" | "tv"): Promis
     const data = await fetchWithCache(`/${mediaType}/${id}/videos`);
     return data.results || [];
   } catch (error) { return []; }
+};
+
+export const getCollectionDetails = async (collectionId: number): Promise<TMDBCollectionDetails | null> => {
+  try {
+    const data = await fetchWithCache(`/collection/${collectionId}`);
+    return {
+      id: data.id,
+      name: data.name,
+      overview: data.overview || "",
+      poster_path: data.poster_path,
+      backdrop_path: data.backdrop_path,
+      parts: (data.parts || []).map((item: any) => ({
+        ...formatBasicItemData(item),
+        media_type: "movie" as const,
+      })),
+    };
+  } catch (error) { return null; }
 };
 
 export const searchTMDB = async (query: string, page: number = 1): Promise<TMDBResult[]> => {

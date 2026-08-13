@@ -715,6 +715,40 @@ const DetailPage = () => {
           </View>
         ) : null}
 
+        {movie.belongs_to_collection && (
+          <TouchableOpacity
+            style={styles.collectionBanner}
+            onPress={() =>
+              navigation.push('CollectionDetails', {
+                collectionId: movie.belongs_to_collection.id,
+                collectionName: movie.belongs_to_collection.name,
+              })
+            }
+            activeOpacity={0.7}
+          >
+            <Image
+              source={{ uri: getImageUrl(movie.belongs_to_collection.backdrop_path, 'w780') }}
+              style={styles.collectionBackdrop}
+              resizeMode="cover"
+            />
+            <LinearGradient
+              colors={['rgba(10,10,11,0.3)', 'rgba(10,10,11,0.85)', C.surface]}
+              locations={[0, 0.55, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={styles.collectionContent}>
+              <Text style={styles.collectionSubtitle}>Part of the franchise</Text>
+              <Text style={styles.collectionName} numberOfLines={2}>
+                {movie.belongs_to_collection.name}
+              </Text>
+              <View style={styles.collectionBtn}>
+                <Text style={styles.collectionBtnText}>View Collection</Text>
+                <Ionicons name="chevron-forward" size={14} color={C.white} />
+              </View>
+            </View>
+          </TouchableOpacity>
+        )}
+
         <View style={styles.aiPanel}>
           <View style={styles.aiHeader}>
             <View style={styles.aiHeaderLeft}>
@@ -1144,6 +1178,59 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(48,209,88,0.08)',
   },
   actionBtnText: { color: C.mutedSoft, fontSize: 11, fontWeight: '600' },
+
+  collectionBanner: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 32,
+    height: 160,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  collectionBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  collectionContent: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+  collectionSubtitle: {
+    color: C.mutedSoft,
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  collectionName: {
+    color: C.white,
+    fontSize: 18,
+    fontWeight: '800',
+    lineHeight: 23,
+    letterSpacing: -0.3,
+    marginBottom: 8,
+  },
+  collectionBtn: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  collectionBtnText: {
+    color: C.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
 
   section: { marginBottom: 32 },
   sectionTitle: {

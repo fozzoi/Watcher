@@ -18,6 +18,7 @@ import DetailPage from './DetailPage';
 import CastDetails from './CastDetails';
 import ViewAllPage from './ViewAllPage';
 import SimilarMoviesPage from './SimilarMoviesPage';
+import CollectionDetails from './CollectionDetails';
 
 
 const Tab = createBottomTabNavigator();
@@ -71,6 +72,7 @@ const SearchStack = () => (
         <Stack.Screen name="CastDetails" component={CastDetails} />
         <Stack.Screen name="ViewAll" component={ViewAllPage} />
         <Stack.Screen name="SimilarMovies" component={SimilarMoviesPage} />
+        <Stack.Screen name="CollectionDetails" component={CollectionDetails} />
         <Stack.Screen name="history" component={History} />
     </Stack.Navigator>
 );
@@ -82,6 +84,7 @@ const WatchlistStack = () => (
         <Stack.Screen name="CastDetails" component={CastDetails} />
         <Stack.Screen name="ViewAll" component={ViewAllPage} />
         <Stack.Screen name="SimilarMovies" component={SimilarMoviesPage} />
+        <Stack.Screen name="CollectionDetails" component={CollectionDetails} />
         <Stack.Screen name="history" component={History} />
     </Stack.Navigator>
 );
@@ -93,6 +96,7 @@ const ExploreStack = () => (
         <Stack.Screen name="CastDetails" component={CastDetails} />
         <Stack.Screen name="ViewAll" component={ViewAllPage} />
         <Stack.Screen name="SimilarMovies" component={SimilarMoviesPage} />
+        <Stack.Screen name="CollectionDetails" component={CollectionDetails} />
         <Stack.Screen name="history" component={History} />
         <Stack.Screen name="Settings" component={SettingsStack} />
         <Stack.Screen name="AiSearch" component={require('../app/AiChat').default} />
@@ -104,6 +108,7 @@ const SettingsStack = () => (
         <Stack.Screen name="SettingsMain" component={SettingsPage} />
         <Stack.Screen name="Detail" component={DetailPage} />
         <Stack.Screen name="CastDetails" component={CastDetails} />
+        <Stack.Screen name="CollectionDetails" component={CollectionDetails} />
         <Stack.Screen name="history" component={History} />
         
     </Stack.Navigator>
