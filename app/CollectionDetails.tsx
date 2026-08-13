@@ -10,8 +10,9 @@ import {
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getCollectionDetails,
   getImageUrl,
@@ -65,12 +66,31 @@ const CollectionDetails = () => {
 
   const [collection, setCollection] = useState<TMDBCollectionDetails | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isInWatchlist, setIsInWatchlist] = useState(false);
+  const [isWatched, setIsWatched] = useState(false);
+
+  const checkStatus = async (col: TMDBCollectionDetails) => {
+    try {
+      const watchlistStr = await AsyncStorage.getItem('watchlist');
+      if (watchlistStr) {
+        const list = JSON.parse(watchlistStr);
+        setIsInWatchlist(list.some((item: any) => item.id === col.id));
+      }
+      
+      const historyStr = await AsyncStorage.getItem('history');
+      if (historyStr) {
+        const list = JSON.parse(historyStr);
+        setIsWatched(list.some((item: any) => item.id === col.id));
+      }
+    } catch {}
+  };
 
   useEffect(() => {
     const fetchCollection = async () => {
       setLoading(true);
       const data = await getCollectionDetails(collectionId);
       setCollection(data);
+      if (data) checkStatus(data);
       setLoading(false);
     };
     fetchCollection();
@@ -86,6 +106,30 @@ const CollectionDetails = () => {
 
   const handleMoviePress = (movie: TMDBResult) => {
     navigation.push('Detail', { movie });
+  };
+
+  const toggleWatchlist = async () => {
+    if (!collection) return;
+    try {
+      const stored = await AsyncStorage.getItem('watchlist');
+      const list = stored ? JSON.parse(stored) : [];
+      const exists = list.some((item: any) => item.id === collection.id);
+      const newList = exists ? list.filter((item: any) => item.id !== collection.id) : [...list, collection];
+      await AsyncStorage.setItem('watchlist', JSON.stringify(newList));
+      setIsInWatchlist(!exists);
+    } catch {}
+  };
+
+  const toggleWatched = async () => {
+    if (!collection) return;
+    try {
+      const stored = await AsyncStorage.getItem('history');
+      const list = stored ? JSON.parse(stored) : [];
+      const exists = list.some((item: any) => item.id === collection.id);
+      const newList = exists ? list.filter((item: any) => item.id !== collection.id) : [...list, collection];
+      await AsyncStorage.setItem('history', JSON.stringify(newList));
+      setIsWatched(!exists);
+    } catch {}
   };
 
   const renderMovieItem = ({ item }: { item: TMDBResult }) => {
@@ -167,6 +211,27 @@ const CollectionDetails = () => {
           <Text style={styles.countText}>
             {sortedParts.length} {sortedParts.length === 1 ? 'Film' : 'Films'}
           </Text>
+        </View>
+
+        <View style={styles.actionsRow}>
+          <TouchableOpacity 
+            style={[styles.actionBtn, isInWatchlist && styles.actionBtnActive]} 
+            onPress={toggleWatchlist}
+          >
+            <Feather name={isInWatchlist ? "check" : "bookmark"} size={18} color={isInWatchlist ? "#000" : C.white} />
+            <Text style={[styles.actionBtnText, isInWatchlist && { color: "#000" }]}>
+              {isInWatchlist ? "Saved" : "Save"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.actionBtn, isWatched && styles.actionBtnActive]} 
+            onPress={toggleWatched}
+          >
+            <Feather name={isWatched ? "eye-off" : "eye"} size={18} color={isWatched ? "#000" : C.white} />
+            <Text style={[styles.actionBtnText, isWatched && { color: "#000" }]}>
+              {isWatched ? "Watched" : "Mark Watched"}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     </>
@@ -320,6 +385,32 @@ const styles = StyleSheet.create({
     color: C.accent,
     fontSize: 12,
     fontWeight: '700',
+  },
+
+  actionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: C.surface2,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  actionBtnActive: {
+    backgroundColor: C.white,
+    borderColor: C.white,
+  },
+  actionBtnText: {
+    color: C.white,
+    fontSize: 14,
+    fontWeight: '600',
   },
 
   listContent: {

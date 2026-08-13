@@ -21,11 +21,21 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
     const lastNotifiedStr = await AsyncStorage.getItem('lastNotifiedDate');
     const lastNotified = lastNotifiedStr ? dayjs(lastNotifiedStr) : now.subtract(1, 'day');
 
-    const watchlistStr = await AsyncStorage.getItem('watchlist');
-    const watchlist = watchlistStr ? JSON.parse(watchlistStr) : [];
+    let watchlist: any[] = [];
+    try {
+      const watchlistStr = await AsyncStorage.getItem('watchlist');
+      watchlist = watchlistStr ? JSON.parse(watchlistStr) : [];
+    } catch (e) {
+      console.error('Failed to parse watchlist for notifications');
+    }
     
-    const historyStr = await AsyncStorage.getItem('history');
-    const history = historyStr ? JSON.parse(historyStr) : [];
+    let history: any[] = [];
+    try {
+      const historyStr = await AsyncStorage.getItem('history');
+      history = historyStr ? JSON.parse(historyStr) : [];
+    } catch (e) {
+      console.error('Failed to parse history for notifications');
+    }
 
     let newNotifications = 0;
 
@@ -53,7 +63,7 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
       }
     }
 
-    // Check Watchlist movies for recent releases
+    // Check Watchlist items (Movies & Collections)
     for (const item of watchlist) {
       if (item.media_type === 'movie') {
         const releaseDate = item.release_date ? dayjs(item.release_date) : null;
@@ -68,10 +78,32 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
           });
           newNotifications++;
         }
+      } else if (item.media_type === 'collection') {
+        // If it's a collection, we can check if it has any parts that were recently released
+        if (item.parts && Array.isArray(item.parts)) {
+          for (const part of item.parts) {
+            const partReleaseDate = part.release_date ? dayjs(part.release_date) : null;
+            if (partReleaseDate && partReleaseDate.isAfter(lastNotified) && partReleaseDate.isBefore(now.add(1, 'day'))) {
+              await Notifications.scheduleNotificationAsync({
+                content: {
+                  title: `New in ${item.name}!`,
+                  body: `${part.title} is now out.`,
+                  data: { mediaId: item.id, mediaType: 'collection' },
+                },
+                trigger: null,
+              });
+              newNotifications++;
+            }
+          }
+        }
       }
     }
 
-    await AsyncStorage.setItem('lastNotifiedDate', now.toISOString());
+    try {
+      await AsyncStorage.setItem('lastNotifiedDate', now.toISOString());
+    } catch (e) {
+      console.error('Failed to save lastNotifiedDate');
+    }
     return newNotifications > 0 ? BackgroundFetch.BackgroundFetchResult.NewData : BackgroundFetch.BackgroundFetchResult.NoData;
   } catch (error) {
     console.error(error);

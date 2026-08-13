@@ -37,6 +37,7 @@ const TAB_ITEM_WIDTH = (TAB_WIDTH - 4) / 3;
 
 const WatchListPage = () => {
   const [activeTab, setActiveTab] = useState(0); 
+  const [activeSubTab, setActiveSubTab] = useState<'movies' | 'collections'>('movies');
   
   const [watchlist, setWatchlist] = useState<any[]>([]); 
   const [artists, setArtists] = useState<any[]>([]);   
@@ -370,6 +371,16 @@ const WatchListPage = () => {
 
   const getSortedData = () => {
     let list = activeTab === 0 ? watchlist : activeTab === 1 ? artists : watched;
+    
+    // Apply Sub-tab filtering for Watchlist and Watched
+    if (activeTab === 0 || activeTab === 2) {
+      if (activeSubTab === 'movies') {
+        list = list.filter((item: any) => item.media_type !== 'collection');
+      } else if (activeSubTab === 'collections') {
+        list = list.filter((item: any) => item.media_type === 'collection');
+      }
+    }
+
     if (sortBy === 'default') return list;
 
     return [...list].sort((a, b) => {
@@ -413,8 +424,13 @@ const WatchListPage = () => {
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => {
-             if (!isArtist) navigation.navigate('Detail', { movie: item });
-             else navigation.navigate('CastDetails', { personId: item.id });
+             if (item.media_type === 'collection') {
+               navigation.navigate('CollectionDetails', { collectionId: item.id, collectionName: item.name });
+             } else if (!isArtist) {
+               navigation.navigate('Detail', { movie: item });
+             } else {
+               navigation.navigate('CastDetails', { personId: item.id });
+             }
           }}
           style={styles.cardContainer}
         >
@@ -473,6 +489,27 @@ const WatchListPage = () => {
             </TouchableOpacity>
         </View>
       </View>
+
+      {/* SUB-TABS for Watchlist and Watched */}
+      {(activeTab === 0 || activeTab === 2) && (
+        <View style={styles.subTabContainer}>
+            <TouchableOpacity 
+                style={[styles.subTabButton, activeSubTab === 'movies' && styles.activeSubTabButton]}
+                onPress={() => setActiveSubTab('movies')}
+            >
+                <Ionicons name="film-outline" size={16} color={activeSubTab === 'movies' ? "#FFF" : "#777"} />
+                <Text style={[styles.subTabText, activeSubTab === 'movies' && styles.activeSubTabText]}>Movies & TV</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+                style={[styles.subTabButton, activeSubTab === 'collections' && styles.activeSubTabButton]}
+                onPress={() => setActiveSubTab('collections')}
+            >
+                <Ionicons name="albums-outline" size={16} color={activeSubTab === 'collections' ? "#FFF" : "#777"} />
+                <Text style={[styles.subTabText, activeSubTab === 'collections' && styles.activeSubTabText]}>Collections</Text>
+            </TouchableOpacity>
+        </View>
+      )}
 
       {/* TOOLBAR WRAPPER (Z-Index fix for overlay) */}
       <View style={styles.toolbarWrapper}>
@@ -569,7 +606,12 @@ const WatchListPage = () => {
              {activeTab === 0 ? "Watchlist Empty" : activeTab === 1 ? "No Favorites" : "Nothing Watched"}
           </Text>
           <Text style={styles.emptySubtext}>
-             {activeTab === 0 ? "Movies you save will appear here."  : activeTab === 1 ? "Artists you love will appear here." : "Movies you mark as watched will appear here."}
+             {activeTab === 0 
+                ? (activeSubTab === 'movies' ? "Movies you save will appear here." : "Collections you save will appear here.")
+                : activeTab === 1 
+                    ? "Artists you love will appear here." 
+                    : (activeSubTab === 'movies' ? "Movies you mark as watched will appear here." : "Collections you mark as watched will appear here.")
+             }
           </Text>
         </View>
       ) : (
@@ -668,6 +710,13 @@ const styles = StyleSheet.create({
   tabButton: { flex: 1, justifyContent: 'center', alignItems: 'center', zIndex: 1 },
   tabText: { color: '#CCC', fontFamily: 'GoogleSansFlex-Medium', fontSize: 13 },
   activeTabText: { color: '#FFF', fontFamily: 'GoogleSansFlex-Bold' },
+
+  // Sub-tabs
+  subTabContainer: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 15 },
+  subTabButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, backgroundColor: '#1F1F1F', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  activeSubTabButton: { backgroundColor: '#333', borderColor: 'rgba(255,255,255,0.15)' },
+  subTabText: { color: '#777', fontSize: 13, fontFamily: 'GoogleSansFlex-Medium' },
+  activeSubTabText: { color: '#FFF', fontFamily: 'GoogleSansFlex-Bold' },
   
   // Updated Layout for Overlay Fix
   toolbarWrapper: { position: 'relative', zIndex: 100, marginBottom: 10 },

@@ -709,6 +709,7 @@ export const getCollectionDetails = async (collectionId: number): Promise<TMDBCo
       overview: data.overview || "",
       poster_path: data.poster_path,
       backdrop_path: data.backdrop_path,
+      media_type: 'collection',
       parts: (data.parts || []).map((item: any) => ({
         ...formatBasicItemData(item),
         media_type: "movie" as const,

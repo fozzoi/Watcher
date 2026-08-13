@@ -517,6 +517,41 @@ const DetailPage = () => {
       const newList = exists ? list.filter((item: any) => item.id !== movie.id) : [...list, movie];
       await AsyncStorage.setItem('history', JSON.stringify(newList));
       setIsWatched(!exists);
+
+      // Auto-watched collection logic
+      if (!exists && movie.belongs_to_collection) {
+        const wList = await AsyncStorage.getItem('watchlist');
+        if (wList) {
+          const watchlistArr = JSON.parse(wList);
+          const colInWatchlist = watchlistArr.find((i: any) => i.id === movie.belongs_to_collection.id && i.media_type === 'collection');
+          
+          if (colInWatchlist) {
+            const { getCollectionDetails } = require('../src/tmdb');
+            const colDetails = await getCollectionDetails(movie.belongs_to_collection.id);
+            if (colDetails && colDetails.parts) {
+              const allWatched = colDetails.parts.every((part: any) => 
+                  newList.some((hi: any) => hi.id === part.id)
+              );
+              
+              if (allWatched) {
+                const updatedWatchlist = watchlistArr.filter((i: any) => i.id !== colDetails.id);
+                await AsyncStorage.setItem('watchlist', JSON.stringify(updatedWatchlist));
+                
+                const existsInHistory = newList.some((i: any) => i.id === colDetails.id);
+                if (!existsInHistory) {
+                  const historyWithCol = [...newList, colDetails];
+                  await AsyncStorage.setItem('history', JSON.stringify(historyWithCol));
+                }
+                
+                if (Platform.OS === 'android') {
+                  const { ToastAndroid } = require('react-native');
+                  ToastAndroid.show(`${colDetails.name} marked as watched!`, ToastAndroid.SHORT);
+                }
+              }
+            }
+          }
+        }
+      }
     } catch {}
   };
 
