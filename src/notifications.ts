@@ -13,6 +13,8 @@ Notifications.setNotificationHandler({
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
+});
+
 export const executeNotificationCheck = async () => {
   try {
     const now = dayjs();
