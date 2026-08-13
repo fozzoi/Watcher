@@ -42,6 +42,8 @@ const MediaCarousel = memo(({ title, type, data, navigation, savedIds, toggleWat
         data={data}
         estimatedItemSize={SNAP_INTERVAL}
         showsHorizontalScrollIndicator={false}
+        overScrollMode="never"
+        bounces={false}
         contentContainerStyle={{ paddingHorizontal: HORIZONTAL_MARGIN }}
         removeClippedSubviews={true}
         keyExtractor={(item, index) => `${item.id}-${index}`}

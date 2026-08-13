@@ -18,7 +18,6 @@ import {
 import { Text } from 'react-native-paper';
 import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
-import { WebView } from 'react-native-webview';
 import {
   getImageUrl,
   getMovieGenres,
@@ -261,11 +260,7 @@ const DetailPage = () => {
   const [collectionData, setCollectionData] = useState<any>(null);
 
   // Trailer states
-  const webViewRef = React.useRef<any>(null);
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
-  const [showTrailer, setShowTrailer] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
-  const [trailerRes, setTrailerRes] = useState('1080');
 
   const similarCardWidth = isTablet ? 160 : width * 0.3;
   const castCardWidth = isTablet ? 120 : width * 0.26;
@@ -274,9 +269,6 @@ const DetailPage = () => {
   useEffect(() => {
     AsyncStorage.getItem('settings_auto_ai').then((val) => {
       if (val !== null) setAutoAiEnabled(JSON.parse(val));
-    });
-    AsyncStorage.getItem('settings_trailer_res').then((val) => {
-      if (val !== null) setTrailerRes(val);
     });
   }, []);
 
@@ -456,21 +448,11 @@ const DetailPage = () => {
         fetchEpisodes(seasonToLoad);
       }
 
-      // Fetch trailers
+      // Fetch trailers for the YouTube button
       const trailers = await getTrailers(initialMovie.id, initialMovie.media_type);
       const mainTrailer = trailers.find(t => t.type === 'Trailer' && t.site === 'YouTube');
       if (mainTrailer) {
         setTrailerKey(mainTrailer.key);
-        
-        // Check auto-play setting
-        const autoPlayStr = await AsyncStorage.getItem('settings_autoplay_trailer');
-        const autoPlay = autoPlayStr !== null ? JSON.parse(autoPlayStr) : true;
-        
-        if (autoPlay) {
-          setTimeout(() => {
-            setShowTrailer(true);
-          }, 2500); // Wait 2.5 seconds before showing trailer
-        }
       }
 
     } catch {}
@@ -625,20 +607,6 @@ const DetailPage = () => {
     return 'Play';
   };
 
-  const handleMuteToggle = () => {
-    const newMutedState = !isMuted;
-    setIsMuted(newMutedState);
-    if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(`
-        var video = document.querySelector("video");
-        if (video) {
-          video.muted = ${newMutedState};
-        }
-        true;
-      `);
-    }
-  };
-
   // --- RENDERING HELPERS FOR MEMOIZATION ---
 
   const keyExtractorId = useCallback((item: any) => String(item.id), []);
@@ -675,30 +643,11 @@ const DetailPage = () => {
   const renderHeader = () => (
     <>
       <View style={{ height: HEADER_HEIGHT, overflow: 'hidden', backgroundColor: '#000' }}>
-        {showTrailer && trailerKey ? (
-          <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
-            <WebView
-              ref={webViewRef}
-              source={{ 
-                uri: `https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&loop=1&playlist=${trailerKey}&vq=hd${trailerRes === 'Auto' ? '1080' : trailerRes}&playsinline=1&origin=https://www.youtube.com`,
-                headers: {
-                  'Referer': 'https://www.youtube.com/'
-                }
-              }}
-              style={{ width: '100%', height: '100%', transform: [{ scale: 1.4 }] }}
-              allowsInlineMediaPlayback={true}
-              mediaPlaybackRequiresUserAction={false}
-              pointerEvents="none"
-              scrollEnabled={false}
-            />
-          </View>
-        ) : (
-          <Image
-            source={{ uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-          />
-        )}
+        <Image
+          source={{ uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+        />
         
         <LinearGradient
           colors={['rgba(10,10,11,0.15)', 'transparent', 'rgba(10,10,11,0.6)', C.bg]}
@@ -1006,13 +955,15 @@ const DetailPage = () => {
               horizontal
               data={movie.cast.slice(0, 15)}
               showsHorizontalScrollIndicator={false}
+              overScrollMode="never"
+              bounces={false}
               keyExtractor={keyExtractorId}
               contentContainerStyle={{ gap: 12 }}
               renderItem={renderCastItem}
               initialNumToRender={4}
               maxToRenderPerBatch={4}
               windowSize={3}
-              removeClippedSubviews={true}
+              removeClippedSubviews={false}
               getItemLayout={getCastItemLayout}
             />
           </View>
@@ -1021,7 +972,13 @@ const DetailPage = () => {
         {movie.media_type === 'tv' && movie.seasons && (
           <View style={{ marginBottom: 14 }}>
             <Text style={styles.sectionTitle}>Episodes</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 14 }}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false} 
+              overScrollMode="never"
+              bounces={false}
+              contentContainerStyle={{ gap: 8, paddingBottom: 14 }}
+            >
               {movie.seasons.filter((s: any) => s.season_number > 0).map((s: any) => (
                   <TouchableOpacity activeOpacity={0.95}
                     key={s.id}
@@ -1063,13 +1020,15 @@ const DetailPage = () => {
             horizontal
             data={similarMovies}
             showsHorizontalScrollIndicator={false}
+            overScrollMode="never"
+            bounces={false}
             keyExtractor={keyExtractorId}
             contentContainerStyle={{ gap: 12 }}
             renderItem={renderSimilarMovieItem}
             initialNumToRender={4}
             maxToRenderPerBatch={4}
             windowSize={3}
-            removeClippedSubviews={true}
+            removeClippedSubviews={false}
             getItemLayout={getSimilarItemLayout}
           />
         </View>

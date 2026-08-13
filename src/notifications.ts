@@ -13,13 +13,9 @@ Notifications.setNotificationHandler({
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
-});
-
-TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
+export const executeNotificationCheck = async () => {
   try {
     const now = dayjs();
-    const lastNotifiedStr = await AsyncStorage.getItem('lastNotifiedDate');
-    const lastNotified = lastNotifiedStr ? dayjs(lastNotifiedStr) : now.subtract(1, 'day');
 
     let watchlist: any[] = [];
     try {
@@ -37,25 +33,43 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
       console.error('Failed to parse history for notifications');
     }
 
+    let notifiedMediaIds: string[] = [];
+    try {
+      const notifiedStr = await AsyncStorage.getItem('notifiedMediaIds');
+      notifiedMediaIds = notifiedStr ? JSON.parse(notifiedStr) : [];
+    } catch (e) {
+      console.error('Failed to parse notifiedMediaIds');
+    }
+
     let newNotifications = 0;
+
+    // Helper to check if a release date is "recent" (within the last 7 days or today)
+    const isRecentRelease = (dateObj: dayjs.Dayjs) => {
+      return dateObj.isAfter(now.subtract(7, 'day')) && dateObj.isSameOrBefore(now.add(1, 'day'));
+    };
 
     // Check TV Shows in history for new episodes
     for (const item of history) {
       if (item.media_type === 'tv') {
         try {
           const details = await getMediaDetails('tv', item.id);
-          const lastAirDate = details.last_air_date ? dayjs(details.last_air_date) : null;
-          
-          if (lastAirDate && lastAirDate.isAfter(lastNotified) && lastAirDate.isBefore(now.add(1, 'day'))) {
-            await Notifications.scheduleNotificationAsync({
-              content: {
-                title: `New Episode: ${details.title || details.name}`,
-                body: `A new episode aired on ${lastAirDate.format('MMM D, YYYY')}!`,
-                data: { mediaId: item.id, mediaType: 'tv' },
-              },
-              trigger: null,
-            });
-            newNotifications++;
+          const lastAirDateStr = details.last_air_date;
+          if (lastAirDateStr) {
+            const lastAirDate = dayjs(lastAirDateStr);
+            const notifyKey = `tv_${item.id}_${lastAirDateStr}`; // Unique key per episode air date
+
+            if (isRecentRelease(lastAirDate) && !notifiedMediaIds.includes(notifyKey)) {
+              await Notifications.scheduleNotificationAsync({
+                content: {
+                  title: `New Episode: ${details.title || details.name}`,
+                  body: `A new episode aired on ${lastAirDate.format('MMM D, YYYY')}!`,
+                  data: { mediaId: item.id, mediaType: 'tv' },
+                },
+                trigger: null,
+              });
+              notifiedMediaIds.push(notifyKey);
+              newNotifications++;
+            }
           }
         } catch (e) {
           console.error('Error fetching details for', item.id);
@@ -67,7 +81,9 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
     for (const item of watchlist) {
       if (item.media_type === 'movie') {
         const releaseDate = item.release_date ? dayjs(item.release_date) : null;
-        if (releaseDate && releaseDate.isAfter(lastNotified) && releaseDate.isBefore(now.add(1, 'day'))) {
+        const notifyKey = `movie_${item.id}`;
+
+        if (releaseDate && isRecentRelease(releaseDate) && !notifiedMediaIds.includes(notifyKey)) {
           await Notifications.scheduleNotificationAsync({
             content: {
               title: `Watchlist Release!`,
@@ -76,14 +92,16 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
             },
             trigger: null,
           });
+          notifiedMediaIds.push(notifyKey);
           newNotifications++;
         }
       } else if (item.media_type === 'collection') {
-        // If it's a collection, we can check if it has any parts that were recently released
         if (item.parts && Array.isArray(item.parts)) {
           for (const part of item.parts) {
             const partReleaseDate = part.release_date ? dayjs(part.release_date) : null;
-            if (partReleaseDate && partReleaseDate.isAfter(lastNotified) && partReleaseDate.isBefore(now.add(1, 'day'))) {
+            const notifyKey = `movie_${part.id}`; // Parts are movies
+
+            if (partReleaseDate && isRecentRelease(partReleaseDate) && !notifiedMediaIds.includes(notifyKey)) {
               await Notifications.scheduleNotificationAsync({
                 content: {
                   title: `New in ${item.name}!`,
@@ -92,6 +110,7 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
                 },
                 trigger: null,
               });
+              notifiedMediaIds.push(notifyKey);
               newNotifications++;
             }
           }
@@ -100,15 +119,25 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
     }
 
     try {
-      await AsyncStorage.setItem('lastNotifiedDate', now.toISOString());
+      // Keep only the last 500 keys to avoid blowing up storage over years
+      if (notifiedMediaIds.length > 500) {
+        notifiedMediaIds = notifiedMediaIds.slice(notifiedMediaIds.length - 500);
+      }
+      await AsyncStorage.setItem('notifiedMediaIds', JSON.stringify(notifiedMediaIds));
     } catch (e) {
-      console.error('Failed to save lastNotifiedDate');
+      console.error('Failed to save notifiedMediaIds');
     }
-    return newNotifications > 0 ? BackgroundFetch.BackgroundFetchResult.NewData : BackgroundFetch.BackgroundFetchResult.NoData;
+
+    return newNotifications;
   } catch (error) {
     console.error(error);
-    return BackgroundFetch.BackgroundFetchResult.Failed;
+    return 0;
   }
+};
+
+TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
+  const count = await executeNotificationCheck();
+  return count > 0 ? BackgroundFetch.BackgroundFetchResult.NewData : BackgroundFetch.BackgroundFetchResult.NoData;
 });
 
 export async function registerBackgroundFetchAsync() {

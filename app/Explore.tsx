@@ -19,14 +19,16 @@ import {
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import Animated from 'react-native-reanimated';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   fetchAllDiscoveryContent,
   searchTMDB,
   searchPeople,
+  searchCollections,
 } from '../src/tmdb';
 import { getAllProgress, removeProgress, WatchProgress } from '../src/utils/progress'; 
+import { executeNotificationCheck } from '../src/notifications'; 
 
 // --- COMPONENTS ---
 import SkeletonHero from './components/SkeletonHero';
@@ -69,6 +71,9 @@ const ExplorePage = () => {
 
   const [tmdbResults, setTmdbResults] = useState<any[]>([]);
   const [peopleResults, setPeopleResults] = useState<any[]>([]);
+  
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   
   const [rawContent, setRawContent] = useState<any>(null);
   
@@ -115,6 +120,11 @@ const ExplorePage = () => {
 
       const history = await getAllProgress();
       setWatchHistory(history);
+
+      const sHistoryStr = await AsyncStorage.getItem('searchHistoryExpl');
+      if (sHistoryStr) {
+        setSearchHistory(JSON.parse(sHistoryStr));
+      }
     } catch (e) { console.error(e); }
   }, []);
 
@@ -188,15 +198,45 @@ const ExplorePage = () => {
   }, [rawContent, watchedIds]);
 
   const handleSearch = useCallback(async (searchText: string) => {
-    const trimmed = searchText.trim();
+    let trimmed = searchText.trim();
     if (!trimmed) { setTmdbResults([]); setPeopleResults([]); setSearchLoading(false); return; }
     setSearchLoading(true);
+    
+    // Intelligent Year Parsing: Remove e.g. " 2008" or " (2008)" from the end of the query
+    const yearMatch = trimmed.match(/(?:\s+|\()([1-2][0-9]{3})(?:\))?$/);
+    if (yearMatch) {
+      trimmed = trimmed.replace(yearMatch[0], '').trim();
+    }
+
     try {
-      const [movies, people] = await Promise.all([searchTMDB(trimmed), searchPeople(trimmed)]);
-      setTmdbResults(movies.filter((item: any) => item.poster_path));
+      const [movies, people, collections] = await Promise.all([
+        searchTMDB(trimmed), 
+        searchPeople(trimmed),
+        searchCollections(trimmed)
+      ]);
+      
+      const validMovies = movies.filter((item: any) => item.poster_path);
+      const validCollections = collections.filter((item: any) => item.poster_path);
+      
+      // Combine collections and movies, placing collections at the top
+      setTmdbResults([...validCollections, ...validMovies]);
       setPeopleResults(people.filter((item: any) => item.profile_path));
     } catch (error) { Alert.alert('Error', 'Search failed'); } finally { setSearchLoading(false); }
   }, []);
+
+  const saveSearchToHistory = async (searchText: string) => {
+    const trimmed = searchText.trim();
+    if (!trimmed) return;
+    try {
+      const currentStr = await AsyncStorage.getItem('searchHistoryExpl');
+      let currentList = currentStr ? JSON.parse(currentStr) : [];
+      currentList = currentList.filter((item: string) => item.toLowerCase() !== trimmed.toLowerCase());
+      currentList.unshift(trimmed);
+      if (currentList.length > 15) currentList = currentList.slice(0, 15);
+      await AsyncStorage.setItem('searchHistoryExpl', JSON.stringify(currentList));
+      setSearchHistory(currentList);
+    } catch (e) { console.error(e); }
+  };
 
   useEffect(() => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
@@ -217,6 +257,9 @@ const ExplorePage = () => {
               placeholderTextColor="#8C8C8C"
               value={query}
               onChangeText={setQuery}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setIsSearchFocused(false)}
+              onSubmitEditing={() => saveSearchToHistory(query)}
               style={styles.searchInput}
               selectionColor="#E50914"
               returnKeyType="search"
@@ -251,8 +294,45 @@ const ExplorePage = () => {
           <TouchableOpacity activeOpacity={0.95} onPress={() => navigation.navigate('Settings')} style={styles.iconButton}>
             <Ionicons name="settings-outline" size={24} color="#FFFFFF" />
           </TouchableOpacity>
+
+          {/* TEMP: Test Notifications */}
+          <TouchableOpacity 
+            activeOpacity={0.95} 
+            onPress={async () => {
+              Alert.alert('Checking...', 'Running background fetch logic manually...');
+              const count = await executeNotificationCheck();
+              Alert.alert('Done!', `Triggered ${count} new notifications.`);
+            }} 
+            style={styles.iconButton}
+          >
+            <Ionicons name="notifications-outline" size={24} color="#E50914" />
+          </TouchableOpacity>
         </View>
       </View>
+
+      {/* AUTO-SUGGESTIONS & SEARCH HISTORY DROPDOWN */}
+      {isSearchFocused && (query.length === 0 ? searchHistory.length > 0 : true) && (
+        <View style={styles.historyDropdown}>
+          {searchHistory
+            .filter(item => item.toLowerCase().includes(query.toLowerCase()))
+            .slice(0, 5)
+            .map((item, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.historyItem}
+                onPress={() => {
+                  setQuery(item);
+                  Keyboard.dismiss();
+                  saveSearchToHistory(item);
+                }}
+              >
+                <MaterialIcons name="history" size={20} color="#8C8C8C" />
+                <Text style={styles.historyText}>{item}</Text>
+                <Feather name="arrow-up-left" size={16} color="#8C8C8C" />
+              </TouchableOpacity>
+            ))}
+        </View>
+      )}
 
       <View style={{ flex: 1, position: 'relative' }}>
         
@@ -331,7 +411,30 @@ const styles = StyleSheet.create({
   searchBarContainer: { paddingHorizontal: HORIZONTAL_MARGIN, paddingTop: (StatusBar.currentHeight || 0) + 12, paddingBottom: 12, backgroundColor: 'rgba(20, 20, 20, 0.98)', borderBottomWidth: 1, borderBottomColor: 'rgba(255, 255, 255, 0.08)' },
   searchInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#222', borderRadius: 14, height: 48, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
   searchInput: { flex: 1, backgroundColor: 'transparent', height: 48, fontSize: 16, color: 'white', paddingLeft: 16, fontFamily: 'GoogleSansFlex-Regular' },
-  searchIconContainer: { paddingHorizontal: 12 },
+  searchIconContainer: { padding: 8 },
+  historyDropdown: {
+    backgroundColor: '#1C1C1E',
+    marginHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 8,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    zIndex: 99,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  historyText: {
+    flex: 1,
+    color: '#E0E0E0',
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex-Regular',
+  },
 
   iconButtonAi: {
     width: 48,

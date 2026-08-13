@@ -238,6 +238,11 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
     params.include_adult = true; 
   }
 
+  // TMDB /search/collection throws 422 if include_adult is provided
+  if (endpoint.includes('/collection')) {
+    delete params.include_adult;
+  }
+
   const cacheKey = createCacheKey(endpoint, params);
   const cached = requestCache.get(cacheKey);
 
@@ -722,6 +727,21 @@ export const searchTMDB = async (query: string, page: number = 1): Promise<TMDBR
   try {
     const data = await fetchWithCache("/search/multi", { query, page });
     return data.results.map((item: any) => formatBasicItemData(item));
+  } catch (error) { return []; }
+};
+
+export const searchCollections = async (query: string, page: number = 1): Promise<TMDBResult[]> => {
+  try {
+    const data = await fetchWithCache("/search/collection", { query, page });
+    return data.results.map((item: any) => ({
+      id: item.id,
+      title: item.name,
+      name: item.name,
+      poster_path: item.poster_path,
+      backdrop_path: item.backdrop_path,
+      media_type: "collection",
+      overview: item.overview,
+    }));
   } catch (error) { return []; }
 };
 
