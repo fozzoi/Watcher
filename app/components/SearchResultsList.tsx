@@ -55,11 +55,11 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
               decelerationRate="fast"
               snapToInterval={172} // Chip width 160 + 12 gap
               snapToAlignment="start"
-              contentContainerStyle={{ paddingHorizontal: 4, gap: 12 }}
+              contentContainerStyle={{ paddingHorizontal: 4 }}
               renderItem={({ item }) => (
                 <TouchableOpacity 
                   activeOpacity={0.95} 
-                  style={styles.collectionChip} 
+                  style={[styles.collectionChip, { marginRight: 12 }]} 
                   onPress={() => navigation.navigate('CollectionDetails', { collectionId: item.id, collectionName: item.name || item.title })}
                 >
                   <Image source={{ uri: getImageUrl(item.poster_path, 'w92') }} style={styles.collectionChipImage} />

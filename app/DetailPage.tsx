@@ -930,7 +930,7 @@ const DetailPage = () => {
               snapToAlignment="start"
               keyExtractor={keyExtractorId}
               style={{ marginHorizontal: -20 }}
-              contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
+              contentContainerStyle={{ paddingHorizontal: 20 }}
               renderItem={renderDirectorItem}
               initialNumToRender={3}
               maxToRenderPerBatch={4}
@@ -979,7 +979,7 @@ const DetailPage = () => {
               overScrollMode="never"
               bounces={false}
               style={{ marginHorizontal: -20 }}
-              contentContainerStyle={{ paddingHorizontal: 20, gap: 8, paddingBottom: 14 }}
+              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 14 }}
             >
               {movie.seasons.filter((s: any) => s.season_number > 0).map((s: any) => (
                   <TouchableOpacity activeOpacity={0.95}
@@ -1027,7 +1027,7 @@ const DetailPage = () => {
             snapToAlignment="start"
             keyExtractor={keyExtractorId}
             style={{ marginHorizontal: -20 }}
-            contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
+            contentContainerStyle={{ paddingHorizontal: 20 }}
             renderItem={renderSimilarMovieItem}
             initialNumToRender={4}
             maxToRenderPerBatch={4}

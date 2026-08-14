@@ -311,7 +311,7 @@ export default function Index() {
         </View>
 
         {hasSearched && (
-            <AnimatedScrollView 
+            <ScrollView 
                 contentContainerStyle={styles.scrollContent}
                 keyboardShouldPersistTaps="handled"
                 style={{ width: '100%' }}
@@ -344,7 +344,7 @@ export default function Index() {
                         )}
                     </View>
                 )}
-            </AnimatedScrollView>
+            </ScrollView>
         )}
 
       </View>

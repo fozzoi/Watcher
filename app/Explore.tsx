@@ -36,11 +36,9 @@ import HeroSection from './components/HeroSection';
 import GenreFilter from './components/GenreFilter';
 import MediaCarousel from './components/MediaCarousel';
 import SearchResultsList from './components/SearchResultsList';
-import WatchHistoryCarousel from './components/WatchHistoryCarousel'; // ✅ NEW IMPORT
 import { HORIZONTAL_MARGIN } from './components/ExploreConstants';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
 const SkeletonCarousel = () => (
   <View style={styles.skeletonContainer}>
@@ -67,7 +65,6 @@ const ExplorePage = () => {
   
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
   const [watchedIds, setWatchedIds] = useState<Set<number>>(new Set()); 
-  const [watchHistory, setWatchHistory] = useState<WatchProgress[]>([]); 
 
   const [tmdbResults, setTmdbResults] = useState<any[]>([]);
   const [peopleResults, setPeopleResults] = useState<any[]>([]);
@@ -118,12 +115,10 @@ const ExplorePage = () => {
       const w = watchedStr ? JSON.parse(watchedStr) : [];
       setWatchedIds(new Set(w.map((i: any) => i.id)));
 
-      const history = await getAllProgress();
-      setWatchHistory(history);
-
       const sHistoryStr = await AsyncStorage.getItem('searchHistoryExpl');
       if (sHistoryStr) {
-        setSearchHistory(JSON.parse(sHistoryStr) || []);
+        const parsed = JSON.parse(sHistoryStr);
+        setSearchHistory(Array.isArray(parsed) ? parsed.filter(i => typeof i === 'string') : []);
       }
     } catch (e) { console.error(e); }
   }, []);
@@ -142,11 +137,6 @@ const ExplorePage = () => {
         setSavedIds(prev => { const n = new Set(prev); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
     } catch (e) { console.error(e); }
   }, []);
-
-  const handleRemoveHistoryItem = async (tmdbId: number) => {
-    await removeProgress(tmdbId);
-    setWatchHistory(prev => prev.filter(item => item.tmdbId !== tmdbId));
-  };
 
   const fetchContent = useCallback(async (genreId: number = 0, forceRefresh: boolean = false) => {
     try {
@@ -231,7 +221,8 @@ const ExplorePage = () => {
     try {
       const currentStr = await AsyncStorage.getItem('searchHistoryExpl');
       let currentList = currentStr ? JSON.parse(currentStr) : [];
-      currentList = currentList.filter((item: string) => item.toLowerCase() !== trimmed.toLowerCase());
+      if (!Array.isArray(currentList)) currentList = [];
+      currentList = currentList.filter((item: any) => typeof item === 'string' && item.toLowerCase() !== trimmed.toLowerCase());
       currentList.unshift(trimmed);
       if (currentList.length > 15) currentList = currentList.slice(0, 15);
       await AsyncStorage.setItem('searchHistoryExpl', JSON.stringify(currentList));
@@ -289,10 +280,10 @@ const ExplorePage = () => {
       </View>
 
       {/* AUTO-SUGGESTIONS & SEARCH HISTORY DROPDOWN */}
-      {isSearchFocused && (query.length === 0 ? (searchHistory && searchHistory.length > 0) : true) && (
+      {/* {isSearchFocused && (query.length === 0 ? (Array.isArray(searchHistory) && searchHistory.length > 0) : true) && (
         <View style={styles.historyDropdown}>
-          {(searchHistory || [])
-            .filter(item => item && item.toLowerCase().includes(query.toLowerCase()))
+          {(Array.isArray(searchHistory) ? searchHistory : [])
+            .filter(item => typeof item === 'string' && item.toLowerCase().includes(query.toLowerCase()))
             .slice(0, 5)
             .map((item, index) => (
               <TouchableOpacity
@@ -310,7 +301,7 @@ const ExplorePage = () => {
               </TouchableOpacity>
             ))}
         </View>
-      )}
+      )} */}
 
       <View style={{ flex: 1, position: 'relative' }}>
         
@@ -325,7 +316,7 @@ const ExplorePage = () => {
         )}
 
         <View style={{ flex: 1, display: inSearchMode ? 'none' : 'flex' }}>
-          <AnimatedScrollView 
+          <ScrollView 
             scrollEventThrottle={16} 
             removeClippedSubviews={true} 
             contentContainerStyle={styles.scrollContent} 
@@ -344,13 +335,6 @@ const ExplorePage = () => {
               <>
                 <HeroSection items={allContent.trendingMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <GenreFilter selectedGenre={selectedGenre} onSelectGenre={setSelectedGenre} />
-
-                {/* ✅ REPLACED WITH NEW COMPONENT */}
-                <WatchHistoryCarousel 
-                  history={watchHistory} 
-                  onRemove={handleRemoveHistoryItem} 
-                  navigation={navigation} 
-                />
 
                 <MediaCarousel title="🗓️ Coming Soon" type="upcoming" data={allContent.upcoming} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="💎 Hidden Gems" type="hiddengems" data={allContent.hiddenGems} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
@@ -373,7 +357,7 @@ const ExplorePage = () => {
               </>
             )}
 
-          </AnimatedScrollView>
+          </ScrollView>
         </View>
 
       </View>
