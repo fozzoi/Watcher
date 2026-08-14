@@ -363,6 +363,7 @@ const ExplorePage = () => {
                 <MediaCarousel title="Korean Movies" type="koreanmovies" data={allContent.koreanMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="Japanese TV Shows" type="japanesetv" data={allContent.japaneseTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="Japanese Movies" type="japanesemovies" data={allContent.japaneseMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                <MediaCarousel title="Chinese Movies" type="chinesemovies" data={allContent.chineseMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="Hindi Movies" type="hindimovies" data={allContent.hindiMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="Hindi Web Series" type="hinditv" data={allContent.hindiTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="Malayalam Movies" type="malayalammovies" data={allContent.malayalamMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
@@ -458,3 +459,4 @@ const styles = StyleSheet.create({
     marginRight: 12,
   }
 });
+

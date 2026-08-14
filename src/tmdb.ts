@@ -525,8 +525,8 @@ const fetchFreshDiscoveryContent = async (gId: number | undefined, cacheKey: str
       getLanguageMovies('ko', 1, gId), getLanguageTV('ko', 1, gId),
       getLanguageMovies('ja', 1, gId), getLanguageTV('ja', 1, gId),
       getAnimeContent(1, true, gId), getAnimeContent(1, false, gId), getAnimatedMovies(1, gId),
-      getHiddenGems(1, gId), getNostalgicMovies(1, gId)
-    ]);
+      getHiddenGems(1, gId), getNostalgicMovies(1, gId), getLanguageMovies('zh', 1, gId)
+      ]);
     
     const finalData = {
       trendingMovies: priorityResults[0], trendingTV: priorityResults[1], topRated: priorityResults[2], 
@@ -537,8 +537,8 @@ const fetchFreshDiscoveryContent = async (gId: number | undefined, cacheKey: str
       koreanMovies: secondaryResults[5], koreanTV: secondaryResults[6],
       japaneseMovies: secondaryResults[7], japaneseTV: secondaryResults[8],
       animeMovies: secondaryResults[9], animeShows: secondaryResults[10], animatedMovies: secondaryResults[11],
-      hiddenGems: secondaryResults[12], nostalgia: secondaryResults[13]
-    };
+      hiddenGems: secondaryResults[12], nostalgia: secondaryResults[13], chineseMovies: secondaryResults[14]
+      };
 
     AsyncStorage.setItem(cacheKey, JSON.stringify(finalData)).catch(err => console.log(err));
 
@@ -781,6 +781,7 @@ export const fetchMoreContentByType = async (type: string, page: number = 1): Pr
     case 'tamilmovies': return await getLanguageMovies('ta', page);
     case 'koreanmovies': return await getLanguageMovies('ko', page);
     case 'japanesemovies': return await getLanguageMovies('ja', page);
+    case 'chinesemovies': return await getLanguageMovies('zh', page);
     case 'hinditv': return await getLanguageTV('hi', page);
     case 'malayalamtv': return await getLanguageTV('ml', page);
     case 'koreantv': return await getLanguageTV('ko', page);

@@ -237,16 +237,26 @@ const RootTabNavigator = () => {
             tabBar={props => <CustomTabBar {...props} />}
             screenOptions={({ route }) => ({
                 tabBarIcon: ({ color, size, focused }) => {
-                    let iconName: keyof typeof Ionicons.glyphMap = 'search';
-
-                    if (route.name === 'Search') {
-                        iconName = focused ? 'search' : 'search-outline';
-                    } else if (route.name === 'Watchlist') {
-                        iconName = focused ? 'bookmark' : 'bookmark-outline';
-                    } else if (route.name === 'Explore') {
-                        iconName = focused ? 'compass' : 'compass-outline';
-                    } else if (route.name === 'AiChat') {
-                        iconName = focused ? 'sparkles' : 'sparkles-outline';
+                    if (route.name === "AiChat") {
+                        return (
+                            <View style={{
+                                width: size + 16, height: size + 16, borderRadius: (size + 16) / 2,
+                                backgroundColor: focused ? "rgba(139, 92, 246, 0.2)" : "rgba(255, 255, 255, 0.05)",
+                                justifyContent: "center", alignItems: "center",
+                                borderWidth: 1, borderColor: focused ? "rgba(139, 92, 246, 0.5)" : "transparent",
+                                shadowColor: "#8B5CF6", shadowOffset: { width: 0, height: 0 }, shadowOpacity: focused ? 0.8 : 0, shadowRadius: 10
+                            }}>
+                                <Ionicons name={focused ? "sparkles" : "sparkles-outline"} size={size - 2} color={focused ? "#A78BFA" : "rgba(255,255,255,0.6)"} />
+                            </View>
+                        );
+                    }
+                    let iconName: keyof typeof Ionicons.glyphMap = "search";
+                    if (route.name === "Search") {
+                        iconName = focused ? "search" : "search-outline";
+                    } else if (route.name === "Watchlist") {
+                        iconName = focused ? "bookmark" : "bookmark-outline";
+                    } else if (route.name === "Explore") {
+                        iconName = focused ? "compass" : "compass-outline";
                     }
                     return <Ionicons name={iconName} size={size} color={color} />;
                 },
