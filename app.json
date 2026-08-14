@@ -8,17 +8,13 @@
     "scheme": "myapp",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#000000",
-    "androidNavigationBar": {
-      "barStyle": "dark-content",
-      "backgroundColor": "#000000"
-    },
     "android": {
       "backgroundColor": "#000000",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.thewatcher",
+      "package": "com.thewatcher.dev",
       "runtimeVersion": "1.0.0",
       "permissions": [
         "android.permission.INTERNET",
