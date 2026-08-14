@@ -153,7 +153,14 @@ const CustomTabBar: React.FC<BottomTabBarProps> = (props) => {
                             canPreventDefault: true,
                         });
 
-                        if (!isFocused && !event.defaultPrevented) {
+                        if (isFocused) {
+                            // Re-tapping the already-focused tab pops back to the root screen,
+                            // which clears search mode, dismisses detail pages, etc.
+                            const stackNavigator = descriptors[route.key].navigation as any;
+                            if (stackNavigator?.canGoBack?.()) {
+                                stackNavigator.popToTop();
+                            }
+                        } else if (!event.defaultPrevented) {
                             navigation.navigate(route.name);
                         }
                     };
@@ -233,7 +240,7 @@ const localStyles = StyleSheet.create({
 const RootTabNavigator = () => {
     return (
         <Tab.Navigator
-            backBehavior="history" // 🎯 Add this single line right here!
+            backBehavior="history"
             tabBar={props => <CustomTabBar {...props} />}
             screenOptions={({ route }) => ({
                 tabBarIcon: ({ color, size, focused }) => {
