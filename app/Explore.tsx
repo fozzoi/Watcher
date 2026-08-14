@@ -123,7 +123,7 @@ const ExplorePage = () => {
 
       const sHistoryStr = await AsyncStorage.getItem('searchHistoryExpl');
       if (sHistoryStr) {
-        setSearchHistory(JSON.parse(sHistoryStr));
+        setSearchHistory(JSON.parse(sHistoryStr) || []);
       }
     } catch (e) { console.error(e); }
   }, []);
@@ -289,10 +289,10 @@ const ExplorePage = () => {
       </View>
 
       {/* AUTO-SUGGESTIONS & SEARCH HISTORY DROPDOWN */}
-      {isSearchFocused && (query.length === 0 ? searchHistory.length > 0 : true) && (
+      {isSearchFocused && (query.length === 0 ? (searchHistory && searchHistory.length > 0) : true) && (
         <View style={styles.historyDropdown}>
-          {searchHistory
-            .filter(item => item.toLowerCase().includes(query.toLowerCase()))
+          {(searchHistory || [])
+            .filter(item => item && item.toLowerCase().includes(query.toLowerCase()))
             .slice(0, 5)
             .map((item, index) => (
               <TouchableOpacity

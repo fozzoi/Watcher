@@ -12,9 +12,9 @@ interface SearchResultsListProps {
   navigation: any;
 }
 
-const SearchResultsList = memo(({ peopleResults, tmdbResults, savedIds, toggleWatchlist, navigation }: SearchResultsListProps) => {
-  const collections = tmdbResults.filter(r => r.media_type === 'collection');
-  const movies = tmdbResults.filter(r => r.media_type !== 'collection');
+const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds, toggleWatchlist, navigation }: SearchResultsListProps) => {
+  const collections = (tmdbResults || []).filter(r => r.media_type === 'collection');
+  const movies = (tmdbResults || []).filter(r => r.media_type !== 'collection');
 
   return (
     <View style={styles.absoluteContainer}>
