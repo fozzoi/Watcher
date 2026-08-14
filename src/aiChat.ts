@@ -32,14 +32,18 @@ export async function getGeminiChatReply(
   message: string,
   history: { role: string; kind: string; text?: string }[] = [],
   userMemory: string = '',
-  watchedTitles: string[] = []
+  watchedTitles: string[] = [],
+  watchlistTitles: string[] = [],
+  watchlistCollections: string[] = []
 ): Promise<ChatReplyPayload> {
   const response = await axios.post(API_URL, {
     action: 'chat',
     message,
     history,
     userMemory,
-    watchedTitles: watchedTitles.slice(0, 50), // send up to 50 most recent
+    watchedTitles: watchedTitles.slice(0, 50),
+    watchlistTitles: watchlistTitles.slice(0, 100),
+    watchlistCollections: watchlistCollections.slice(0, 50),
     customApiKey: GLOBAL_CONFIG.customApiKey,
   });
 

@@ -313,6 +313,8 @@ const AiChat = () => {
   const [userMemory, setUserMemoryState] = useState('');
   const [watchedIds, setWatchedIds] = useState<Set<number>>(new Set());
   const [watchedTitles, setWatchedTitles] = useState<string[]>([]);
+  const [watchlistTitles, setWatchlistTitles] = useState<string[]>([]);
+  const [watchlistCollections, setWatchlistCollections] = useState<string[]>([]);
   const [inputFocused, setInputFocused] = useState(false);
 
   // Animations
@@ -361,6 +363,16 @@ const AiChat = () => {
         const watched = watchedStr ? JSON.parse(watchedStr) : [];
         setWatchedIds(new Set(watched.map((i: any) => i.id)));
         setWatchedTitles(watched.map((i: any) => i.title || i.name || '').filter(Boolean));
+      } catch {}
+
+      // Load watchlist (saved movies/TV and collections the user wants to watch)
+      try {
+        const watchlistStr = await AsyncStorage.getItem('watchlist');
+        const wl = watchlistStr ? JSON.parse(watchlistStr) : [];
+        const collections = wl.filter((i: any) => i.media_type === 'collection');
+        const movies = wl.filter((i: any) => i.media_type !== 'collection');
+        setWatchlistTitles(movies.map((i: any) => i.title || i.name || '').filter(Boolean));
+        setWatchlistCollections(collections.map((i: any) => i.name || i.title || '').filter(Boolean));
       } catch {}
 
       if (name) {
@@ -445,7 +457,7 @@ const AiChat = () => {
     pushMessage({ id: typingId, role: 'bot', kind: 'typing' });
 
     try {
-      const reply = await getGeminiChatReply(text, messages, userMemory, watchedTitles);
+      const reply = await getGeminiChatReply(text, messages, userMemory, watchedTitles, watchlistTitles, watchlistCollections);
 
       setMessages((prev) => {
         const withoutTyping = prev.filter((m) => m.id !== typingId);
@@ -484,7 +496,7 @@ const AiChat = () => {
 
   const openActor = (actor: Actor) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    navigation.navigate('CastDetails', { castId: actor.id });
+    navigation.navigate('CastDetails', { personId: actor.id });
   };
 
   const isMovieWatched = (item: Movie) => watchedIds.has(Number(item.id));
