@@ -99,7 +99,6 @@ const ExploreStack = () => (
         <Stack.Screen name="CollectionDetails" component={CollectionDetails} />
         <Stack.Screen name="history" component={History} />
         <Stack.Screen name="Settings" component={SettingsStack} />
-        <Stack.Screen name="AiSearch" component={require('../app/AiChat').default} />
     </Stack.Navigator>
 );
 
@@ -110,22 +109,25 @@ const SettingsStack = () => (
         <Stack.Screen name="CastDetails" component={CastDetails} />
         <Stack.Screen name="CollectionDetails" component={CollectionDetails} />
         <Stack.Screen name="history" component={History} />
-        
+    </Stack.Navigator>
+);
+
+const AiChatStack = () => (
+    <Stack.Navigator screenOptions={stackScreenOptions}>
+        <Stack.Screen name="AiChatMain" component={require('../app/AiChat').default} />
+        <Stack.Screen name="Detail" component={DetailPage} />
+        <Stack.Screen name="CastDetails" component={CastDetails} />
+        <Stack.Screen name="CollectionDetails" component={CollectionDetails} />
     </Stack.Navigator>
 );
 
 const CustomTabBar: React.FC<BottomTabBarProps> = (props) => {
   const { state, navigation, descriptors } = props;
 
-  // Hide tab bar when AiSearch screen is active in any stack
+  // Hide tab bar when AiChat tab is active
   const focusedRoute = state.routes[state.index];
-  const focusedNavState = focusedRoute?.state;
-  if (focusedNavState) {
-    const activeStackRoute =
-      focusedNavState.routes?.[focusedNavState.index ?? 0];
-    if (activeStackRoute?.name === 'AiSearch') {
-      return null;
-    }
+  if (focusedRoute?.name === 'AiChat') {
+    return null;
   }
 
   return (
@@ -243,7 +245,9 @@ const RootTabNavigator = () => {
                         iconName = focused ? 'bookmark' : 'bookmark-outline';
                     } else if (route.name === 'Explore') {
                         iconName = focused ? 'compass' : 'compass-outline';
-                    }   
+                    } else if (route.name === 'AiChat') {
+                        iconName = focused ? 'sparkles' : 'sparkles-outline';
+                    }
                     return <Ionicons name={iconName} size={size} color={color} />;
                 },
                 headerShown: false,
@@ -253,6 +257,7 @@ const RootTabNavigator = () => {
             <Tab.Screen name="Explore" component={ExploreStack} />
             <Tab.Screen name="Watchlist" component={WatchlistStack} />
             <Tab.Screen name="Search" component={SearchStack} />
+            <Tab.Screen name="AiChat" component={AiChatStack} />
             
         </Tab.Navigator>
     );

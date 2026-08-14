@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, Switch, TextInput, Linking, Platform } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, Switch, Platform, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import * as FileSystem from 'expo-file-system/legacy';
@@ -7,8 +7,9 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker'; 
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 
-import { Feather, Ionicons } from '@expo/vector-icons';
-import { setGlobalConfig } from '../src/tmdb'; 
+import { Feather } from '@expo/vector-icons';
+import { setGlobalConfig } from '../src/tmdb';
+import Constants from 'expo-constants';
 
 const Settings = () => {
   const insets = useSafeAreaInsets();
@@ -17,10 +18,8 @@ const Settings = () => {
   const [isHiRes, setIsHiRes] = useState(false);
   const [isNsfwFilter, setIsNsfwFilter] = useState(true);
   const [isAutoAi, setIsAutoAi] = useState(true);
-  const [customApiKey, setCustomApiKey] = useState('');
   
-  const [isAutoPlayTrailer, setIsAutoPlayTrailer] = useState(true);
-  const [trailerResolution, setTrailerResolution] = useState('1080');
+  const appVersion = Constants.expoConfig?.version || '1.0.0';
 
   useEffect(() => {
     loadSettings();
@@ -31,9 +30,6 @@ const Settings = () => {
       const savedHiRes = await AsyncStorage.getItem('settings_hires');
       const savedNsfw = await AsyncStorage.getItem('settings_nsfw');
       const savedAutoAi = await AsyncStorage.getItem('settings_auto_ai');
-      const savedKey = await AsyncStorage.getItem('settings_custom_key');
-      const savedAutoPlayTrailer = await AsyncStorage.getItem('settings_autoplay_trailer');
-      const savedTrailerRes = await AsyncStorage.getItem('settings_trailer_res');
       
       if (savedHiRes !== null) {
         const val = JSON.parse(savedHiRes);
@@ -47,16 +43,6 @@ const Settings = () => {
       }
       if (savedAutoAi !== null) {
         setIsAutoAi(JSON.parse(savedAutoAi));
-      }
-      if (savedKey !== null) {
-        setCustomApiKey(savedKey);
-        setGlobalConfig('customApiKey', savedKey);
-      }
-      if (savedAutoPlayTrailer !== null) {
-        setIsAutoPlayTrailer(JSON.parse(savedAutoPlayTrailer));
-      }
-      if (savedTrailerRes !== null) {
-        setTrailerResolution(savedTrailerRes);
       }
     } catch (e) { console.log("Failed to load settings"); }
   };
@@ -78,34 +64,7 @@ const Settings = () => {
     await AsyncStorage.setItem('settings_auto_ai', JSON.stringify(value));
   };
 
-  const saveApiKey = async (text: string) => {
-    setCustomApiKey(text);
-    setGlobalConfig('customApiKey', text);
-    await AsyncStorage.setItem('settings_custom_key', text);
-  };
-
-  const toggleAutoPlayTrailer = async (value: boolean) => {
-    setIsAutoPlayTrailer(value);
-    await AsyncStorage.setItem('settings_autoplay_trailer', JSON.stringify(value));
-  };
-
-  const changeTrailerResolution = async (res: string) => {
-    setTrailerResolution(res);
-    await AsyncStorage.setItem('settings_trailer_res', res);
-  };
-
-  const handleHowToGetKey = () => {
-    Alert.alert(
-        "How to get a Gemini API Key",
-        "1. Go to Google AI Studio.\n2. Sign in with Google.\n3. Click 'Create API Key'.\n4. Copy the key and paste it here.\n\nIt is free for personal use.",
-        [
-            { text: "Cancel", style: "cancel" },
-            { text: "Get Key Now", onPress: () => Linking.openURL("https://aistudio.google.com/app/apikey") }
-        ]
-    );
-  };
-
-  // 🎯 EXPORT LOGIC (Expo FileSystem + Sharing)
+  // EXPORT LOGIC
   const handleExportPrompt = () => {
     Alert.alert(
       "Export Library",
@@ -133,29 +92,21 @@ const Settings = () => {
       const fileName = format === 'json' ? `Watcher_Backup_${dateString}.json` : `Watcher_Backup_${dateString}.txt`;
 
       if (format === 'json') {
-        fileContent = JSON.stringify({ 
-            watchlist: rawWatchlist, 
-            artists: rawArtists, 
-            history: rawHistory 
-        }, null, 2);
+        fileContent = JSON.stringify({ watchlist: rawWatchlist, artists: rawArtists, history: rawHistory }, null, 2);
       } else {
         fileContent += "movies\n";
         rawWatchlist.forEach((i: any, index: number) => {
           const year = i.release_date || i.first_air_date ? String(i.release_date || i.first_air_date).substring(0, 4) : '';
-          const yearText = year ? ` ${year}` : '';
-          fileContent += `${index + 1} ${i.title || i.name}${yearText}\n`;
+          fileContent += `${index + 1} ${i.title || i.name}${year ? ` ${year}` : ''}\n`;
         });
-
         fileContent += "\nartist\n";
         rawArtists.forEach((i: any, index: number) => {
           fileContent += `${index + 1} ${i.name}\n`;
         });
-
         fileContent += "\nwatched\n";
         rawHistory.forEach((i: any, index: number) => {
           const year = i.release_date || i.first_air_date ? String(i.release_date || i.first_air_date).substring(0, 4) : '';
-          const yearText = year ? ` ${year}` : '';
-          fileContent += `${index + 1} ${i.title || i.name}${yearText}\n`;
+          fileContent += `${index + 1} ${i.title || i.name}${year ? ` ${year}` : ''}\n`;
         });
       }
 
@@ -163,10 +114,7 @@ const Settings = () => {
       await FileSystem.writeAsStringAsync(fileUri, fileContent, { encoding: FileSystem.EncodingType.UTF8 });
 
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, {
-            mimeType: format === 'json' ? 'application/json' : 'text/plain',
-            dialogTitle: 'Export Watcher Data'
-        });
+        await Sharing.shareAsync(fileUri, { mimeType: format === 'json' ? 'application/json' : 'text/plain', dialogTitle: 'Export Watcher Data' });
       } else {
         Alert.alert("Error", "Sharing is not available on this device.");
       }
@@ -175,26 +123,18 @@ const Settings = () => {
     }
   };
 
-  // 🎯 RESTORE LOGIC (Expo DocumentPicker + Fetch Text Method)
+  // RESTORE LOGIC
   const handleRestoreBackup = async () => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/json', '*/*'],
-        copyToCacheDirectory: true
-      });
-
+      const result = await DocumentPicker.getDocumentAsync({ type: ['application/json', '*/*'], copyToCacheDirectory: true });
       if (result.canceled || !result.assets || result.assets.length === 0) return;
 
       const fileUri = result.assets[0].uri;
-      
-      // Using the exact fetch method from your Watchlist page
       const response = await fetch(fileUri);
       const fileContent = await response.text();
-      
       const backupData = JSON.parse(fileContent);
 
       let restoredTotal = 0;
-
       if (backupData.watchlist && Array.isArray(backupData.watchlist)) {
         await AsyncStorage.setItem('watchlist', JSON.stringify(backupData.watchlist));
         restoredTotal += backupData.watchlist.length;
@@ -215,7 +155,6 @@ const Settings = () => {
       }
     } catch (error) {
       Alert.alert("Restore Failed", "Make sure you selected a valid Watcher Backup .json file.");
-      console.error(error);
     }
   };
 
@@ -240,123 +179,167 @@ const Settings = () => {
     );
   };
 
-  const SettingToggleRow = ({ iconFamily: IconFamily, iconName, title, subtitle, value, onValueChange }: any) => (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', padding: 16, marginBottom: 12, borderRadius: 12, borderWidth: 1, borderColor: '#333' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-        <View style={{ padding: 8, backgroundColor: '#333', borderRadius: 8 }}>
-          <IconFamily name={iconName} size={20} color="white" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{title}</Text>
-          {subtitle && <Text style={{ color: '#888', fontSize: 12 }}>{subtitle}</Text>}
-        </View>
+  // ── Reusable row components ──
+
+  const ToggleRow = ({ title, subtitle, value, onValueChange }: any) => (
+    <View style={styles.row}>
+      <View style={styles.rowText}>
+        <Text style={styles.rowTitle}>{title}</Text>
+        <Text style={styles.rowSubtitle}>{subtitle}</Text>
       </View>
-      <Switch trackColor={{ false: '#767577', true: '#ef4444' }} thumbColor={'#f4f3f4'} onValueChange={onValueChange} value={value} />
+      <Switch 
+        trackColor={{ false: '#3A3A3C', true: '#E50914' }} 
+        thumbColor="#FFFFFF"
+        onValueChange={onValueChange} 
+        value={value} 
+      />
     </View>
   );
 
+  const ActionRow = ({ title, subtitle, onPress, destructive }: any) => (
+    <TouchableOpacity activeOpacity={0.6} onPress={onPress} style={styles.row}>
+      <View style={styles.rowText}>
+        <Text style={[styles.rowTitle, destructive && styles.destructiveText]}>{title}</Text>
+        <Text style={styles.rowSubtitle}>{subtitle}</Text>
+      </View>
+      <Feather name="chevron-right" size={20} color="#3A3A3C" />
+    </TouchableOpacity>
+  );
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#000', paddingTop: insets.top }}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: tabBarHeight + 50, paddingHorizontal: 16 }} keyboardShouldPersistTaps="handled">
-        
-        <Text style={{ color: 'white', fontSize: 32, fontWeight: 'bold', marginBottom: 20, marginTop: 10 }}>Settings</Text>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={{ paddingBottom: tabBarHeight + 60 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.header}>Settings</Text>
 
-        <View style={{ marginBottom: 24 }}>
-          <Text style={{ color: '#888', fontSize: 14, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>Content</Text>
-          <SettingToggleRow iconFamily={Feather} iconName="image" title="Hi-Res Posters" subtitle="Higher quality (uses more data)" value={isHiRes} onValueChange={toggleHiRes} />
-          <SettingToggleRow iconFamily={Feather} iconName="eye-off" title="NSFW Filter" subtitle="Hide explicit/adult content" value={isNsfwFilter} onValueChange={toggleNsfw} />
-          <SettingToggleRow iconFamily={Feather} iconName="play-circle" title="Auto-Play Trailers" subtitle="Play trailers silently on details page" value={isAutoPlayTrailer} onValueChange={toggleAutoPlayTrailer} />
-          
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', padding: 16, marginBottom: 12, borderRadius: 12, borderWidth: 1, borderColor: '#333' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-              <View style={{ padding: 8, backgroundColor: '#333', borderRadius: 8 }}>
-                <Feather name="monitor" size={20} color="white" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>Trailer Resolution</Text>
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              {['Auto', '720', '1080'].map((res) => (
-                <TouchableOpacity activeOpacity={0.95} 
-                  key={res}
-                  onPress={() => changeTrailerResolution(res)}
-                  style={{ 
-                    paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8,
-                    backgroundColor: trailerResolution === res ? '#ef4444' : '#333' 
-                  }}
-                >
-                  <Text style={{ color: 'white', fontSize: 12, fontWeight: '600' }}>{res}{res !== 'Auto' && 'p'}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+        {/* ── Content ── */}
+        <Text style={styles.sectionLabel}>CONTENT</Text>
+        <View style={styles.card}>
+          <ToggleRow 
+            title="Hi-Res Posters" 
+            subtitle="Higher quality images (uses more data)" 
+            value={isHiRes} 
+            onValueChange={toggleHiRes} 
+          />
+          <View style={styles.separator} />
+          <ToggleRow 
+            title="NSFW Filter" 
+            subtitle="Hide explicit and adult content" 
+            value={isNsfwFilter} 
+            onValueChange={toggleNsfw} 
+          />
         </View>
 
-        <View style={{ marginBottom: 24 }}>
-          <Text style={{ color: '#888', fontSize: 14, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>AI Features</Text>
-          <SettingToggleRow iconFamily={Ionicons} iconName="sparkles-outline" title="Auto AI Vibe Match" subtitle="Auto-fetch AI recommendations on details page" value={isAutoAi} onValueChange={toggleAutoAi} />
-          <View style={{ backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#333' }}>
-              <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8}}>
-                  <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>Custom API Key</Text>
-                  <TouchableOpacity activeOpacity={0.95} onPress={handleHowToGetKey}>
-                      <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: 'bold' }}>How to get it?</Text>
-                  </TouchableOpacity>
-              </View>
-              <Text style={{ color: '#888', fontSize: 12, marginBottom: 12 }}>Leave blank to use the default shared key. Use your own key to completely avoid rate limits.</Text>
-              <TextInput style={{ backgroundColor: '#111', color: 'white', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#444', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }} placeholder="Paste AIzaSy... here" placeholderTextColor="#555" value={customApiKey} onChangeText={saveApiKey} secureTextEntry={true} />
-          </View>
+        {/* ── AI ── */}
+        <Text style={styles.sectionLabel}>AI</Text>
+        <View style={styles.card}>
+          <ToggleRow 
+            title="Auto AI Vibe Match" 
+            subtitle="Fetch AI recommendations on detail pages" 
+            value={isAutoAi} 
+            onValueChange={toggleAutoAi} 
+          />
         </View>
 
-        <View style={{ marginBottom: 20 }}>
-          <Text style={{ color: '#888', fontSize: 14, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>Data & Storage</Text>
-          
-          <TouchableOpacity activeOpacity={0.95} onPress={handleExportPrompt} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#333', marginBottom: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <View style={{ padding: 8, backgroundColor: 'rgba(59, 130, 246, 0.2)', borderRadius: 8 }}>
-                <Feather name="upload" size={20} color="#3B82F6" />
-              </View>
-              <View>
-                <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>Export Library Backup</Text>
-                <Text style={{ color: '#888', fontSize: 12 }}>Save Watchlist & History to phone</Text>
-              </View>
-            </View>
-            <Feather name="chevron-right" color="#666" size={20} />
-          </TouchableOpacity>
-
-          <TouchableOpacity activeOpacity={0.95} onPress={handleRestoreBackup} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#333', marginBottom: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <View style={{ padding: 8, backgroundColor: 'rgba(34, 197, 94, 0.2)', borderRadius: 8 }}>
-                <Feather name="download" size={20} color="#22C55E" />
-              </View>
-              <View>
-                <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>Restore Library Backup</Text>
-                <Text style={{ color: '#888', fontSize: 12 }}>Import from a .json file</Text>
-              </View>
-            </View>
-            <Feather name="chevron-right" color="#666" size={20} />
-          </TouchableOpacity>
-
-          <TouchableOpacity activeOpacity={0.95} onPress={handleClearCache} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#333' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <View style={{ padding: 8, backgroundColor: 'rgba(239, 68, 68, 0.2)', borderRadius: 8 }}>
-                <Feather name="trash-2" size={20} color="#EF4444" />
-              </View>
-              <View>
-                <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>Clear Cache</Text>
-                <Text style={{ color: '#888', fontSize: 12 }}>Free up local space</Text>
-              </View>
-            </View>
-            <Feather name="chevron-right" color="#666" size={20} />
-          </TouchableOpacity>
+        {/* ── Data & Storage ── */}
+        <Text style={styles.sectionLabel}>DATA & STORAGE</Text>
+        <View style={styles.card}>
+          <ActionRow 
+            title="Export Library" 
+            subtitle="Save Watchlist & History to your phone" 
+            onPress={handleExportPrompt} 
+          />
+          <View style={styles.separator} />
+          <ActionRow 
+            title="Restore Backup" 
+            subtitle="Import from a .json backup file" 
+            onPress={handleRestoreBackup} 
+          />
+          <View style={styles.separator} />
+          <ActionRow 
+            title="Clear Cache" 
+            subtitle="Free up local storage space" 
+            onPress={handleClearCache} 
+            destructive
+          />
         </View>
-        
-        <View style={{alignItems: 'center', marginTop: 20}}>
-            <Text style={{color: '#444', fontSize: 12}}>Version 1.0.0 • React Native</Text>
-        </View>
+
+        <Text style={styles.version}>Watcher v{appVersion}</Text>
       </ScrollView>
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#121212',
+  },
+  header: {
+    fontSize: 28,
+    fontFamily: 'GoogleSansFlex-Bold',
+    color: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex-Medium',
+    color: '#666',
+    letterSpacing: 1,
+    paddingHorizontal: 20,
+    marginTop: 24,
+    marginBottom: 8,
+  },
+  card: {
+    backgroundColor: '#1C1C1E',
+    marginHorizontal: 16,
+    borderRadius: 14,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minHeight: 60,
+  },
+  rowText: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  rowTitle: {
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex-Medium',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  rowSubtitle: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex-Regular',
+    color: '#8E8E93',
+    lineHeight: 16,
+  },
+  destructiveText: {
+    color: '#E50914',
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#38383A',
+    marginLeft: 16,
+  },
+  version: {
+    textAlign: 'center',
+    fontFamily: 'GoogleSansFlex-Regular',
+    color: '#555',
+    fontSize: 12,
+    marginTop: 32,
+    marginBottom: 20,
+  },
+});
 
 export default Settings;

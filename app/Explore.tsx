@@ -280,33 +280,10 @@ const ExplorePage = () => {
             </View>
           </View>
 
-          <TouchableOpacity activeOpacity={0.95} onPress={() => navigation.navigate('AiSearch')} style={styles.iconButtonAi}>
-            <LinearGradient
-              colors={['#2a1b40', '#121212']} // Subtle dark purple to dark gray gradient
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.gradientContainer}
-            >
-              <Ionicons name="sparkles" size={20} color="#ffee00" />
-            </LinearGradient>
+          <TouchableOpacity activeOpacity={0.8} onPress={() => navigation.navigate('Settings')} style={styles.iconButton}>
+            <Ionicons name="settings-outline" size={22} color="#FFFFFF" />
           </TouchableOpacity>
 
-          <TouchableOpacity activeOpacity={0.95} onPress={() => navigation.navigate('Settings')} style={styles.iconButton}>
-            <Ionicons name="settings-outline" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-
-          {/* TEMP: Test Notifications */}
-          <TouchableOpacity 
-            activeOpacity={0.95} 
-            onPress={async () => {
-              Alert.alert('Checking...', 'Running background fetch logic manually...');
-              const count = await executeNotificationCheck();
-              Alert.alert('Done!', `Triggered ${count} new notifications.`);
-            }} 
-            style={styles.iconButton}
-          >
-            <Ionicons name="notifications-outline" size={24} color="#E50914" />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -439,17 +416,16 @@ const styles = StyleSheet.create({
   iconButtonAi: {
     width: 48,
     height: 48,
-    borderRadius: 14,
-    overflow: 'hidden', // Keeps the gradient inside the rounded corners
+    borderRadius: 24, // Fully rounded modern circular button
+    overflow: 'hidden', 
     borderWidth: 1,
-    borderColor: 'rgba(169, 98, 255, 0.35)', // Softer, translucent purple border
-  
-  // Subtle glow effect (iOS only, harmless on Android)
-    shadowColor: '#A962FF',
+    borderColor: 'rgba(255, 255, 255, 0.15)', // Crisp modern border
+    // Modern glow effect
+    shadowColor: '#FF007A',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 3, // Gentle shadow for Android
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 8, // Pronounced shadow for Android
   },
   gradientContainer: {
     flex: 1,

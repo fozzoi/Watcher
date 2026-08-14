@@ -656,15 +656,6 @@ const DetailPage = () => {
           pointerEvents="none"
         />
 
-        {showTrailer && trailerKey && (
-          <TouchableOpacity 
-            style={styles.muteButton} 
-            onPress={handleMuteToggle}
-            activeOpacity={0.95}
-          >
-            <Ionicons name={isMuted ? "volume-mute" : "volume-high"} size={20} color="#FFF" />
-          </TouchableOpacity>
-        )}
       </View>
 
       <View style={styles.cardTop}>
