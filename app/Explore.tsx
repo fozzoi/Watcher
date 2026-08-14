@@ -82,7 +82,7 @@ const ExplorePage = () => {
     hindiMovies: [], malayalamMovies: [], tamilMovies: [],
     hindiTV: [], malayalamTV: [], koreanMovies: [], koreanTV: [],
     japaneseMovies: [], japaneseTV: [], animeMovies: [], animeShows: [],
-    animatedMovies: [], upcoming: [], hiddenGems: [], nostalgia: []
+    animatedMovies: [], upcoming: [], hiddenGems: [], nostalgia: [], chineseMovies: []
   });
 
   const navigation = useNavigation<any>();
@@ -191,6 +191,7 @@ const ExplorePage = () => {
        upcoming: filterWatched(rawContent.upcoming, watchedIds),
        hiddenGems: filterWatched(rawContent.hiddenGems, watchedIds),
        nostalgia: filterWatched(rawContent.nostalgia, watchedIds),
+       chineseMovies: filterWatched(rawContent.chineseMovies, watchedIds),
     };
 
     setAllContent(filteredContent);
@@ -323,7 +324,7 @@ const ExplorePage = () => {
           />
         )}
 
-        <View style={{ flex: 1, display: inSearchMode ? 'none' : 'flex',borderRadius: 20, overflow: 'hidden' }}>
+        <View style={{ flex: 1, display: inSearchMode ? 'none' : 'flex' }}>
           <AnimatedScrollView 
             scrollEventThrottle={16} 
             removeClippedSubviews={true} 
@@ -383,9 +384,8 @@ const ExplorePage = () => {
 export default ExplorePage;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#141414',borderRadius: 20, overflow: 'hidden' },
+  container: { flex: 1, backgroundColor: '#141414',overflow: 'hidden' },
   scrollContent: { paddingTop: 10, paddingBottom: 80 }, 
-  
   searchBarContainer: { paddingHorizontal: HORIZONTAL_MARGIN, paddingTop: (StatusBar.currentHeight || 0) + 12, paddingBottom: 12, backgroundColor: 'rgba(20, 20, 20, 0.98)', borderBottomWidth: 1, borderBottomColor: 'rgba(255, 255, 255, 0.08)' },
   searchInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#222', borderRadius: 14, height: 48, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
   searchInput: { flex: 1, backgroundColor: 'transparent', height: 48, fontSize: 16, color: 'white', paddingLeft: 16, fontFamily: 'GoogleSansFlex-Regular' },

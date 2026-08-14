@@ -886,8 +886,12 @@ const DetailPage = () => {
                   horizontal
                   data={aiRecommendations}
                   showsHorizontalScrollIndicator={false}
+                  decelerationRate="fast"
+                  snapToInterval={similarCardWidth + 12}
+                  snapToAlignment="start"
                   keyExtractor={keyExtractorId}
-                  contentContainerStyle={{ paddingTop: 4 }}
+                  style={{ marginHorizontal: -20 }}
+                  contentContainerStyle={{ paddingTop: 4, paddingHorizontal: 20 }}
                   renderItem={renderAiItem}
                   initialNumToRender={4}
                   maxToRenderPerBatch={4}
@@ -908,7 +912,7 @@ const DetailPage = () => {
         {loadingDetails ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{movie.media_type === 'tv' ? 'Created by' : 'Directed by'}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20 }}>
               {[1, 2, 3].map((i) => <DirectorShimmer key={i} />)}
             </ScrollView>
           </View>
@@ -921,8 +925,12 @@ const DetailPage = () => {
               horizontal
               data={directors}
               showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              snapToInterval={similarCardWidth + 12}
+              snapToAlignment="start"
               keyExtractor={keyExtractorId}
-              contentContainerStyle={{ gap: 12 }}
+              style={{ marginHorizontal: -20 }}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
               renderItem={renderDirectorItem}
               initialNumToRender={3}
               maxToRenderPerBatch={4}
@@ -935,7 +943,7 @@ const DetailPage = () => {
         {loadingDetails ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Cast</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20 }}>
               {[1, 2, 3, 4].map((i) => <CardShimmer key={i} width={castCardWidth} height={castCardWidth * 1.35} />)}
             </ScrollView>
           </View>
@@ -946,10 +954,12 @@ const DetailPage = () => {
               horizontal
               data={movie.cast.slice(0, 15)}
               showsHorizontalScrollIndicator={false}
-              overScrollMode="never"
-              bounces={false}
+              decelerationRate="fast"
+              snapToInterval={castCardWidth + 12}
+              snapToAlignment="start"
               keyExtractor={keyExtractorId}
-              contentContainerStyle={{ gap: 12 }}
+              style={{ marginHorizontal: -20 }}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
               renderItem={renderCastItem}
               initialNumToRender={4}
               maxToRenderPerBatch={4}
@@ -968,7 +978,8 @@ const DetailPage = () => {
               showsHorizontalScrollIndicator={false} 
               overScrollMode="never"
               bounces={false}
-              contentContainerStyle={{ gap: 8, paddingBottom: 14 }}
+              style={{ marginHorizontal: -20 }}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 8, paddingBottom: 14 }}
             >
               {movie.seasons.filter((s: any) => s.season_number > 0).map((s: any) => (
                   <TouchableOpacity activeOpacity={0.95}
@@ -1000,7 +1011,7 @@ const DetailPage = () => {
       {loadingDetails ? (
         <View style={[styles.section, { marginTop: 24 }]}>
           <Text style={styles.sectionTitle}>More like this</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20 }}>
             {[1, 2, 3, 4].map((i) => <CardShimmer key={i} width={similarCardWidth} height={similarCardWidth * 1.5} />)}
           </ScrollView>
         </View>
@@ -1011,10 +1022,12 @@ const DetailPage = () => {
             horizontal
             data={similarMovies}
             showsHorizontalScrollIndicator={false}
-            overScrollMode="never"
-            bounces={false}
+            decelerationRate="fast"
+            snapToInterval={similarCardWidth + 12}
+            snapToAlignment="start"
             keyExtractor={keyExtractorId}
-            contentContainerStyle={{ gap: 12 }}
+            style={{ marginHorizontal: -20 }}
+            contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
             renderItem={renderSimilarMovieItem}
             initialNumToRender={4}
             maxToRenderPerBatch={4}

@@ -1,6 +1,7 @@
 import React, { memo, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { getImageUrl, getFullDetails, TMDBResult } from '../../src/tmdb';
 import QuickAddButton from './QuickAddButton';
@@ -63,10 +64,21 @@ const HeroOverlay = memo(({ item, navigation, toggleWatchlist, isAdded }: {
 });
 
 // ── Dots ──────────────────────────────────────────────────────────────────────
+const Dot = memo(({ isActive }: { isActive: boolean }) => {
+  const rStyle = useAnimatedStyle(() => {
+    return {
+      width: withSpring(isActive ? 22 : 6, { damping: 15, stiffness: 150 }),
+      backgroundColor: isActive ? '#E50914' : 'rgba(255,255,255,0.2)',
+    };
+  }, [isActive]);
+
+  return <Animated.View style={[styles.dot, rStyle]} />;
+});
+
 const Dots = memo(({ count, active }: { count: number; active: number }) => (
   <View style={styles.dotsRow}>
     {Array.from({ length: count }).map((_, i) => (
-      <View key={i} style={[styles.dot, i === active && styles.dotActive]} />
+      <Dot key={i} isActive={i === active} />
     ))}
   </View>
 ));

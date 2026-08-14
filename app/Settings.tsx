@@ -1,210 +1,345 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet, Alert, Platform, TextInput } from 'react-native';
-import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { View, Text, ScrollView, TouchableOpacity, Alert, Switch, Platform, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LinearGradient } from 'expo-linear-gradient';
-import { GLOBAL_CONFIG } from '../src/tmdb';
 
-const SettingToggleRow = ({ iconFamily: IconFamily, iconName, title, subtitle, value, onValueChange, iconColor = 'white', glowColor = '#333' }: any) => (
-  <View style={styles.settingRow}>
-    <View style={styles.settingLeft}>
-      <View style={[styles.iconContainer, { backgroundColor: glowColor, shadowColor: iconColor }]}>
-        <IconFamily name={iconName} size={20} color={iconColor} />
-      </View>
-      <View style={styles.settingTextContainer}>
-        <Text style={styles.settingTitle}>{title}</Text>
-        {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
-      </View>
-    </View>
-    <Switch 
-      trackColor={{ false: '#3A3A3C', true: '#8B5CF6' }} // Futuristic Purple Accent
-      thumbColor={'#ffffff'} 
-      onValueChange={onValueChange} 
-      value={value} 
-    />
-  </View>
-);
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing'; 
+import * as DocumentPicker from 'expo-document-picker'; 
+import AsyncStorage from '@react-native-async-storage/async-storage'; 
+
+import { Feather } from '@expo/vector-icons';
+import { setGlobalConfig } from '../src/tmdb';
+import Constants from 'expo-constants';
 
 const Settings = () => {
   const insets = useSafeAreaInsets();
-  const tabBarHeight = useBottomTabBarHeight();
-  
-  const [isHiRes, setIsHiRes] = useState(true);
+  const tabBarHeight = 60; 
+
+  const [isHiRes, setIsHiRes] = useState(false);
   const [isNsfwFilter, setIsNsfwFilter] = useState(true);
-  const [isAutoAi, setIsAutoAi] = useState(false);
-  const [customApiKey, setCustomApiKey] = useState('');
+  const [isAutoAi, setIsAutoAi] = useState(true);
+  
+  const appVersion = Constants.expoConfig?.version || '1.0.0';
 
   useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const [hiRes, nsfw, autoAi, apiKey] = await Promise.all([
-          AsyncStorage.getItem('setting_hires'),
-          AsyncStorage.getItem('setting_nsfw'),
-          AsyncStorage.getItem('setting_autoai'),
-          AsyncStorage.getItem('setting_apikey')
-        ]);
-        if (hiRes !== null) setIsHiRes(hiRes === 'true');
-        if (nsfw !== null) setIsNsfwFilter(nsfw === 'true');
-        if (autoAi !== null) setIsAutoAi(autoAi === 'true');
-        if (apiKey !== null) {
-          setCustomApiKey(apiKey);
-          GLOBAL_CONFIG.customApiKey = apiKey;
-        }
-      } catch (error) {
-        console.log("Error loading settings", error);
-      }
-    };
     loadSettings();
   }, []);
 
-  const toggleHiRes = (val: boolean) => { setIsHiRes(val); AsyncStorage.setItem('setting_hires', val.toString()); };
-  const toggleNsfw = (val: boolean) => { setIsNsfwFilter(val); AsyncStorage.setItem('setting_nsfw', val.toString()); };
-  const toggleAutoAi = (val: boolean) => { setIsAutoAi(val); AsyncStorage.setItem('setting_autoai', val.toString()); };
-  const saveApiKey = (val: string) => { setCustomApiKey(val); AsyncStorage.setItem('setting_apikey', val); GLOBAL_CONFIG.customApiKey = val; };
+  const loadSettings = async () => {
+    try {
+      const savedHiRes = await AsyncStorage.getItem('settings_hires');
+      const savedNsfw = await AsyncStorage.getItem('settings_nsfw');
+      const savedAutoAi = await AsyncStorage.getItem('settings_auto_ai');
+      
+      if (savedHiRes !== null) {
+        const val = JSON.parse(savedHiRes);
+        setIsHiRes(val);
+        setGlobalConfig('hiRes', val);
+      }
+      if (savedNsfw !== null) {
+        const val = JSON.parse(savedNsfw);
+        setIsNsfwFilter(val);
+        setGlobalConfig('nsfwFilterEnabled', val);
+      }
+      if (savedAutoAi !== null) {
+        setIsAutoAi(JSON.parse(savedAutoAi));
+      }
+    } catch (e) { console.log("Failed to load settings"); }
+  };
 
-  const handleHowToGetKey = () => { Alert.alert('Gemini API Key', 'Go to Google AI Studio to get a free API key.'); };
-  const handleExportPrompt = () => { Alert.alert('Export Backup', 'Feature coming soon!'); };
-  const handleRestoreBackup = () => { Alert.alert('Restore Backup', 'Feature coming soon!'); };
-  const handleClearCache = () => { Alert.alert('Clear Cache', 'Cache cleared successfully!'); };
+  const toggleHiRes = async (value: boolean) => {
+    setIsHiRes(value);
+    setGlobalConfig('hiRes', value);
+    await AsyncStorage.setItem('settings_hires', JSON.stringify(value));
+  };
+
+  const toggleNsfw = async (value: boolean) => {
+    setIsNsfwFilter(value);
+    setGlobalConfig('nsfwFilterEnabled', value);
+    await AsyncStorage.setItem('settings_nsfw', JSON.stringify(value));
+  };
+
+  const toggleAutoAi = async (value: boolean) => {
+    setIsAutoAi(value);
+    await AsyncStorage.setItem('settings_auto_ai', JSON.stringify(value));
+  };
+
+  // EXPORT LOGIC
+  const handleExportPrompt = () => {
+    Alert.alert(
+      "Export Library",
+      "Choose a format to export your Watchlist, Artists, and Watched History.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Export as .TXT", onPress: () => performExport('txt') },
+        { text: "Export as .JSON", onPress: () => performExport('json') }
+      ]
+    );
+  };
+
+  const performExport = async (format: 'txt' | 'json') => {
+    try {
+      const mStr = await AsyncStorage.getItem('watchlist');
+      const aStr = await AsyncStorage.getItem('favoriteArtists');
+      const hStr = await AsyncStorage.getItem('history');
+
+      const rawWatchlist = mStr ? JSON.parse(mStr) : [];
+      const rawArtists = aStr ? JSON.parse(aStr) : [];
+      const rawHistory = hStr ? JSON.parse(hStr) : [];
+
+      let fileContent = "";
+      const dateString = new Date().toISOString().split('T')[0];
+      const fileName = format === 'json' ? `Watcher_Backup_${dateString}.json` : `Watcher_Backup_${dateString}.txt`;
+
+      if (format === 'json') {
+        fileContent = JSON.stringify({ watchlist: rawWatchlist, artists: rawArtists, history: rawHistory }, null, 2);
+      } else {
+        fileContent += "movies\n";
+        rawWatchlist.forEach((i: any, index: number) => {
+          const year = i.release_date || i.first_air_date ? String(i.release_date || i.first_air_date).substring(0, 4) : '';
+          fileContent += `${index + 1} ${i.title || i.name}${year ? ` ${year}` : ''}\n`;
+        });
+        fileContent += "\nartist\n";
+        rawArtists.forEach((i: any, index: number) => {
+          fileContent += `${index + 1} ${i.name}\n`;
+        });
+        fileContent += "\nwatched\n";
+        rawHistory.forEach((i: any, index: number) => {
+          const year = i.release_date || i.first_air_date ? String(i.release_date || i.first_air_date).substring(0, 4) : '';
+          fileContent += `${index + 1} ${i.title || i.name}${year ? ` ${year}` : ''}\n`;
+        });
+      }
+
+      const fileUri = FileSystem.documentDirectory + fileName;
+      await FileSystem.writeAsStringAsync(fileUri, fileContent, { encoding: FileSystem.EncodingType.UTF8 });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, { mimeType: format === 'json' ? 'application/json' : 'text/plain', dialogTitle: 'Export Watcher Data' });
+      } else {
+        Alert.alert("Error", "Sharing is not available on this device.");
+      }
+    } catch (error) {
+      Alert.alert("Export Failed", "There was an error generating your backup file.");
+    }
+  };
+
+  // RESTORE LOGIC
+  const handleRestoreBackup = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: ['application/json', '*/*'], copyToCacheDirectory: true });
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const fileUri = result.assets[0].uri;
+      const response = await fetch(fileUri);
+      const fileContent = await response.text();
+      const backupData = JSON.parse(fileContent);
+
+      let restoredTotal = 0;
+      if (backupData.watchlist && Array.isArray(backupData.watchlist)) {
+        await AsyncStorage.setItem('watchlist', JSON.stringify(backupData.watchlist));
+        restoredTotal += backupData.watchlist.length;
+      }
+      if (backupData.artists && Array.isArray(backupData.artists)) {
+        await AsyncStorage.setItem('favoriteArtists', JSON.stringify(backupData.artists));
+        restoredTotal += backupData.artists.length;
+      }
+      if (backupData.history && Array.isArray(backupData.history)) {
+        await AsyncStorage.setItem('history', JSON.stringify(backupData.history));
+        restoredTotal += backupData.history.length;
+      }
+
+      if (restoredTotal > 0) {
+        Alert.alert("Backup Restored! 🎉", `Successfully restored ${restoredTotal} items.\n\nGo back to your Library to see them.`);
+      } else {
+        Alert.alert("Invalid File", "This JSON file does not contain valid Watcher backup data.");
+      }
+    } catch (error) {
+      Alert.alert("Restore Failed", "Make sure you selected a valid Watcher Backup .json file.");
+    }
+  };
+
+  const handleClearCache = async () => {
+    Alert.alert(
+      "Clear Cache",
+      "Are you sure? Images will reload next time.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Clear", style: "destructive",
+          onPress: async () => {
+            const cacheDir = FileSystem.cacheDirectory;
+            if (cacheDir) {
+              await FileSystem.deleteAsync(cacheDir, { idempotent: true });
+              await FileSystem.makeDirectoryAsync(cacheDir);
+              Alert.alert("Success", "Cache cleared.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // ── Reusable row components ──
+
+  const ToggleRow = ({ title, subtitle, value, onValueChange }: any) => (
+    <View style={styles.row}>
+      <View style={styles.rowText}>
+        <Text style={styles.rowTitle}>{title}</Text>
+        <Text style={styles.rowSubtitle}>{subtitle}</Text>
+      </View>
+      <Switch 
+        trackColor={{ false: '#3A3A3C', true: '#E50914' }} 
+        thumbColor="#FFFFFF"
+        onValueChange={onValueChange} 
+        value={value} 
+      />
+    </View>
+  );
+
+  const ActionRow = ({ title, subtitle, onPress, destructive }: any) => (
+    <TouchableOpacity activeOpacity={0.6} onPress={onPress} style={styles.row}>
+      <View style={styles.rowText}>
+        <Text style={[styles.rowTitle, destructive && styles.destructiveText]}>{title}</Text>
+        <Text style={styles.rowSubtitle}>{subtitle}</Text>
+      </View>
+      <Feather name="chevron-right" size={20} color="#3A3A3C" />
+    </TouchableOpacity>
+  );
 
   return (
-    <View style={styles.container}>
-      <LinearGradient colors={['#1F112F', '#09090B']} locations={[0, 0.4]} style={StyleSheet.absoluteFill} />
-      
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView 
         showsVerticalScrollIndicator={false} 
-        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20, paddingBottom: tabBarHeight + 50 }]}
+        contentContainerStyle={{ paddingBottom: tabBarHeight + 60 }}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.headerTitle}>Settings</Text>
+        <Text style={styles.header}>Settings</Text>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionHeader}>CONTENT</Text>
-          <View style={styles.card}>
-            <SettingToggleRow 
-              iconFamily={Feather} iconName="image" title="Hi-Res Posters" subtitle="Higher quality (uses more data)" 
-              value={isHiRes} onValueChange={toggleHiRes} 
-              iconColor="#38BDF8" glowColor="rgba(56, 189, 248, 0.15)"
-            />
-            <View style={styles.divider} />
-            <SettingToggleRow 
-              iconFamily={Feather} iconName="eye-off" title="NSFW Filter" subtitle="Hide explicit/adult content" 
-              value={isNsfwFilter} onValueChange={toggleNsfw} 
-              iconColor="#F472B6" glowColor="rgba(244, 114, 182, 0.15)"
-            />
-          </View>
+        {/* ── Content ── */}
+        <Text style={styles.sectionLabel}>CONTENT</Text>
+        <View style={styles.card}>
+          <ToggleRow 
+            title="Hi-Res Posters" 
+            subtitle="Higher quality images (uses more data)" 
+            value={isHiRes} 
+            onValueChange={toggleHiRes} 
+          />
+          <View style={styles.separator} />
+          <ToggleRow 
+            title="NSFW Filter" 
+            subtitle="Hide explicit and adult content" 
+            value={isNsfwFilter} 
+            onValueChange={toggleNsfw} 
+          />
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionHeader}>AI FEATURES</Text>
-          <View style={styles.card}>
-            <SettingToggleRow 
-              iconFamily={Ionicons} iconName="sparkles" title="Auto AI Vibe Match" subtitle="Auto-fetch AI recommendations" 
-              value={isAutoAi} onValueChange={toggleAutoAi} 
-              iconColor="#FBBF24" glowColor="rgba(251, 191, 36, 0.15)"
-            />
-            <View style={styles.divider} />
-            <View style={styles.apiKeyContainer}>
-              <View style={styles.apiKeyHeaderRow}>
-                <Text style={styles.apiKeyTitle}>Custom API Key</Text>
-                <TouchableOpacity activeOpacity={0.95} onPress={handleHowToGetKey}>
-                  <Text style={styles.apiKeyLink}>How to get it?</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.apiKeySubtitle}>Leave blank to use the default shared key. Use your own key to completely avoid rate limits.</Text>
-              <TextInput 
-                style={styles.apiInput} 
-                placeholder="Paste AIzaSy... here" 
-                placeholderTextColor="#555" 
-                value={customApiKey} 
-                onChangeText={saveApiKey} 
-                secureTextEntry={true} 
-              />
-            </View>
-          </View>
+        {/* ── AI ── */}
+        <Text style={styles.sectionLabel}>AI</Text>
+        <View style={styles.card}>
+          <ToggleRow 
+            title="Auto AI Vibe Match" 
+            subtitle="Fetch AI recommendations on detail pages" 
+            value={isAutoAi} 
+            onValueChange={toggleAutoAi} 
+          />
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionHeader}>DATA & STORAGE</Text>
-          <View style={styles.card}>
-            <TouchableOpacity activeOpacity={0.95} onPress={handleExportPrompt} style={styles.actionRow}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
-                  <Feather name="upload-cloud" size={20} color="#3B82F6" />
-                </View>
-                <View>
-                  <Text style={styles.settingTitle}>Export Library Backup</Text>
-                  <Text style={styles.settingSubtitle}>Save Watchlist & History to phone</Text>
-                </View>
-              </View>
-              <Feather name="chevron-right" color="#666" size={20} />
-            </TouchableOpacity>
-
-            <View style={styles.divider} />
-
-            <TouchableOpacity activeOpacity={0.95} onPress={handleRestoreBackup} style={styles.actionRow}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: 'rgba(34, 197, 94, 0.15)' }]}>
-                  <Feather name="download-cloud" size={20} color="#22C55E" />
-                </View>
-                <View>
-                  <Text style={styles.settingTitle}>Restore Library Backup</Text>
-                  <Text style={styles.settingSubtitle}>Import from a .json file</Text>
-                </View>
-              </View>
-              <Feather name="chevron-right" color="#666" size={20} />
-            </TouchableOpacity>
-
-            <View style={styles.divider} />
-
-            <TouchableOpacity activeOpacity={0.95} onPress={handleClearCache} style={styles.actionRow}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
-                  <Feather name="trash-2" size={20} color="#EF4444" />
-                </View>
-                <View>
-                  <Text style={styles.settingTitle}>Clear Cache</Text>
-                  <Text style={styles.settingSubtitle}>Free up local space</Text>
-                </View>
-              </View>
-              <Feather name="chevron-right" color="#666" size={20} />
-            </TouchableOpacity>
-          </View>
+        {/* ── Data & Storage ── */}
+        <Text style={styles.sectionLabel}>DATA & STORAGE</Text>
+        <View style={styles.card}>
+          <ActionRow 
+            title="Export Library" 
+            subtitle="Save Watchlist & History to your phone" 
+            onPress={handleExportPrompt} 
+          />
+          <View style={styles.separator} />
+          <ActionRow 
+            title="Restore Backup" 
+            subtitle="Import from a .json backup file" 
+            onPress={handleRestoreBackup} 
+          />
+          <View style={styles.separator} />
+          <ActionRow 
+            title="Clear Cache" 
+            subtitle="Free up local storage space" 
+            onPress={handleClearCache} 
+            destructive
+          />
         </View>
-        
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Version 1.1.0 • React Native</Text>
-        </View>
+
+        <Text style={styles.version}>Watcher v{appVersion}</Text>
       </ScrollView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#09090B' },
-  scrollContent: { paddingHorizontal: 16 },
-  headerTitle: { color: 'white', fontSize: 34, fontWeight: '800', marginBottom: 24, letterSpacing: 0.5 },
-  section: { marginBottom: 28 },
-  sectionHeader: { color: '#888', fontSize: 13, fontWeight: '700', marginBottom: 12, marginLeft: 8, letterSpacing: 1.2 },
-  card: { backgroundColor: '#18181B', borderRadius: 16, borderWidth: 1, borderColor: '#27272A', overflow: 'hidden' },
-  settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 },
-  actionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 },
-  settingLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
-  iconContainer: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  settingTextContainer: { flex: 1 },
-  settingTitle: { color: 'white', fontSize: 16, fontWeight: '600', marginBottom: 2 },
-  settingSubtitle: { color: '#999', fontSize: 13 },
-  divider: { height: 1, backgroundColor: '#27272A', marginLeft: 64 },
-  apiKeyContainer: { padding: 16 },
-  apiKeyHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  apiKeyTitle: { color: 'white', fontSize: 16, fontWeight: '600' },
-  apiKeyLink: { color: '#8B5CF6', fontSize: 13, fontWeight: '700' },
-  apiKeySubtitle: { color: '#999', fontSize: 13, marginBottom: 16, lineHeight: 18 },
-  apiInput: { backgroundColor: '#09090B', color: 'white', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#27272A', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', fontSize: 14 },
-  footer: { alignItems: 'center', marginTop: 10 },
-  footerText: { color: '#555', fontSize: 12, fontWeight: '600', letterSpacing: 0.5 }
+  container: {
+    flex: 1,
+    backgroundColor: '#121212',
+  },
+  header: {
+    fontSize: 28,
+    fontFamily: 'GoogleSansFlex-Bold',
+    color: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex-Medium',
+    color: '#666',
+    letterSpacing: 1,
+    paddingHorizontal: 20,
+    marginTop: 24,
+    marginBottom: 8,
+  },
+  card: {
+    backgroundColor: '#1C1C1E',
+    marginHorizontal: 16,
+    borderRadius: 14,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minHeight: 60,
+  },
+  rowText: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  rowTitle: {
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex-Medium',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  rowSubtitle: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex-Regular',
+    color: '#8E8E93',
+    lineHeight: 16,
+  },
+  destructiveText: {
+    color: '#E50914',
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#38383A',
+    marginLeft: 16,
+  },
+  version: {
+    textAlign: 'center',
+    fontFamily: 'GoogleSansFlex-Regular',
+    color: '#555',
+    fontSize: 12,
+    marginTop: 32,
+    marginBottom: 20,
+  },
 });
 
 export default Settings;

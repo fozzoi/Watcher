@@ -219,6 +219,8 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 36,
     marginTop: 8,
+    borderRadius: 14,
+    overflow: 'hidden',
   },
 
   /* Header */

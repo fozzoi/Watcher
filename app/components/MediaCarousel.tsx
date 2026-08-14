@@ -42,15 +42,13 @@ const MediaCarousel = memo(({ title, type, data, navigation, savedIds, toggleWat
         data={data}
         estimatedItemSize={SNAP_INTERVAL}
         showsHorizontalScrollIndicator={false}
-        overScrollMode="never"
-        bounces={false}
+        bounces={true}
         contentContainerStyle={{ paddingHorizontal: HORIZONTAL_MARGIN }}
         removeClippedSubviews={true}
         keyExtractor={(item, index) => `${item.id}-${index}`}
         snapToInterval={SNAP_INTERVAL}
         snapToAlignment="start"
-        decelerationRate={0.88}
-        disableIntervalMomentum
+        decelerationRate="fast"
         renderItem={({ item }) => (
           <MovieCard
             item={item}
@@ -70,7 +68,7 @@ const MediaCarousel = memo(({ title, type, data, navigation, savedIds, toggleWat
 export default MediaCarousel;
 
 const styles = StyleSheet.create({
-  sectionContainer: { paddingBottom: 24, borderRadius: 20, overflow: 'hidden' },
+  sectionContainer: { paddingBottom: 24, borderRadius: 14, overflow: 'hidden' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   sectionTitle: { color: C.white, fontSize: 21, fontWeight: '800', letterSpacing: -0.4 },
 });
