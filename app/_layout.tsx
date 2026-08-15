@@ -7,6 +7,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as Brightness from 'expo-brightness';
 
 import { isOnboardingComplete } from '@/src/userPreferences';
+import * as Notifications from 'expo-notifications';
+import { setupNotificationChannel, registerBackgroundFetchAsync, isNotificationsEnabled } from '@/src/notifications';
 
 LogBox.ignoreLogs([
   'Method readAsStringAsync imported from "expo-file-system" is deprecated',
@@ -27,6 +29,31 @@ export default function RootLayout() {
 
   const [isReady, setIsReady] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+
+  // Initialize Smart Notifications and listener
+  useEffect(() => {
+    (async () => {
+      try {
+        await setupNotificationChannel();
+        const enabled = await isNotificationsEnabled();
+        if (enabled) {
+          await registerBackgroundFetchAsync();
+        }
+      } catch (e) {
+        console.log('Notification registration error:', e);
+      }
+    })();
+
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response?.notification?.request?.content?.data;
+      if (data?.mediaId) {
+        const mediaType = data.mediaType || 'movie';
+        router.push(`/movie/${data.mediaId}?media_type=${mediaType}`);
+      }
+    });
+
+    return () => subscription.remove();
+  }, [router]);
 
   useEffect(() => {
     (async () => {
@@ -61,7 +88,7 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, isReady]);
 
-  // Handle routing based on onboarding state
+  // Initial routing for first-time onboarding
   useEffect(() => {
     if (!isReady || !fontsLoaded) return;
     
@@ -69,8 +96,6 @@ export default function RootLayout() {
 
     if (needsOnboarding && !inOnboardingGroup) {
       router.replace('/onboarding');
-    } else if (!needsOnboarding && inOnboardingGroup) {
-      router.replace('/(tabs)');
     }
   }, [needsOnboarding, isReady, fontsLoaded, segments]);
 

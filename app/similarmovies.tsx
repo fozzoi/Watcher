@@ -75,7 +75,10 @@ const SimilarMoviesPage = () => {
   const renderMovieItem = ({ item }: { item: TMDBResult }) => (
     <TouchableOpacity activeOpacity={0.95}
       style={styles.movieItem}
-      onPress={() => router.push(`/movie/${item.id}`)}
+      onPress={() => {
+        const mType = item.media_type || mediaType || (item.first_air_date ? 'tv' : 'movie');
+        router.push(`/movie/${item.id}?media_type=${mType}`);
+      }}
     >
       <Image
         source={{ uri: getImageUrl(item.poster_path, 'w342') }}

@@ -22,6 +22,7 @@ import {
   getImageUrl,
   getMovieGenres,
   getSimilarMedia,
+  getFullDetails,
   getSeasonEpisodes,
   getMovieImages,
   TMDBEpisode,
@@ -287,7 +288,7 @@ const DetailPage = () => {
   }, []);
 
   const fetchAiRecommendations = async () => {
-    if (!movie.title && !movie.name) return;
+    if (!movie || (!movie.title && !movie.name)) return;
     setLoadingAi(true);
     const aiData = await getGeminiMoviesSimilarTo(
       movie.title || movie.name,
@@ -299,7 +300,7 @@ const DetailPage = () => {
   };
 
   const fetchLensInsight = async () => {
-    if (!movie.title && !movie.name) return;
+    if (!movie || (!movie.title && !movie.name)) return;
     setLensLoading(true);
     setLensError(null);
     setLensInsight(null);
@@ -327,14 +328,15 @@ const DetailPage = () => {
   };
 
   useEffect(() => {
-    if (autoAiEnabled && (movie.title || movie.name)) {
+    if (autoAiEnabled && movie && (movie.title || movie.name)) {
       const task = requestIdleCallback(() => fetchAiRecommendations());
       return () => cancelIdleCallback(task);
     }
-  }, [movie.id, autoAiEnabled]);
+  }, [movie?.id, autoAiEnabled]);
 
   // 🎯 Replaces old source checking logic with direct Vercel API check
   const prefetchSources = useCallback(async (seasonToTry = 1, episodeToTry = 1) => {
+    if (!movie) return;
     setSourceStatus('checking');
     try {
       const baseUrl = "https://watcher-api-rho.vercel.app";
@@ -355,7 +357,7 @@ const DetailPage = () => {
   }, [movie]);
 
   useEffect(() => {
-    if (movie.id) {
+    if (movie?.id) {
         let s = 1, e = 1;
         if (movie.media_type === 'tv') {
             s = lastWatched?.lastSeason || 1;
@@ -363,17 +365,18 @@ const DetailPage = () => {
         }
         prefetchSources(s, e);
     }
-  }, [movie.id, lastWatched, prefetchSources]);
+  }, [movie?.id, lastWatched, prefetchSources]);
 
   useEffect(() => {
     const task = requestIdleCallback(() => loadDeepDetails());
     return () => cancelIdleCallback(task);
-  }, [initialMovie.id]);
+  }, [initialMovie?.id]);
 
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
       const checkProgress = async () => {
+        if (!movie?.id) return;
         const progress = await getProgress(movie.id);
         if (!isActive) return;
         setLastWatched(progress);
@@ -392,20 +395,22 @@ const DetailPage = () => {
         isActive = false;
         cancelIdleCallback(task);
       };
-    }, [movie.id]),
+    }, [movie?.id]),
   );
 
   const loadDeepDetails = async () => {
+    if (!initialMovie?.id) return;
     setLoadingDetails(true);
     try {
       checkIfInWatchlist();
       checkIfWatched();
+      const actualMediaType = initialMovie.media_type || (initialMovie.first_air_date ? 'tv' : 'movie');
       const [fullDetails, , genresData, similarData, idsData] = await Promise.all([
-        getMediaDetails(initialMovie.id, initialMovie.media_type),
-        getMovieImages(initialMovie.id, initialMovie.media_type),
-        getMovieGenres(initialMovie.id, initialMovie.media_type),
-        getSimilarMedia(initialMovie.id, initialMovie.media_type),
-        getExternalIds(initialMovie.id, initialMovie.media_type),
+        getMediaDetails(initialMovie.id, actualMediaType),
+        getMovieImages(initialMovie.id, actualMediaType),
+        getMovieGenres(initialMovie.id, actualMediaType),
+        getSimilarMedia(initialMovie.id, actualMediaType),
+        getExternalIds(initialMovie.id, actualMediaType),
       ]);
       setMovie(fullDetails);
       setGenres(genresData);
@@ -476,9 +481,11 @@ const DetailPage = () => {
   };
 
   const fetchEpisodes = async (seasonNumber: number) => {
+    const targetId = movie?.id || initialMovie?.id;
+    if (!targetId) return;
     setLoadingEpisodes(true);
     try {
-      const data = await getSeasonEpisodes(movie.id, seasonNumber);
+      const data = await getSeasonEpisodes(targetId, seasonNumber);
       setEpisodes(data);
     } catch {}
     finally {
@@ -506,10 +513,12 @@ const DetailPage = () => {
   }, [sourceStatus, movie, externalIds, lastWatched, episodes, router, trailerKey]);
 
   const checkIfInWatchlist = async () => {
+    const targetId = movie?.id || initialMovie?.id;
+    if (!targetId) return;
     try {
       const stored = await AsyncStorage.getItem('watchlist');
       const list = stored ? JSON.parse(stored) : [];
-      setIsInWatchlist(list.some((item: any) => item.id === movie.id));
+      setIsInWatchlist(list.some((item: any) => item.id === targetId));
     } catch {}
   };
 
@@ -527,10 +536,12 @@ const DetailPage = () => {
   };
 
   const checkIfWatched = async () => {
+    const targetId = movie?.id || initialMovie?.id;
+    if (!targetId) return;
     try {
       const stored = await AsyncStorage.getItem('history');
       const list = stored ? JSON.parse(stored) : [];
-      setIsWatched(list.some((item: any) => item.id === movie.id));
+      setIsWatched(list.some((item: any) => item.id === targetId));
     } catch {}
   };
 
@@ -581,6 +592,7 @@ const DetailPage = () => {
   };
 
   const openTelegramSearch = () => {
+    if (!movie) return;
     const title = movie.title || movie.name;
     const year = (movie.release_date || movie.first_air_date)?.substring(0, 4) || '';
     const message = encodeURIComponent(`${title} ${year}`);
@@ -590,24 +602,26 @@ const DetailPage = () => {
   };
 
   const openTorrentSearch = () => {
+    if (!movie) return;
     const query = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.slice(0, 4) || ''}`;
     router.push(`/search?prefillQuery=${encodeURIComponent(query)}`);
   };
 
   const copyTitle = async () => {
+    if (!movie) return;
     const text = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.substring(0, 4) || ''}`;
     await Clipboard.setStringAsync(text);
     if (Platform.OS === 'android') ToastAndroid.show('Copied!', ToastAndroid.SHORT);
     else Alert.alert('Copied', text);
   };
 
-  const displayTitle = movie.title || movie.name;
-  const releaseYear = (movie.release_date || movie.first_air_date)?.split('-')[0] || '';
+  const displayTitle = movie?.title || movie?.name;
+  const releaseYear = (movie?.release_date || movie?.first_air_date)?.split('-')[0] || '';
 
   const getPlayLabel = () => {
     if (sourceStatus === 'checking') return 'Finding stream';
     if (sourceStatus === 'unavailable') return 'Unavailable';
-    if (movie.media_type === 'movie') return lastWatched ? 'Resume' : 'Play';
+    if (movie?.media_type === 'movie') return lastWatched ? 'Resume' : 'Play';
     if (lastWatched) return `Resume S${lastWatched.lastSeason} · E${lastWatched.lastEpisode}`;
     return 'Play';
   };
@@ -624,7 +638,7 @@ const DetailPage = () => {
     length: castCardWidth + 12, offset: (castCardWidth + 12) * index, index,
   }), [castCardWidth]);
 
-  const handleMoviePress = useCallback((item: any) => router.push(`/detail?id=${item.id}&media_type=${item.media_type}`), [router]);
+  const handleMoviePress = useCallback((item: any) => router.push(`/movie/${item.id}?media_type=${item.media_type || 'movie'}`), [router]);
   const handlePersonPress = useCallback((id: string) => router.push(`/cast/${id}`), [router]);
 
   const renderAiItem = useCallback(({ item, index }: any) => (
@@ -632,8 +646,8 @@ const DetailPage = () => {
   ), [similarCardWidth, handleMoviePress]);
 
   const renderDirectorItem = useCallback(({ item, index }: any) => (
-    <MemoizedDirectorCard item={item} index={index} mediaType={movie.media_type} onPress={handlePersonPress} />
-  ), [movie.media_type, handlePersonPress]);
+    <MemoizedDirectorCard item={item} index={index} mediaType={movie?.media_type} onPress={handlePersonPress} />
+  ), [movie?.media_type, handlePersonPress]);
 
   const renderCastItem = useCallback(({ item, index }: any) => (
     <MemoizedCastCard item={item} index={index} cardWidth={castCardWidth} onPress={handlePersonPress} />

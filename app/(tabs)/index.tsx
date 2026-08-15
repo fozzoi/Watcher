@@ -28,7 +28,7 @@ import {
   searchPeople,
   searchCollections,
 } from '../../src/tmdb';
-import { getUserPreferences, LANGUAGE_OPTIONS } from '../../src/userPreferences';
+import { getUserPreferences, LANGUAGE_OPTIONS, GENRE_OPTIONS } from '../../src/userPreferences';
 import { getAllProgress, removeProgress, WatchProgress } from '../../src/utils/progress'; 
 import { executeNotificationCheck } from '../../src/notifications'; 
 
@@ -40,7 +40,6 @@ import MediaCarousel from '../../src/components/shared/MediaCarousel';
 import SearchResultsList from '../../src/components/search/SearchResultsList';
 import { HORIZONTAL_MARGIN } from '../../src/components/explore/ExploreConstants';
 import { LinearGradient } from 'expo-linear-gradient';
-
 
 const SkeletonCarousel = () => (
   <View style={styles.skeletonContainer}>
@@ -79,7 +78,7 @@ const ExplorePage = () => {
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
   const [allContent, setAllContent] = useState<any>({
     trendingMovies: [], trendingTV: [], topRated: [],
-    upcoming: [], hiddenGems: [], langData: {}
+    upcoming: [], hiddenGems: [], langData: {}, actorData: [], genreData: []
   });
 
   const router = useRouter();
@@ -123,7 +122,44 @@ const ExplorePage = () => {
     } catch (e) { console.error(e); }
   }, []);
 
-  useFocusEffect(useCallback(() => { loadUserData(); }, [loadUserData]));
+  const lastPrefsRef = useRef<string>('');
+
+  const fetchContent = useCallback(async (genreId: number = 0, forceRefresh: boolean = false) => {
+    try {
+      const prefs = await getUserPreferences();
+      const content = await fetchPersonalisedDiscoveryContent(
+        prefs.languages, 
+        prefs.genreIds, 
+        genreId, 
+        forceRefresh, 
+        prefs.favoriteActors
+      );
+      if (content) {
+          setRawContent(content);
+      }
+
+      const historyStr = await AsyncStorage.getItem('history');
+      if (historyStr) {
+        const history = JSON.parse(historyStr);
+        const similar = await getSimilarForHistory(history);
+        setBecauseYouWatched(similar);
+      }
+    } catch (err) { console.error(err); }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => { 
+      loadUserData(); 
+      getUserPreferences().then(prefs => {
+        const actorsKey = (prefs.favoriteActors || []).map((a: any) => a.id).join(',');
+        const currentHash = `${(prefs.languages || []).join(',')}-${(prefs.genreIds || []).join(',')}-${actorsKey}`;
+        if (lastPrefsRef.current && lastPrefsRef.current !== currentHash) {
+          fetchContent(selectedGenre, true);
+        }
+        lastPrefsRef.current = currentHash;
+      });
+    }, [loadUserData, fetchContent, selectedGenre])
+  );
 
   const toggleWatchlist = useCallback(async (item: any) => {
     const isPerson = !!(item.profile_path || item.known_for_department);
@@ -136,23 +172,6 @@ const ExplorePage = () => {
         await AsyncStorage.setItem(key, JSON.stringify(currentList));
         setSavedIds(prev => { const n = new Set(prev); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
     } catch (e) { console.error(e); }
-  }, []);
-
-  const fetchContent = useCallback(async (genreId: number = 0, forceRefresh: boolean = false) => {
-    try {
-      const prefs = await getUserPreferences();
-      const content = await fetchPersonalisedDiscoveryContent(prefs.languages, prefs.genreIds, genreId, forceRefresh);
-      if (content) {
-          setRawContent(content);
-      }
-
-      const historyStr = await AsyncStorage.getItem('history');
-      if (historyStr) {
-        const history = JSON.parse(historyStr);
-        const similar = await getSimilarForHistory(history);
-        setBecauseYouWatched(similar);
-      }
-    } catch (err) { console.error(err); }
   }, []);
 
   useEffect(() => { 
@@ -175,7 +194,15 @@ const ExplorePage = () => {
        topRated: filterWatched(rawContent.topRated, watchedIds),
        upcoming: filterWatched(rawContent.upcoming, watchedIds),
        hiddenGems: filterWatched(rawContent.hiddenGems, watchedIds),
-       langData: {} as Record<string, any>
+       langData: {} as Record<string, any>,
+       actorData: (rawContent.actorData || []).map((a: any) => ({
+         ...a,
+         items: filterWatched(a.items, watchedIds)
+       })).filter((a: any) => a.items.length > 0),
+       genreData: (rawContent.genreData || []).map((g: any) => ({
+         ...g,
+         items: filterWatched(g.items, watchedIds)
+       })).filter((g: any) => g.items.length > 0),
     };
 
     if (rawContent.langData) {
@@ -282,30 +309,6 @@ const ExplorePage = () => {
         </View>
       </View>
 
-      {/* AUTO-SUGGESTIONS & SEARCH HISTORY DROPDOWN */}
-      {/* {isSearchFocused && (query.length === 0 ? (Array.isArray(searchHistory) && searchHistory.length > 0) : true) && (
-        <View style={styles.historyDropdown}>
-          {(Array.isArray(searchHistory) ? searchHistory : [])
-            .filter(item => typeof item === 'string' && item.toLowerCase().includes(query.toLowerCase()))
-            .slice(0, 5)
-            .map((item, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.historyItem}
-                onPress={() => {
-                  setQuery(item);
-                  Keyboard.dismiss();
-                  saveSearchToHistory(item);
-                }}
-              >
-                <MaterialIcons name="history" size={20} color="#8C8C8C" />
-                <Text style={styles.historyText}>{item}</Text>
-                <Feather name="arrow-up-left" size={16} color="#8C8C8C" />
-              </TouchableOpacity>
-            ))}
-        </View>
-      )} */}
-
       <View style={{ flex: 1, position: 'relative' }}>
         
         {inSearchMode && (
@@ -314,7 +317,6 @@ const ExplorePage = () => {
             tmdbResults={tmdbResults}
             savedIds={savedIds}
             toggleWatchlist={toggleWatchlist}
-            navigation={navigation}
           />
         )}
 
@@ -336,23 +338,41 @@ const ExplorePage = () => {
               </>
             ) : (
               <>
-                <HeroSection items={allContent.trendingMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                <HeroSection items={allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <GenreFilter selectedGenre={selectedGenre} onSelectGenre={setSelectedGenre} />
 
                 {becauseYouWatched.map((row, idx) => {
                   const filtered = filterWatched(row.items, watchedIds);
                   if (filtered.length === 0) return null;
                   return (
-                    <MediaCarousel key={`byw-${idx}`} title={`Because you watched ${row.sourceTitle}`} type="becauseyouwatched" data={filtered} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                    <MediaCarousel key={`byw-${idx}`} title={`Because you watched ${row.sourceTitle}`} type="becauseyouwatched" data={filtered} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                   );
                 })}
 
-                <MediaCarousel title="✨ For You (Trending)" type="trendingmovies" data={allContent.trendingMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="🗓️ Coming Soon" type="upcoming" data={allContent.upcoming} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="💎 Hidden Gems" type="hiddengems" data={allContent.hiddenGems} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Trending TV Shows" type="trendingtv" data={allContent.trendingTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Top Rated Movies" type="toprated" data={allContent.topRated} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                <MediaCarousel title="Trending Movies" type="trendingmovies" data={allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
 
+                {/* Preferred Genres Carousels (e.g. Top Adventure Movies, Top Family Movies) */}
+                {(allContent.genreData || []).map((gen: any) => {
+                  const genreOption = GENRE_OPTIONS.find(g => g.id === gen.genreId);
+                  const genreTitle = genreOption ? `Top ${genreOption.label} Movies` : 'Genre Hits';
+                  return (
+                    <MediaCarousel 
+                      key={`genre-row-${gen.genreId}`}
+                      title={genreTitle} 
+                      type={`genre/${gen.genreId}`} 
+                      data={gen.items} 
+                      savedIds={savedIds} 
+                      toggleWatchlist={toggleWatchlist} 
+                    />
+                  );
+                })}
+
+                <MediaCarousel title="Trending TV Shows" type="trendingtv" data={allContent.trendingTV} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                <MediaCarousel title="Top Rated Movies" type="toprated" data={allContent.topRated} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                <MediaCarousel title="Coming Soon" type="upcoming" data={allContent.upcoming} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                <MediaCarousel title="Hidden Gems" type="hiddengems" data={allContent.hiddenGems} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+
+                {/* Preferred Language Carousels */}
                 {Object.keys(allContent.langData || {}).map(langCode => {
                    const langInfo = LANGUAGE_OPTIONS.find(l => l.code === langCode);
                    const langName = langInfo ? langInfo.label : langCode.toUpperCase();
@@ -361,14 +381,26 @@ const ExplorePage = () => {
                    return (
                      <React.Fragment key={langCode}>
                        {movies && movies.length > 0 && (
-                         <MediaCarousel title={`${langName} Movies`} type={`lang-movies-${langCode}`} data={movies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                         <MediaCarousel title={`${langName} Movies`} type={`lang-movies-${langCode}`} data={movies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                        )}
                        {tv && tv.length > 0 && (
-                         <MediaCarousel title={`${langName} TV Shows`} type={`lang-tv-${langCode}`} data={tv} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                         <MediaCarousel title={`${langName} TV Shows`} type={`lang-tv-${langCode}`} data={tv} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                        )}
                      </React.Fragment>
                    );
                 })}
+
+                {/* Favorite Actors Carousels */}
+                {(allContent.actorData || []).map((act: any) => (
+                  <MediaCarousel 
+                    key={`actor-${act.actorId}`}
+                    title={`Starring ${act.actorName}`} 
+                    type={`actor-${act.actorId}`} 
+                    data={act.items} 
+                    savedIds={savedIds} 
+                    toggleWatchlist={toggleWatchlist} 
+                  />
+                ))}
               </>
             )}
 
@@ -384,7 +416,7 @@ export default ExplorePage;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#141414',overflow: 'hidden' },
-  scrollContent: { paddingTop: 10, paddingBottom: 80 }, 
+  scrollContent: { paddingTop: 10, paddingBottom: 110 }, 
   searchBarContainer: { paddingHorizontal: HORIZONTAL_MARGIN, paddingTop: (StatusBar.currentHeight || 0) + 12, paddingBottom: 12, backgroundColor: 'rgba(20, 20, 20, 0.98)', borderBottomWidth: 1, borderBottomColor: 'rgba(255, 255, 255, 0.08)' },
   searchInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#222', borderRadius: 14, height: 48, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
   searchInput: { flex: 1, backgroundColor: 'transparent', height: 48, fontSize: 16, color: 'white', paddingLeft: 16, fontFamily: 'GoogleSansFlex-Regular' },
@@ -413,50 +445,18 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex-Regular',
   },
 
-  iconButtonAi: {
+  iconButton: {
     width: 48,
     height: 48,
-    borderRadius: 24, // Fully rounded modern circular button
-    overflow: 'hidden', 
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)', // Crisp modern border
-    // Modern glow effect
-    shadowColor: '#FF007A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 8, // Pronounced shadow for Android
-  },
-  gradientContainer: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
+    borderRadius: 14,
+    backgroundColor: '#222',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  iconButton: {
-    width: 48, height: 48, borderRadius: 14, backgroundColor: '#222', 
-    justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)'
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
 
-  skeletonContainer: {
-    marginBottom: 24,
-  },
-  skeletonTitle: {
-    width: 140,
-    height: 20,
-    backgroundColor: '#2A2A2A',
-    borderRadius: 4,
-    marginBottom: 12,
-    marginLeft: HORIZONTAL_MARGIN,
-  },
-  skeletonCard: {
-    width: 120,
-    height: 180,
-    backgroundColor: '#2A2A2A',
-    borderRadius: 8,
-    marginRight: 12,
-  }
+  skeletonContainer: { marginBottom: 24, paddingLeft: HORIZONTAL_MARGIN },
+  skeletonTitle: { width: 140, height: 20, backgroundColor: '#222', borderRadius: 4, marginBottom: 12 },
+  skeletonCard: { width: 130, height: 195, backgroundColor: '#222', borderRadius: 8, marginRight: 12 },
 });
-
-

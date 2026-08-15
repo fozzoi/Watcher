@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   FlatList,
@@ -13,47 +13,64 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
-  ScrollView
+  ScrollView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getImageUrl, searchTMDB, GLOBAL_CONFIG } from '../../src/tmdb';
+import { GENRE_OPTIONS } from '../../src/userPreferences';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons, Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
-  withSpring
+  withSpring,
+  FadeInDown,
+  FadeInUp
 } from 'react-native-reanimated';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = (width - 32) / 3; 
-const TAB_WIDTH = width - 40;
+const CARD_WIDTH = (width - 44) / 3; 
+const TAB_WIDTH = width - 32;
 const TAB_ITEM_WIDTH = (TAB_WIDTH - 4) / 3;
 
+type SortOption = 'default' | 'rating' | 'year' | 'title';
+type FilterMediaType = 'all' | 'movie' | 'tv' | 'collection';
+
 const WatchListPage = () => {
-  const [activeTab, setActiveTab] = useState(0); 
-  const [activeSubTab, setActiveSubTab] = useState<'movies' | 'collections'>('movies');
-  
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  // Data states
+  const [activeTab, setActiveTab] = useState(0); // 0: Watchlist, 1: Artists, 2: Watched
   const [watchlist, setWatchlist] = useState<any[]>([]); 
   const [artists, setArtists] = useState<any[]>([]);   
   const [watched, setWatched] = useState<any[]>([]); 
-  
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [syncProgress, setSyncProgress] = useState('');
-  
-  // UI Toggle States
+
+  // Search & Filters
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedMediaType, setSelectedMediaType] = useState<FilterMediaType>('all');
+  const [selectedGenreId, setSelectedGenreId] = useState<number | null>(null);
+
+  // Sorting
+  const [sortBy, setSortBy] = useState<SortOption>('default');
+  const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
+
+  // Modals
+  const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isSortModalOpen, setIsSortModalOpen] = useState(false);
   const [isLinkModalVisible, setIsLinkModalVisible] = useState(false);
   const [syncLinkInput, setSyncLinkInput] = useState('');
-  const [isImportMenuOpen, setIsImportMenuOpen] = useState(false);
-  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
-  const [sortBy, setSortBy] = useState('default'); 
-  const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc'); // New direction state
+  const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState('');
   
   // Custom Alert State
   const [importSummary, setImportSummary] = useState({
@@ -63,8 +80,7 @@ const WatchListPage = () => {
       existing: 0,
       missed: [] as string[]
   });
-  
-  const router = useRouter();
+
   const tabPosition = useSharedValue(0);
   const flatListRef = useRef<FlatList>(null);
 
@@ -143,7 +159,7 @@ const WatchListPage = () => {
   };
 
   const triggerExtraction = async (action: string, payload: any, silent = false) => {
-    setIsImportMenuOpen(false);
+    setIsImportModalOpen(false);
     if (!silent) {
         setSyncing(true);
         setSyncProgress('Extracting with AI...');
@@ -167,7 +183,7 @@ const WatchListPage = () => {
                 });
             }
         } else {
-            if (!silent) Alert.alert("No movies found", "The AI couldn't find any movie titles.");
+            if (!silent) Alert.alert("No movies found", "The AI couldn't find any movie titles in the provided source.");
         }
     } catch (e: any) {
         if (!silent) Alert.alert("Sync Failed", e.response?.data?.error || e.message);
@@ -180,7 +196,7 @@ const WatchListPage = () => {
   };
 
   const handleAddLink = async () => {
-    setIsImportMenuOpen(false);
+    setIsImportModalOpen(false);
     try {
         const savedUrl = await AsyncStorage.getItem('sync_url');
         setSyncLinkInput(savedUrl || '');
@@ -227,7 +243,7 @@ const WatchListPage = () => {
   };
 
   const handleImportFile = async () => {
-    setIsImportMenuOpen(false);
+    setIsImportModalOpen(false);
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: '*/*', 
@@ -288,7 +304,7 @@ const WatchListPage = () => {
   };
 
   const handleImportImage = async () => {
-    setIsImportMenuOpen(false);
+    setIsImportModalOpen(false);
     try {
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ['images'],
@@ -309,8 +325,6 @@ const WatchListPage = () => {
 
   const handleTabChange = (index: number) => {
     setActiveTab(index);
-    setIsImportMenuOpen(false);
-    setIsSortMenuOpen(false);
     tabPosition.value = withSpring(index * TAB_ITEM_WIDTH, { damping: 15, stiffness: 120 });
   };
 
@@ -335,13 +349,15 @@ const WatchListPage = () => {
   };
 
   const handleClearAll = () => {
+    setIsOptionsMenuOpen(false);
+    const tabName = activeTab === 0 ? "Watchlist" : activeTab === 1 ? "Favorite Artists" : "Watch History";
     Alert.alert(
-        "Clear All",
-        "Are you sure you want to delete everything in this list?",
+        `Clear ${tabName}`,
+        `Are you sure you want to delete all items from your ${tabName}? This cannot be undone.`,
         [
             { text: "Cancel", style: "cancel" },
             { 
-                text: "Delete All", 
+                text: "Clear All", 
                 style: "destructive", 
                 onPress: async () => {
                     if (activeTab === 0) { setWatchlist([]); await AsyncStorage.removeItem('watchlist'); }
@@ -353,18 +369,44 @@ const WatchListPage = () => {
     );
   };
 
-  const getSortedData = () => {
+  // Filter and Sort Data
+  const displayList = useMemo(() => {
     let list = activeTab === 0 ? watchlist : activeTab === 1 ? artists : watched;
     
-    // Apply Sub-tab filtering for Watchlist and Watched
+    // 1. Search Query Filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter((item: any) => {
+        const title = (item.title || item.name || '').toLowerCase();
+        return title.includes(q);
+      });
+    }
+
+    // 2. Media Type Filter (for Watchlist & Watched)
     if (activeTab === 0 || activeTab === 2) {
-      if (activeSubTab === 'movies') {
-        list = list.filter((item: any) => item.media_type !== 'collection');
-      } else if (activeSubTab === 'collections') {
+      if (selectedMediaType === 'movie') {
+        list = list.filter((item: any) => item.media_type === 'movie' || (!item.first_air_date && item.media_type !== 'collection' && item.media_type !== 'tv'));
+      } else if (selectedMediaType === 'tv') {
+        list = list.filter((item: any) => item.media_type === 'tv' || item.first_air_date);
+      } else if (selectedMediaType === 'collection') {
         list = list.filter((item: any) => item.media_type === 'collection');
       }
     }
 
+    // 3. Genre Filter
+    if (selectedGenreId !== null && (activeTab === 0 || activeTab === 2)) {
+      list = list.filter((item: any) => {
+        if (Array.isArray(item.genre_ids)) {
+          return item.genre_ids.includes(selectedGenreId);
+        }
+        if (Array.isArray(item.genres)) {
+          return item.genres.some((g: any) => g.id === selectedGenreId);
+        }
+        return false;
+      });
+    }
+
+    // 4. Sorting
     if (sortBy === 'default') return list;
 
     return [...list].sort((a, b) => {
@@ -378,17 +420,16 @@ const WatchListPage = () => {
             const ratingB = b.vote_average || 0;
             return sortDirection === 'desc' ? ratingB - ratingA : ratingA - ratingB;
         }
-        if (sortBy === 'type') {
-            const typeA = a.media_type || 'movie';
-            const typeB = b.media_type || 'movie';
-            // Ascending (A-Z) vs Descending (Z-A)
+        if (sortBy === 'title') {
+            const titleA = (a.title || a.name || '').toLowerCase();
+            const titleB = (b.title || b.name || '').toLowerCase();
             return sortDirection === 'desc' 
-                ? typeB.localeCompare(typeA) 
-                : typeA.localeCompare(typeB);
+                ? titleB.localeCompare(titleA) 
+                : titleA.localeCompare(titleB);
         }
         return 0;
     });
-  };
+  }, [activeTab, watchlist, artists, watched, searchQuery, selectedMediaType, selectedGenreId, sortBy, sortDirection]);
 
   const renderCard = ({ item }: { item: any }) => {
     const isArtist = activeTab === 1;
@@ -411,7 +452,8 @@ const WatchListPage = () => {
              if (item.media_type === 'collection') {
                router.push(`/collection/${item.id}?name=${encodeURIComponent(item.name)}`);
              } else if (item.media_type === 'movie' || item.media_type === 'tv' || item.title || item.name) {
-               router.push(`/movie/${item.id}`);
+               const mType = item.media_type || (item.first_air_date || item.number_of_seasons ? 'tv' : 'movie');
+               router.push(`/movie/${item.id}?media_type=${mType}`);
              } else if (item.profile_path || item.known_for_department) {
                router.push(`/cast/${item.id}`);
              }
@@ -439,26 +481,88 @@ const WatchListPage = () => {
     );
   };
 
-  const displayList = getSortedData();
-
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
       <StatusBar barStyle="light-content" />
       
+      {/* ── TOP HEADER ── */}
       <View style={styles.headerContainer}>
-        <Text style={styles.header}>
-            My Library <Text style={styles.headerCount}>({displayList.length})</Text>
-        </Text>
-        <TouchableOpacity 
-          activeOpacity={0.8}
-          onPress={() => router.push('/stats')} 
-          style={styles.headerButton}
-        >
-          <Ionicons name="bar-chart" size={16} color="#E50914" />
-          <Text style={{ color: '#E50914', fontSize: 13, fontWeight: '700' }}>Insights</Text>
-        </TouchableOpacity>
+        <View style={styles.headerTitleRow}>
+          <Text style={styles.header}>
+              My Library
+          </Text>
+          <View style={styles.countBadge}>
+            <Text style={styles.countBadgeText}>{displayList.length}</Text>
+          </View>
+        </View>
+
+        <View style={styles.headerActions}>
+          {/* Search Toggle Button */}
+          <TouchableOpacity 
+            activeOpacity={0.8}
+            onPress={() => {
+              setIsSearchOpen(prev => !prev);
+              if (isSearchOpen) setSearchQuery('');
+            }} 
+            style={[styles.headerIconButton, isSearchOpen && styles.headerIconButtonActive]}
+          >
+            <Ionicons name={isSearchOpen ? "close" : "search"} size={18} color={isSearchOpen ? "#E50914" : "#FFF"} />
+          </TouchableOpacity>
+
+          {/* Insights Button */}
+          <TouchableOpacity 
+            activeOpacity={0.8}
+            onPress={() => router.push('/stats')} 
+            style={styles.headerIconButton}
+          >
+            <Ionicons name="bar-chart-outline" size={18} color="#FFF" />
+          </TouchableOpacity>
+
+          {/* Import Button */}
+          {activeTab === 0 && (
+            <TouchableOpacity 
+              activeOpacity={0.8}
+              onPress={() => setIsImportModalOpen(true)} 
+              style={styles.headerIconButton}
+            >
+              <Feather name="download-cloud" size={18} color="#FFF" />
+            </TouchableOpacity>
+          )}
+
+          {/* Menu / Options Button */}
+          <TouchableOpacity 
+            activeOpacity={0.8}
+            onPress={() => setIsOptionsMenuOpen(true)} 
+            style={styles.headerIconButton}
+          >
+            <Feather name="sliders" size={18} color="#FFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
+      {/* ── INLINE SEARCH BAR (when active) ── */}
+      {isSearchOpen && (
+        <Animated.View entering={FadeInDown.duration(200)} style={styles.searchBarContainer}>
+          <Ionicons name="search" size={16} color="#777" style={{ marginLeft: 12 }} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Filter saved titles..."
+            placeholderTextColor="#777"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 8 }}>
+              <Ionicons name="close-circle" size={18} color="#999" />
+            </TouchableOpacity>
+          ) : null}
+        </Animated.View>
+      )}
+
+      {/* ── MAIN TABS ── */}
       <View style={styles.tabWrapper}>
         <View style={styles.tabContainer}>
             <View style={styles.blurContainer}>
@@ -482,96 +586,86 @@ const WatchListPage = () => {
         </View>
       </View>
 
-      {/* SUB-TABS for Watchlist and Watched */}
+      {/* ── SUB-TABS & FILTERS (Watchlist & Watched) ── */}
       {(activeTab === 0 || activeTab === 2) && (
-        <View style={styles.subTabContainer}>
-            <TouchableOpacity activeOpacity={0.95} 
-                style={[styles.subTabButton, activeSubTab === 'movies' && styles.activeSubTabButton]}
-                onPress={() => setActiveSubTab('movies')}
+        <View style={styles.filterSection}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScrollContent}
+          >
+            {/* Sort Indicator Chip */}
+            <TouchableOpacity 
+              activeOpacity={0.8}
+              style={[styles.filterChip, sortBy !== 'default' && styles.filterChipActive]}
+              onPress={() => setIsSortModalOpen(true)}
             >
-                <Ionicons name="film-outline" size={16} color={activeSubTab === 'movies' ? "#FFF" : "#777"} />
-                <Text style={[styles.subTabText, activeSubTab === 'movies' && styles.activeSubTabText]}>Movies & TV</Text>
+              <MaterialIcons name="sort" size={15} color={sortBy !== 'default' ? "#E50914" : "#AAA"} />
+              <Text style={[styles.filterChipText, sortBy !== 'default' && styles.filterChipTextActive]}>
+                {sortBy === 'default' ? 'Sort' : sortBy === 'rating' ? `Rating (${sortDirection.toUpperCase()})` : sortBy === 'year' ? `Year (${sortDirection.toUpperCase()})` : `Title (${sortDirection.toUpperCase()})`}
+              </Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity activeOpacity={0.95} 
-                style={[styles.subTabButton, activeSubTab === 'collections' && styles.activeSubTabButton]}
-                onPress={() => setActiveSubTab('collections')}
+
+            <View style={styles.chipDivider} />
+
+            {/* Media Type Chips */}
+            <TouchableOpacity 
+              activeOpacity={0.8} 
+              style={[styles.filterChip, selectedMediaType === 'all' && styles.filterChipActive]}
+              onPress={() => setSelectedMediaType('all')}
             >
-                <Ionicons name="albums-outline" size={16} color={activeSubTab === 'collections' ? "#FFF" : "#777"} />
-                <Text style={[styles.subTabText, activeSubTab === 'collections' && styles.activeSubTabText]}>Collections</Text>
+              <Text style={[styles.filterChipText, selectedMediaType === 'all' && styles.filterChipTextActive]}>All</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity 
+              activeOpacity={0.8} 
+              style={[styles.filterChip, selectedMediaType === 'movie' && styles.filterChipActive]}
+              onPress={() => setSelectedMediaType(selectedMediaType === 'movie' ? 'all' : 'movie')}
+            >
+              <Ionicons name="film-outline" size={14} color={selectedMediaType === 'movie' ? "#E50914" : "#888"} />
+              <Text style={[styles.filterChipText, selectedMediaType === 'movie' && styles.filterChipTextActive]}>Movies</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              activeOpacity={0.8} 
+              style={[styles.filterChip, selectedMediaType === 'tv' && styles.filterChipActive]}
+              onPress={() => setSelectedMediaType(selectedMediaType === 'tv' ? 'all' : 'tv')}
+            >
+              <Ionicons name="tv-outline" size={14} color={selectedMediaType === 'tv' ? "#E50914" : "#888"} />
+              <Text style={[styles.filterChipText, selectedMediaType === 'tv' && styles.filterChipTextActive]}>Series</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              activeOpacity={0.8} 
+              style={[styles.filterChip, selectedMediaType === 'collection' && styles.filterChipActive]}
+              onPress={() => setSelectedMediaType(selectedMediaType === 'collection' ? 'all' : 'collection')}
+            >
+              <Ionicons name="albums-outline" size={14} color={selectedMediaType === 'collection' ? "#E50914" : "#888"} />
+              <Text style={[styles.filterChipText, selectedMediaType === 'collection' && styles.filterChipTextActive]}>Collections</Text>
+            </TouchableOpacity>
+
+            <View style={styles.chipDivider} />
+
+            {/* Genre Filter Chips */}
+            {GENRE_OPTIONS.slice(0, 10).map((g) => {
+              const isSelected = selectedGenreId === g.id;
+              return (
+                <TouchableOpacity 
+                  key={g.id}
+                  activeOpacity={0.8} 
+                  style={[styles.filterChip, isSelected && styles.filterChipActive]}
+                  onPress={() => setSelectedGenreId(isSelected ? null : g.id)}
+                >
+                  <Text style={styles.filterChipEmoji}>{g.emoji}</Text>
+                  <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>{g.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
       )}
 
-      {/* TOOLBAR WRAPPER (Z-Index fix for overlay) */}
-      <View style={styles.toolbarWrapper}>
-          <View style={styles.toolbarContainer}>
-              {activeTab === 0 && (
-                  <View style={styles.toolbarLeft}>
-                      <TouchableOpacity activeOpacity={0.95} style={styles.iconButton} onPress={() => { setIsImportMenuOpen(!isImportMenuOpen); setIsSortMenuOpen(false); }}>
-                          <Feather name="file-plus" size={20} color={isImportMenuOpen ? "#E50914" : "#FFF"} />
-                          <Text style={styles.iconButtonText}>Import</Text>
-                      </TouchableOpacity>
-                  </View>
-              )}
-              <View style={{ flex: 1 }} />
-              <View style={styles.toolbarRight}>
-                  {/* Sort Direction Toggle Button */}
-                  {sortBy !== 'default' && (
-                      <TouchableOpacity activeOpacity={0.95} 
-                          style={styles.iconButton} 
-                          onPress={() => setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc')}
-                      >
-                          <Feather name={sortDirection === 'desc' ? "arrow-down" : "arrow-up"} size={16} color="#FFF" />
-                      </TouchableOpacity>
-                  )}
-                  
-                  <TouchableOpacity activeOpacity={0.95} style={styles.iconButton} onPress={() => { setIsSortMenuOpen(!isSortMenuOpen); setIsImportMenuOpen(false); }}>
-                      <MaterialIcons name="sort" size={20} color={isSortMenuOpen ? "#E50914" : "#FFF"} />
-                      <Text style={styles.iconButtonText}>Sort</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.95} style={styles.iconButton} onPress={handleClearAll}>
-                      <Feather name="trash-2" size={18} color="#FF4444" />
-                  </TouchableOpacity>
-              </View>
-          </View>
-
-          {/* ABSOLUTE DROPDOWN MENUS (Overlay Fix) */}
-          {isImportMenuOpen && activeTab === 0 && (
-              <View style={[styles.dropdownMenu, styles.dropdownLeft]}>
-                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={handleAddLink}>
-                      <MaterialIcons name="link" size={18} color="#FFF" />
-                      <Text style={styles.dropdownText}>Sync Link</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={handleImportFile}>
-                      <Ionicons name="document-text-outline" size={18} color="#FFF" />
-                      <Text style={styles.dropdownText}>Import Text/JSON File</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={handleImportImage}>
-                      <Feather name="image" size={18} color="#FFF" />
-                      <Text style={styles.dropdownText}>Scan Picture</Text>
-                  </TouchableOpacity>
-              </View>
-          )}
-
-          {isSortMenuOpen && (
-              <View style={[styles.dropdownMenu, styles.dropdownRight, { alignItems: 'flex-end' }]}>
-                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={() => { setSortBy('default'); setIsSortMenuOpen(false); }}>
-                      <Text style={[styles.dropdownText, sortBy === 'default' && styles.activeDropdownText]}>Date Added</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={() => { setSortBy('year'); setIsSortMenuOpen(false); }}>
-                      <Text style={[styles.dropdownText, sortBy === 'year' && styles.activeDropdownText]}>Release Year</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={() => { setSortBy('rating'); setIsSortMenuOpen(false); }}>
-                      <Text style={[styles.dropdownText, sortBy === 'rating' && styles.activeDropdownText]}>Rating</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={0.95} style={styles.dropdownItem} onPress={() => { setSortBy('type'); setIsSortMenuOpen(false); }}>
-                      <Text style={[styles.dropdownText, sortBy === 'type' && styles.activeDropdownText]}>Movie / TV Show</Text>
-                  </TouchableOpacity>
-              </View>
-          )}
-      </View>
-
+      {/* ── SYNC PROGRESS BANNER ── */}
       {syncing && (
           <View style={styles.syncHubContainer}>
               <View style={styles.syncingOverlay}>
@@ -581,30 +675,53 @@ const WatchListPage = () => {
           </View>
       )}
 
+      {/* ── MAIN CONTENT LIST ── */}
       {loading && !syncing ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator animating={true} size="large" color="#E50914" />
         </View>
       ) : !syncing && displayList.length === 0 ? (
         <View style={styles.emptyContainer}>
-          {activeTab === 0 ? (
-             <MaterialIcons name="movie-filter" size={60} color="#333" />
-          ) : activeTab === 1 ? (
-             <Ionicons name="people" size={60} color="#333" />
-          ) : (
-             <Feather name="check-circle" size={60} color="#333" />
-          )}
+          <View style={styles.emptyIconCircle}>
+            {activeTab === 0 ? (
+               <MaterialIcons name="movie-filter" size={42} color="#E50914" />
+            ) : activeTab === 1 ? (
+               <Ionicons name="people" size={42} color="#E50914" />
+            ) : (
+               <Feather name="check-circle" size={42} color="#E50914" />
+            )}
+          </View>
           <Text style={styles.emptyText}>
-             {activeTab === 0 ? "Watchlist Empty" : activeTab === 1 ? "No Favorites" : "Nothing Watched"}
-          </Text>
-          <Text style={styles.emptySubtext}>
-             {activeTab === 0 
-                ? (activeSubTab === 'movies' ? "Movies you save will appear here." : "Collections you save will appear here.")
-                : activeTab === 1 
-                    ? "Artists you love will appear here." 
-                    : (activeSubTab === 'movies' ? "Movies you mark as watched will appear here." : "Collections you mark as watched will appear here.")
+             {searchQuery || selectedGenreId || selectedMediaType !== 'all'
+                ? "No matching items found"
+                : activeTab === 0 
+                    ? "Watchlist Empty" 
+                    : activeTab === 1 
+                        ? "No Favorite Artists" 
+                        : "Nothing Watched Yet"
              }
           </Text>
+          <Text style={styles.emptySubtext}>
+             {searchQuery || selectedGenreId || selectedMediaType !== 'all'
+                ? "Try adjusting your search or clearing active filters."
+                : activeTab === 0 
+                    ? "Tap the bookmark icon on any movie or TV show to save it here."
+                    : activeTab === 1 
+                        ? "Favorite cast & directors to easily track their filmographies." 
+                        : "Titles you finish or mark as watched will appear in this history."
+             }
+          </Text>
+
+          {activeTab === 0 && !searchQuery && (
+            <TouchableOpacity 
+              activeOpacity={0.85}
+              style={styles.emptyActionButton}
+              onPress={() => setIsImportModalOpen(true)}
+            >
+              <Feather name="download-cloud" size={16} color="#FFF" />
+              <Text style={styles.emptyActionText}>Import Existing Watchlist</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : (
         <FlatList
@@ -618,6 +735,205 @@ const WatchListPage = () => {
           columnWrapperStyle={{ gap: 10 }}
         />
       )}
+
+      {/* ── OPTIONS / SETTINGS MODAL ── */}
+      <Modal visible={isOptionsMenuOpen} transparent={true} animationType="fade" onRequestClose={() => setIsOptionsMenuOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsOptionsMenuOpen(false)} />
+          <View style={styles.optionsSheetContainer}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>Library Options</Text>
+
+            <TouchableOpacity 
+              activeOpacity={0.8}
+              style={styles.sheetItem}
+              onPress={() => {
+                setIsOptionsMenuOpen(false);
+                router.push('/onboarding');
+              }}
+            >
+              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(229,9,20,0.15)' }]}>
+                <Ionicons name="sparkles" size={18} color="#E50914" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetItemTitle}>Change Content Preferences</Text>
+                <Text style={styles.sheetItemSub}>Update languages, genres, and favorite actors</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color="#666" />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              activeOpacity={0.8}
+              style={styles.sheetItem}
+              onPress={() => {
+                setIsOptionsMenuOpen(false);
+                router.push('/stats');
+              }}
+            >
+              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(48,209,88,0.15)' }]}>
+                <Ionicons name="bar-chart" size={18} color="#30D158" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetItemTitle}>View Library Insights</Text>
+                <Text style={styles.sheetItemSub}>Explore viewing stats, watch time & breakdown</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color="#666" />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              activeOpacity={0.8}
+              style={styles.sheetItem}
+              onPress={() => {
+                setIsOptionsMenuOpen(false);
+                setIsSortModalOpen(true);
+              }}
+            >
+              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(255,214,10,0.15)' }]}>
+                <MaterialIcons name="sort" size={18} color="#FFD60A" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetItemTitle}>Sort & Arrange</Text>
+                <Text style={styles.sheetItemSub}>Sort by rating, release date, or title</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color="#666" />
+            </TouchableOpacity>
+
+            <View style={styles.sheetDivider} />
+
+            <TouchableOpacity 
+              activeOpacity={0.8}
+              style={styles.sheetItem}
+              onPress={handleClearAll}
+            >
+              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(255,69,58,0.15)' }]}>
+                <Feather name="trash-2" size={18} color="#FF453A" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sheetItemTitle, { color: '#FF453A' }]}>Clear All Items</Text>
+                <Text style={styles.sheetItemSub}>Delete all titles from this list</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── SORT MODAL ── */}
+      <Modal visible={isSortModalOpen} transparent={true} animationType="fade" onRequestClose={() => setIsSortModalOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsSortModalOpen(false)} />
+          <View style={styles.optionsSheetContainer}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>Sort Library</Text>
+
+            {[
+              { key: 'default', label: 'Date Added (Default)', icon: 'clock' },
+              { key: 'rating', label: 'Rating', icon: 'star' },
+              { key: 'year', label: 'Release Year', icon: 'calendar' },
+              { key: 'title', label: 'Title (Alphabetical)', icon: 'type' },
+            ].map(item => {
+              const isSelected = sortBy === item.key;
+              return (
+                <TouchableOpacity 
+                  key={item.key}
+                  activeOpacity={0.8}
+                  style={styles.sheetItem}
+                  onPress={() => {
+                    setSortBy(item.key as SortOption);
+                    setIsSortModalOpen(false);
+                  }}
+                >
+                  <View style={[styles.sheetIconCircle, isSelected && { backgroundColor: 'rgba(229,9,20,0.2)' }]}>
+                    <Feather name={item.icon as any} size={18} color={isSelected ? "#E50914" : "#AAA"} />
+                  </View>
+                  <Text style={[styles.sheetItemTitle, { flex: 1 }, isSelected && { color: '#E50914', fontFamily: 'GoogleSansFlex-Bold' }]}>
+                    {item.label}
+                  </Text>
+                  {isSelected && <Ionicons name="checkmark" size={20} color="#E50914" />}
+                </TouchableOpacity>
+              );
+            })}
+
+            <View style={styles.sheetDivider} />
+
+            {/* Direction Toggle */}
+            <View style={styles.directionRow}>
+              <Text style={styles.directionLabel}>Sort Order:</Text>
+              <View style={styles.directionButtons}>
+                <TouchableOpacity 
+                  activeOpacity={0.8}
+                  style={[styles.directionBtn, sortDirection === 'desc' && styles.directionBtnActive]}
+                  onPress={() => setSortDirection('desc')}
+                >
+                  <Text style={[styles.directionBtnText, sortDirection === 'desc' && styles.directionBtnTextActive]}>Descending ↓</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  activeOpacity={0.8}
+                  style={[styles.directionBtn, sortDirection === 'asc' && styles.directionBtnActive]}
+                  onPress={() => setSortDirection('asc')}
+                >
+                  <Text style={[styles.directionBtnText, sortDirection === 'asc' && styles.directionBtnTextActive]}>Ascending ↑</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── IMPORT MODAL ── */}
+      <Modal visible={isImportModalOpen} transparent={true} animationType="fade" onRequestClose={() => setIsImportModalOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsImportModalOpen(false)} />
+          <View style={styles.optionsSheetContainer}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>Import Watchlist</Text>
+
+            <TouchableOpacity 
+              activeOpacity={0.8}
+              style={styles.sheetItem}
+              onPress={handleAddLink}
+            >
+              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(0,122,255,0.15)' }]}>
+                <MaterialIcons name="link" size={20} color="#0A84FF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetItemTitle}>Sync Google Watchlist Link</Text>
+                <Text style={styles.sheetItemSub}>Auto-syncs daily from your public collection URL</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color="#666" />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              activeOpacity={0.8}
+              style={styles.sheetItem}
+              onPress={handleImportFile}
+            >
+              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(48,209,88,0.15)' }]}>
+                <Ionicons name="document-text-outline" size={20} color="#30D158" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetItemTitle}>Import Text or JSON File</Text>
+                <Text style={styles.sheetItemSub}>Load from Letterboxd, IMDb export, or notes file</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color="#666" />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              activeOpacity={0.8}
+              style={styles.sheetItem}
+              onPress={handleImportImage}
+            >
+              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(255,149,0,0.15)' }]}>
+                <Feather name="image" size={18} color="#FF9500" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetItemTitle}>Scan Screenshot with AI</Text>
+                <Text style={styles.sheetItemSub}>Extract movie titles directly from a photo</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color="#666" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* URL Link Modal */}
       <Modal visible={isLinkModalVisible} transparent={true} animationType="fade" onRequestClose={() => setIsLinkModalVisible(false)}>
@@ -690,67 +1006,164 @@ const WatchListPage = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#141414', paddingTop: 40 },
-  headerContainer: { paddingHorizontal: 20, marginTop: 10, marginBottom: 15 },
-  header: { color: '#fff', fontSize: 28, fontFamily: 'GoogleSansFlex-Bold' },
-  headerCount: { color: '#888', fontSize: 20, fontFamily: 'GoogleSansFlex-Medium' }, 
+  container: { flex: 1, backgroundColor: '#121212' },
   
-  tabWrapper: { alignItems: 'center', marginBottom: 10 },
-  tabContainer: { flexDirection: 'row', width: TAB_WIDTH, height: 44, borderRadius: 22, position: 'relative', overflow: 'hidden', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1 },
-  blurContainer: { ...StyleSheet.absoluteFill, borderRadius: 22, overflow: 'hidden' },
-  activePill: { position: 'absolute', width: TAB_ITEM_WIDTH, top: 2, bottom: 2, left: 2, backgroundColor: '#E50914', borderRadius: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3 },
+  // Header
+  headerContainer: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    paddingHorizontal: 18, 
+    marginBottom: 12 
+  },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  header: { color: '#FFF', fontSize: 26, fontFamily: 'GoogleSansFlex-Bold', letterSpacing: -0.5 },
+  countBadge: { backgroundColor: '#222', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  countBadgeText: { color: '#888', fontSize: 13, fontFamily: 'GoogleSansFlex-Bold' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1E1E1E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)'
+  },
+  headerIconButtonActive: {
+    backgroundColor: 'rgba(229,9,20,0.15)',
+    borderColor: 'rgba(229,9,20,0.4)',
+  },
+
+  // Search Bar
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1C1C1E',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  searchInput: {
+    flex: 1,
+    color: '#FFF',
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex-Regular',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+  },
+
+  // Tabs
+  tabWrapper: { alignItems: 'center', marginBottom: 12 },
+  tabContainer: { flexDirection: 'row', width: TAB_WIDTH, height: 42, borderRadius: 21, position: 'relative', overflow: 'hidden', borderColor: 'rgba(255,255,255,0.08)', borderWidth: 1 },
+  blurContainer: { ...StyleSheet.absoluteFill, borderRadius: 21, overflow: 'hidden' },
+  activePill: { position: 'absolute', width: TAB_ITEM_WIDTH, top: 2, bottom: 2, left: 2, backgroundColor: '#E50914', borderRadius: 19 },
   tabButton: { flex: 1, justifyContent: 'center', alignItems: 'center', zIndex: 1 },
-  tabText: { color: '#CCC', fontFamily: 'GoogleSansFlex-Medium', fontSize: 13 },
+  tabText: { color: '#888', fontFamily: 'GoogleSansFlex-Medium', fontSize: 13 },
   activeTabText: { color: '#FFF', fontFamily: 'GoogleSansFlex-Bold' },
 
-  // Sub-tabs
-  subTabContainer: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 15 },
-  subTabButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, backgroundColor: '#1F1F1F', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  activeSubTabButton: { backgroundColor: '#333', borderColor: 'rgba(255,255,255,0.15)' },
-  subTabText: { color: '#777', fontSize: 13, fontFamily: 'GoogleSansFlex-Medium' },
-  activeSubTabText: { color: '#FFF', fontFamily: 'GoogleSansFlex-Bold' },
-  
-  // Updated Layout for Overlay Fix
-  toolbarWrapper: { position: 'relative', zIndex: 100, marginBottom: 10 },
-  toolbarContainer: { flexDirection: 'row', paddingHorizontal: 16, alignItems: 'center' },
-  toolbarLeft: { flexDirection: 'row', gap: 10 },
-  toolbarRight: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  iconButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2A2A2A', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, gap: 6 },
-  iconButtonText: { color: '#FFF', fontSize: 12, fontFamily: 'GoogleSansFlex-Medium' },
-  
-  dropdownMenu: { position: 'absolute', top: 40, backgroundColor: '#1F1F1F', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 5, elevation: 10 },
-  dropdownLeft: { left: 16 },
-  dropdownRight: { right: 16 },
-  dropdownItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 10, gap: 10 },
-  dropdownText: { color: '#CCC', fontSize: 14, fontFamily: 'GoogleSansFlex-Medium' },
-  activeDropdownText: { color: '#E50914', fontFamily: 'GoogleSansFlex-Bold' },
+  // Filters
+  filterSection: { marginBottom: 14 },
+  filterScrollContent: { paddingHorizontal: 16, alignItems: 'center', gap: 6 },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#1C1C1E',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  filterChipActive: {
+    backgroundColor: 'rgba(229,9,20,0.15)',
+    borderColor: 'rgba(229,9,20,0.4)',
+  },
+  filterChipText: {
+    color: '#888',
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex-Medium',
+  },
+  filterChipTextActive: {
+    color: '#FFF',
+    fontFamily: 'GoogleSansFlex-Bold',
+  },
+  filterChipEmoji: { fontSize: 12 },
+  chipDivider: { width: 1, height: 16, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: 4 },
 
+  // Sync Progress
   syncHubContainer: { paddingHorizontal: 16, marginBottom: 15 },
   syncingOverlay: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#2A2A2A', paddingVertical: 10, borderRadius: 10, gap: 10 },
   syncingText: { color: '#FFF', fontSize: 13, fontFamily: 'GoogleSansFlex-Medium' },
-  
+
+  // Grid
   listContent: { paddingHorizontal: 16, paddingBottom: 100 },
   cardWrapper: { width: CARD_WIDTH, marginBottom: 16 },
-  cardContainer: { borderRadius: 12, backgroundColor: '#1F1F1F', overflow: 'hidden', height: CARD_WIDTH * 1.5, position: 'relative' },
-  cardImage: { width: '100%', height: '100%', backgroundColor: '#2A2A2A' },
-  cardGradient: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '50%', zIndex: 1 },
+  cardContainer: { borderRadius: 12, backgroundColor: '#1C1C1E', overflow: 'hidden', height: CARD_WIDTH * 1.5, position: 'relative', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  cardImage: { width: '100%', height: '100%', backgroundColor: '#222' },
+  cardGradient: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '55%', zIndex: 1 },
   cardContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 8, zIndex: 2 },
-  cardTitle: { color: '#E5E5E5', fontSize: 12, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 2, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
-  cardSubtitle: { color: '#CCC', fontSize: 10, fontFamily: 'GoogleSansFlex-Regular' },
+  cardTitle: { color: '#FFF', fontSize: 11.5, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 2 },
+  cardSubtitle: { color: '#FFD700', fontSize: 10, fontFamily: 'GoogleSansFlex-Medium' },
   unsaveButton: { position: 'absolute', top: 6, right: 6, zIndex: 10, borderRadius: 15, overflow: 'hidden' },
-  unsaveBlur: { width: 28, height: 28, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
+  unsaveBlur: { width: 26, height: 26, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
+
+  // Empty State
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40, marginTop: 50 },
-  emptyText: { color: '#fff', fontSize: 20, fontFamily: 'GoogleSansFlex-Bold', marginTop: 20, marginBottom: 8 },
-  emptySubtext: { color: '#aaa', fontSize: 14, fontFamily: 'GoogleSansFlex-Regular', textAlign: 'center' },
-  
-  modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.75)' },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, marginTop: 40 },
+  emptyIconCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(229,9,20,0.08)', justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: 'rgba(229,9,20,0.2)' },
+  emptyText: { color: '#FFF', fontSize: 18, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 6, textAlign: 'center' },
+  emptySubtext: { color: '#777', fontSize: 13, fontFamily: 'GoogleSansFlex-Regular', textAlign: 'center', lineHeight: 18, marginBottom: 20 },
+  emptyActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#E50914',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  emptyActionText: { color: '#FFF', fontSize: 13, fontFamily: 'GoogleSansFlex-Bold' },
+
+  // Modals & Bottom Sheets
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 0, 0, 0.75)' },
   modalOverlayDismiss: { ...StyleSheet.absoluteFill },
-  modalContentContainer: { width: '85%', borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
+  optionsSheetContainer: {
+    backgroundColor: '#1C1C1E',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 36,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#444', alignSelf: 'center', marginBottom: 16 },
+  sheetTitle: { color: '#FFF', fontSize: 18, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 16 },
+  sheetItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12 },
+  sheetIconCircle: { width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center' },
+  sheetItemTitle: { color: '#FFF', fontSize: 15, fontFamily: 'GoogleSansFlex-Medium' },
+  sheetItemSub: { color: '#777', fontSize: 12, fontFamily: 'GoogleSansFlex-Regular', marginTop: 2 },
+  sheetDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 },
+
+  directionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
+  directionLabel: { color: '#AAA', fontSize: 13, fontFamily: 'GoogleSansFlex-Medium' },
+  directionButtons: { flexDirection: 'row', gap: 8 },
+  directionBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: '#2A2A2A' },
+  directionBtnActive: { backgroundColor: '#E50914' },
+  directionBtnText: { color: '#888', fontSize: 12, fontFamily: 'GoogleSansFlex-Medium' },
+  directionBtnTextActive: { color: '#FFF', fontFamily: 'GoogleSansFlex-Bold' },
+
+  // Link & Summary Modal
+  modalContentContainer: { width: '88%', alignSelf: 'center', marginBottom: 'auto', marginTop: 'auto', borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
   modalContent: { padding: 24, alignItems: 'center', zIndex: 1 },
   modalTitle: { color: '#FFF', fontSize: 18, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 8 },
   modalSubtitle: { color: '#AAA', fontSize: 13, fontFamily: 'GoogleSansFlex-Regular', textAlign: 'center', marginBottom: 20, lineHeight: 18 },
-  modalInput: { width: '100%', backgroundColor: '#1E1E1E', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 12, color: '#FFF', fontSize: 14, fontFamily: 'GoogleSansFlex-Regular', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', marginBottom: 20 },
+  modalInput: { width: '100%', backgroundColor: '#141414', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 12, color: '#FFF', fontSize: 14, fontFamily: 'GoogleSansFlex-Regular', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', marginBottom: 20 },
   modalButtonsRow: { flexDirection: 'row', width: '100%', gap: 12 },
   modalButton: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   modalCancelButton: { backgroundColor: '#2A2A2A' },
@@ -759,24 +1172,12 @@ const styles = StyleSheet.create({
   modalSyncButtonText: { color: '#FFF', fontSize: 14, fontFamily: 'GoogleSansFlex-Medium' },
 
   resultsHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 15 },
-  statsContainer: { width: '100%', backgroundColor: '#1A1A1A', borderRadius: 10, padding: 15, marginBottom: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  statsContainer: { width: '100%', backgroundColor: '#141414', borderRadius: 10, padding: 15, marginBottom: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
   statText: { color: '#888', fontSize: 14, fontFamily: 'GoogleSansFlex-Medium', marginBottom: 4 },
   missedContainer: { width: '100%', backgroundColor: 'rgba(229, 9, 20, 0.1)', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: 'rgba(229, 9, 20, 0.2)' },
   missedTitle: { color: '#E50914', fontSize: 13, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 8 },
   missedScroll: { maxHeight: 120 },
   missedText: { color: '#CCC', fontSize: 12, fontFamily: 'GoogleSansFlex-Regular', marginBottom: 4 },
-  headerButton: {
-    marginLeft: 'auto',
-    backgroundColor: 'rgba(229,9,20,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(229,9,20,0.3)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6
-  }
 });
 
 export default WatchListPage;

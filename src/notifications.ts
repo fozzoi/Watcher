@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
@@ -10,17 +11,51 @@ import { getMediaDetails, fetchPersonalisedDiscoveryContent } from './tmdb';
 import { getUserPreferences } from './userPreferences';
 
 const BACKGROUND_FETCH_TASK = 'background-fetch-releases';
+const NOTIFS_ENABLED_KEY = 'smart_notifications_enabled';
+const CHANNEL_ID = 'watcher-releases';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
 });
 
+export const setupNotificationChannel = async () => {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+      name: 'Releases & Recommendations',
+      importance: Notifications.AndroidImportance.LOW,
+    });
+  }
+};
+
+export const isNotificationsEnabled = async (): Promise<boolean> => {
+  try {
+    const val = await AsyncStorage.getItem(NOTIFS_ENABLED_KEY);
+    return val === null ? true : val === 'true';
+  } catch {
+    return true;
+  }
+};
+
+export const setNotificationsEnabled = async (enabled: boolean): Promise<void> => {
+  await AsyncStorage.setItem(NOTIFS_ENABLED_KEY, enabled ? 'true' : 'false');
+  if (enabled) {
+    await registerBackgroundFetchAsync();
+  } else {
+    await unregisterBackgroundFetchAsync();
+  }
+};
+
 export const executeNotificationCheck = async () => {
   try {
+    const enabled = await isNotificationsEnabled();
+    if (!enabled) return 0;
+
+    await setupNotificationChannel();
     const now = dayjs();
 
     let watchlist: any[] = [];
@@ -59,47 +94,50 @@ export const executeNotificationCheck = async () => {
       return dateObj.isAfter(now) && dateObj.isSameOrBefore(now.add(14, 'day'));
     };
 
-    // Check TV Shows in history for new episodes
-    for (const item of history) {
-      if (item.media_type === 'tv') {
-        try {
-          const details = await getMediaDetails('tv', item.id);
-          const lastAirDateStr = details.last_air_date;
-          if (lastAirDateStr) {
-            const lastAirDate = dayjs(lastAirDateStr);
-            const notifyKey = `tv_${item.id}_${lastAirDateStr}`; // Unique key per episode air date
+    // 1. Check TV Shows in history/watchlist for new episodes
+    const tvItems = [...history, ...watchlist].filter(i => i.media_type === 'tv' || i.first_air_date);
+    const uniqueTvItems = Array.from(new Map(tvItems.map(item => [item.id, item])).values());
 
-            if (isRecentRelease(lastAirDate) && !notifiedMediaIds.includes(notifyKey)) {
-              await Notifications.scheduleNotificationAsync({
-                content: {
-                  title: `New Episode: ${details.title || details.name}`,
-                  body: `A new episode aired on ${lastAirDate.format('MMM D, YYYY')}!`,
-                  data: { mediaId: item.id, mediaType: 'tv' },
-                },
-                trigger: null,
-              });
-              notifiedMediaIds.push(notifyKey);
-              newNotifications++;
-            }
+    for (const item of uniqueTvItems) {
+      try {
+        const details = await getMediaDetails(item.id, 'tv');
+        const lastAirDateStr = (details as any).last_air_date;
+        if (lastAirDateStr) {
+          const lastAirDate = dayjs(lastAirDateStr);
+          const notifyKey = `tv_${item.id}_${lastAirDateStr}`;
+
+          if (isRecentRelease(lastAirDate) && !notifiedMediaIds.includes(notifyKey)) {
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: `New Episode: ${details.title || details.name}`,
+                body: `A new episode aired on ${lastAirDate.format('MMM D, YYYY')}!`,
+                data: { mediaId: item.id, mediaType: 'tv' },
+                ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+              },
+              trigger: null,
+            });
+            notifiedMediaIds.push(notifyKey);
+            newNotifications++;
           }
-        } catch (e) {
-          console.error('Error fetching details for', item.id);
         }
+      } catch (e) {
+        console.error('Error fetching details for TV show', item.id);
       }
     }
 
-    // Check Watchlist items (Movies & Collections)
+    // 2. Check Watchlist Movies & Collections
     for (const item of watchlist) {
-      if (item.media_type === 'movie') {
+      if (item.media_type === 'movie' || (!item.first_air_date && item.media_type !== 'collection')) {
         const releaseDate = item.release_date ? dayjs(item.release_date) : null;
         const notifyKey = `movie_${item.id}`;
 
         if (releaseDate && isRecentRelease(releaseDate) && !notifiedMediaIds.includes(notifyKey)) {
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: `Watchlist Release!`,
-              body: `${item.title || item.name} has just been released.`,
+              title: `Watchlist Release! 🎬`,
+              body: `${item.title || item.name} is now released. Tap to watch.`,
               data: { mediaId: item.id, mediaType: 'movie' },
+              ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
             },
             trigger: null,
           });
@@ -112,9 +150,10 @@ export const executeNotificationCheck = async () => {
           const daysAway = releaseDate.diff(now, 'day');
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: `Coming to Theaters Soon 🍿`,
-              body: `${item.title || item.name} releases in ${daysAway} days!`,
+              title: `Premiere Soon 🍿`,
+              body: `${item.title || item.name} releases in ${daysAway} days (${releaseDate.format('MMM D')})!`,
               data: { mediaId: item.id, mediaType: 'movie' },
+              ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
             },
             trigger: null,
           });
@@ -125,14 +164,15 @@ export const executeNotificationCheck = async () => {
         if (item.parts && Array.isArray(item.parts)) {
           for (const part of item.parts) {
             const partReleaseDate = part.release_date ? dayjs(part.release_date) : null;
-            const notifyKey = `movie_${part.id}`; // Parts are movies
+            const notifyKey = `collection_part_${part.id}`;
 
             if (partReleaseDate && isRecentRelease(partReleaseDate) && !notifiedMediaIds.includes(notifyKey)) {
               await Notifications.scheduleNotificationAsync({
                 content: {
-                  title: `New in ${item.name}!`,
+                  title: `New in ${item.name}! 🌟`,
                   body: `${part.title} is now out.`,
-                  data: { mediaId: item.id, mediaType: 'collection' },
+                  data: { mediaId: part.id, mediaType: 'movie' },
+                  ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
                 },
                 trigger: null,
               });
@@ -145,7 +185,6 @@ export const executeNotificationCheck = async () => {
     }
 
     try {
-      // Keep only the last 500 keys to avoid blowing up storage over years
       if (notifiedMediaIds.length > 500) {
         notifiedMediaIds = notifiedMediaIds.slice(notifiedMediaIds.length - 500);
       }
@@ -154,7 +193,7 @@ export const executeNotificationCheck = async () => {
       console.error('Failed to save notifiedMediaIds');
     }
 
-    // Weekly 'For You' Picks
+    // 3. Weekly Personalised Picks
     try {
       const lastWeeklyStr = await AsyncStorage.getItem('last_weekly_foryou');
       const lastWeekly = lastWeeklyStr ? dayjs(lastWeeklyStr) : dayjs(0);
@@ -170,6 +209,7 @@ export const executeNotificationCheck = async () => {
               title: `Your Weekly Pick 🌟`,
               body: `Based on your taste, you might love ${topPick.title}!`,
               data: { mediaId: topPick.id, mediaType: 'movie' },
+              ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
             },
             trigger: null,
           });
@@ -188,20 +228,66 @@ export const executeNotificationCheck = async () => {
   }
 };
 
-TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
-  const count = await executeNotificationCheck();
-  return count > 0 ? BackgroundFetch.BackgroundFetchResult.NewData : BackgroundFetch.BackgroundFetchResult.NoData;
-});
+// Define Background Task
+try {
+  TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
+    try {
+      const count = await executeNotificationCheck();
+      return count > 0 ? BackgroundFetch.BackgroundFetchResult.NewData : BackgroundFetch.BackgroundFetchResult.NoData;
+    } catch {
+      return BackgroundFetch.BackgroundFetchResult.Failed;
+    }
+  });
+} catch (e) {
+  console.log('TaskManager task definition error:', e);
+}
 
 export async function registerBackgroundFetchAsync() {
+  try {
+    await setupNotificationChannel();
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== 'granted') {
+      return;
+    }
+
+    const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_FETCH_TASK);
+    if (!isRegistered) {
+      await BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
+        minimumInterval: 60 * 60 * 6, // 6 hours
+        stopOnTerminate: false,
+        startOnBoot: true,
+      });
+    }
+  } catch (e) {
+    console.error('Error registering background fetch task:', e);
+  }
+}
+
+export async function unregisterBackgroundFetchAsync() {
+  try {
+    const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_FETCH_TASK);
+    if (isRegistered) {
+      await BackgroundFetch.unregisterTaskAsync(BACKGROUND_FETCH_TASK);
+    }
+  } catch (e) {
+    console.error('Failed to unregister background fetch task', e);
+  }
+}
+
+export const sendTestNotification = async () => {
+  await setupNotificationChannel();
   const { status } = await Notifications.requestPermissionsAsync();
   if (status !== 'granted') {
-    return;
+    throw new Error('Notification permissions not granted.');
   }
 
-  return BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
-    minimumInterval: 60 * 60 * 12, // 12 hours
-    stopOnTerminate: false,
-    startOnBoot: true,
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Watcher Smart Alert 🍿',
+      body: 'Notifications are active! You will receive alerts when new episodes or movie releases arrive.',
+      data: { mediaId: 27205, mediaType: 'movie' },
+      ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+    },
+    trigger: null,
   });
-}
+};

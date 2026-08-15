@@ -42,12 +42,14 @@ const ViewAllPage = () => {
 
   const years = ['2026', '2025', '2024', '2023', '2022', '2021', '2020', '2019', '2015', '2010'];
   const languages = [
-    { code: 'en', name: 'English' },
+    { code: 'en', name: 'Hollywood' },
     { code: 'ml', name: 'Malayalam' },
     { code: 'hi', name: 'Hindi' },
     { code: 'ta', name: 'Tamil' },
+    { code: 'te', name: 'Telugu' },
     { code: 'ko', name: 'Korean' },
     { code: 'ja', name: 'Japanese' },
+    { code: 'tr', name: 'Turkish' },
   ];
   const ratings = [9, 8, 7, 6, 5];
 
@@ -123,9 +125,9 @@ const ViewAllPage = () => {
   const renderMovieCard = ({ item }: { item: TMDBResult }) => (
     <TouchableOpacity activeOpacity={0.95}
       style={styles.cardContainer}
-      onPress={async () => {
-        const fullDetails = await getFullDetails(item);
-        router.push({ pathname: '/movie/[id]', params: { id: fullDetails.id } });
+      onPress={() => {
+        const mType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+        router.push(`/movie/${item.id}?media_type=${mType}`);
       }}
     >
       <Image

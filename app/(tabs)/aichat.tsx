@@ -17,8 +17,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { getImageUrl, getFullDetails } from '../../src/tmdb';
-import { fetchChatGemini, fetchTrendingMovies, fetchPersonalisedDiscoveryContent } from '../../src/tmdb';
+import { getImageUrl, getFullDetails, fetchChatGemini, fetchPersonalisedDiscoveryContent } from '../../src/tmdb';
 import { getUserPreferences } from '../../src/userPreferences';
 import {
   Conversation, listConversations, saveConversation, deleteConversation,
@@ -26,6 +25,9 @@ import {
   getAiName, setAiName as persistAiName,
 } from '../../src/chatStorage';
 import ChatHistorySidebar from '../../src/components/aichat/ChatHistorySidebar';
+import FormattedMarkdownText from '../../src/components/aichat/FormattedMarkdownText';
+import AiComparisonTable from '../../src/components/aichat/AiComparisonTable';
+import AiStructuredList from '../../src/components/aichat/AiStructuredList';
 
 const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -58,14 +60,16 @@ type ChatMessage =
   | { id: string; role: 'bot'; kind: 'movies'; text?: string; movies: Movie[] }
   | { id: string; role: 'bot'; kind: 'actors'; text?: string; actors: Actor[] }
   | { id: string; role: 'bot'; kind: 'movie_detail'; text?: string; movie: Movie }
+  | { id: string; role: 'bot'; kind: 'table'; title?: string; text?: string; headers: string[]; rows: (string | number)[][] }
+  | { id: string; role: 'bot'; kind: 'list'; title?: string; text?: string; items: any[]; ordered?: boolean }
   | { id: string; role: 'bot'; kind: 'error'; text: string };
 
 const STARTER_PROMPTS = [
+  { emoji: '⚖️', label: 'Compare Oppenheimer vs Interstellar' },
+  { emoji: '📊', label: 'Top 5 highest grossing movies of all time' },
   { emoji: '🤯', label: 'Mind-bending thriller' },
   { emoji: '🚀', label: 'Stunning sci-fi' },
   { emoji: '🎭', label: 'Emotional drama' },
-  { emoji: '😂', label: 'Feel-good comedy' },
-  { emoji: '👻', label: 'Elevated horror' },
   { emoji: '🎲', label: 'Surprise me' },
 ];
 
@@ -492,7 +496,8 @@ const AiChat = () => {
 
   const navigateToDetails = (full: any) => {
     Keyboard.dismiss();
-    router.push(`/movie/${full.id}`);
+    const mType = full.media_type || (full.first_air_date ? 'tv' : 'movie');
+    router.push(`/movie/${full.id}?media_type=${mType}`);
   };
 
   const navigateToCastDetails = (actor: any) => {
@@ -500,7 +505,10 @@ const AiChat = () => {
     router.push(`/cast/${actor.id}`);
   };
 
-  const isMovieWatched = (item: Movie) => watchedIds.has(Number(item.id));
+  const isMovieWatched = (item?: Movie | null) => {
+    if (!item?.id) return false;
+    return watchedIds.has(Number(item.id));
+  };
 
   // ── Renderers ───────────────────────────────────────────────
 
@@ -513,11 +521,21 @@ const AiChat = () => {
           end={{ x: 1, y: 1 }}
           style={[styles.bubble, styles.bubbleUser]}
         >
-          <Text style={styles.bubbleUserText}>{m.text}</Text>
+          <FormattedMarkdownText
+            text={m.text}
+            style={styles.bubbleUserText}
+            baseColor="#FFFFFF"
+            boldColor="#FFFFFF"
+          />
         </LinearGradient>
       ) : (
         <View style={[styles.bubble, styles.bubbleBot]}>
-          <Text style={styles.bubbleBotText}>{m.text}</Text>
+          <FormattedMarkdownText
+            text={m.text}
+            style={styles.bubbleBotText}
+            baseColor="#E0E0E0"
+            boldColor="#FFFFFF"
+          />
         </View>
       )}
     </View>
@@ -540,98 +558,139 @@ const AiChat = () => {
     </View>
   );
 
-  const renderMovieList = (m: Extract<ChatMessage, { kind: 'movies' }>) => (
-    <View style={{ marginBottom: 4 }}>
-      {!!m.text && (
-        <View style={[styles.bubble, styles.bubbleBot]}>
-          <Text style={styles.bubbleBotText}>{m.text}</Text>
-        </View>
-      )}
-      <View style={{ paddingHorizontal: 16, gap: 12, paddingVertical: 8 }}>
-        {m.movies.map((item) => {
-          const watched = isMovieWatched(item);
-          return (
-            <TouchableOpacity key={String(item.id)} activeOpacity={0.95} style={styles.detailCard} onPress={() => openMovie(item)}>
-              <Image
-                source={{ uri: getImageUrl(item.poster_path, 'w92') }}
-                style={styles.detailGlow}
-                blurRadius={30}
-              />
-              <LinearGradient
-                colors={['rgba(20,20,20,0.85)', 'rgba(20,20,20,0.95)']}
-                style={styles.detailInner}
-              >
-                <Image source={{ uri: getImageUrl(item.poster_path, 'w185') }} style={styles.detailPoster} />
-                <View style={styles.detailContent}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 24 }}>
-                    <Text style={styles.detailTitle} numberOfLines={2}>{item.title || item.name}</Text>
-                    {watched && (
-                      <View style={[styles.watchedBadge, { position: 'relative', top: 0, right: 0 }]}>
-                        <Ionicons name="checkmark-circle" size={11} color="#4ADE80" />
-                        <Text style={styles.watchedBadgeText}>Watched</Text>
-                      </View>
-                    )}
-                  </View>
-                  <View style={styles.tagsRow}>
-                    <View style={styles.tag}>
-                      <Ionicons name="star" color="#FFD700" size={10} />
-                      <Text style={styles.tagText}>{item.vote_average?.toFixed(1) ?? '–'}</Text>
-                    </View>
-                    <View style={[styles.tag, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
-                      <Text style={[styles.tagText, { color: '#AAA' }]}>
-                        {(item.release_date || item.first_air_date)?.split('-')[0] || 'N/A'}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={styles.detailOverview} numberOfLines={3}>{item.overview}</Text>
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </View>
-  );
-
-  const renderActorList = (m: Extract<ChatMessage, { kind: 'actors' }>) => (
-    <View style={{ marginBottom: 4 }}>
-      {!!m.text && (
-        <View style={[styles.bubble, styles.bubbleBot]}>
-          <Text style={styles.bubbleBotText}>{m.text}</Text>
-        </View>
-      )}
-      <FlatList
-        horizontal
-        data={m.actors}
-        keyExtractor={(item) => String(item.id)}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, gap: 16, paddingVertical: 8 }}
-        renderItem={({ item, index }) => (
-          <Animated.View entering={FadeInUp.delay(index * 80).springify()}>
-            <TouchableOpacity activeOpacity={0.95} style={styles.actorCard} onPress={() => navigateToCastDetails(item)}>
-              <View style={styles.actorAvatarContainer}>
-                <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.actorAvatar} />
-                <LinearGradient
-                  colors={['transparent', 'rgba(255,59,59,0.15)']}
-                  style={styles.actorAvatarGlow}
-                />
-              </View>
-              <Text numberOfLines={1} style={styles.actorName}>{item.name}</Text>
-              {!!item.known_for && <Text numberOfLines={1} style={styles.actorKnownFor}>{item.known_for}</Text>}
-            </TouchableOpacity>
-          </Animated.View>
+  const renderMovieList = (m: Extract<ChatMessage, { kind: 'movies' }>) => {
+    const validMovies = (m.movies || []).filter((item): item is Movie => !!item && !!item.id);
+    return (
+      <View style={{ marginBottom: 4 }}>
+        {!!m.text && (
+          <View style={[styles.bubble, styles.bubbleBot]}>
+            <FormattedMarkdownText
+              text={m.text}
+              style={styles.bubbleBotText}
+              baseColor="#E0E0E0"
+              boldColor="#FFFFFF"
+            />
+          </View>
         )}
-      />
-    </View>
-  );
+        {validMovies.length > 0 && (
+          <View style={{ paddingHorizontal: 16, gap: 12, paddingVertical: 8 }}>
+            {validMovies.map((item) => {
+              const watched = isMovieWatched(item);
+              return (
+                <TouchableOpacity key={String(item.id)} activeOpacity={0.95} style={styles.detailCard} onPress={() => openMovie(item)}>
+                  <Image
+                    source={{ uri: getImageUrl(item.poster_path, 'w92') }}
+                    style={styles.detailGlow}
+                    blurRadius={30}
+                  />
+                  <LinearGradient
+                    colors={['rgba(20,20,20,0.85)', 'rgba(20,20,20,0.95)']}
+                    style={styles.detailInner}
+                  >
+                    <Image source={{ uri: getImageUrl(item.poster_path, 'w185') }} style={styles.detailPoster} />
+                    <View style={styles.detailContent}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 24 }}>
+                        <Text style={styles.detailTitle} numberOfLines={2}>{item.title || item.name}</Text>
+                        {watched && (
+                          <View style={[styles.watchedBadge, { position: 'relative', top: 0, right: 0 }]}>
+                            <Ionicons name="checkmark-circle" size={11} color="#4ADE80" />
+                            <Text style={styles.watchedBadgeText}>Watched</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={styles.tagsRow}>
+                        <View style={styles.tag}>
+                          <Ionicons name="star" color="#FFD700" size={10} />
+                          <Text style={styles.tagText}>{item.vote_average?.toFixed(1) ?? '–'}</Text>
+                        </View>
+                        <View style={[styles.tag, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
+                          <Text style={[styles.tagText, { color: '#AAA' }]}>
+                            {(item.release_date || item.first_air_date)?.split('-')[0] || 'N/A'}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.detailOverview} numberOfLines={3}>{item.overview}</Text>
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderActorList = (m: Extract<ChatMessage, { kind: 'actors' }>) => {
+    const validActors = (m.actors || []).filter((item): item is Actor => !!item && !!item.id);
+    return (
+      <View style={{ marginBottom: 4 }}>
+        {!!m.text && (
+          <View style={[styles.bubble, styles.bubbleBot]}>
+            <FormattedMarkdownText
+              text={m.text}
+              style={styles.bubbleBotText}
+              baseColor="#E0E0E0"
+              boldColor="#FFFFFF"
+            />
+          </View>
+        )}
+        {validActors.length > 0 && (
+          <FlatList
+            horizontal
+            data={validActors}
+            keyExtractor={(item) => String(item.id)}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 16, paddingVertical: 8 }}
+            renderItem={({ item, index }) => (
+              <Animated.View entering={FadeInUp.delay(index * 80).springify()}>
+                <TouchableOpacity activeOpacity={0.95} style={styles.actorCard} onPress={() => navigateToCastDetails(item)}>
+                  <View style={styles.actorAvatarContainer}>
+                    <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.actorAvatar} />
+                    <LinearGradient
+                      colors={['transparent', 'rgba(255,59,59,0.15)']}
+                      style={styles.actorAvatarGlow}
+                    />
+                  </View>
+                  <Text numberOfLines={1} style={styles.actorName}>{item.name}</Text>
+                  {!!item.known_for && <Text numberOfLines={1} style={styles.actorKnownFor}>{item.known_for}</Text>}
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+          />
+        )}
+      </View>
+    );
+  };
 
   const renderMovieDetail = (m: Extract<ChatMessage, { kind: 'movie_detail' }>) => {
+    if (!m.movie || !m.movie.id) {
+      return (
+        <View style={{ marginBottom: 4 }}>
+          {!!m.text && (
+            <View style={[styles.bubble, styles.bubbleBot]}>
+              <FormattedMarkdownText
+                text={m.text}
+                style={styles.bubbleBotText}
+                baseColor="#E0E0E0"
+                boldColor="#FFFFFF"
+              />
+            </View>
+          )}
+        </View>
+      );
+    }
     const watched = isMovieWatched(m.movie);
     return (
       <View style={{ marginBottom: 4 }}>
         {!!m.text && (
           <View style={[styles.bubble, styles.bubbleBot]}>
-            <Text style={styles.bubbleBotText}>{m.text}</Text>
+            <FormattedMarkdownText
+              text={m.text}
+              style={styles.bubbleBotText}
+              baseColor="#E0E0E0"
+              boldColor="#FFFFFF"
+            />
           </View>
         )}
         <TouchableOpacity activeOpacity={0.95} style={styles.detailCard} onPress={() => openMovie(m.movie)}>
@@ -674,6 +733,24 @@ const AiChat = () => {
     );
   };
 
+  const renderTable = (m: Extract<ChatMessage, { kind: 'table' }>) => (
+    <AiComparisonTable
+      title={m.title}
+      text={m.text}
+      headers={m.headers}
+      rows={m.rows}
+    />
+  );
+
+  const renderList = (m: Extract<ChatMessage, { kind: 'list' }>) => (
+    <AiStructuredList
+      title={m.title}
+      text={m.text}
+      items={m.items}
+      ordered={m.ordered ?? true}
+    />
+  );
+
   const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
     switch (item.kind) {
       case 'text': return renderTextBubble(item, index);
@@ -681,6 +758,8 @@ const AiChat = () => {
       case 'movies': return renderMovieList(item);
       case 'actors': return renderActorList(item);
       case 'movie_detail': return renderMovieDetail(item);
+      case 'table': return renderTable(item);
+      case 'list': return renderList(item);
       case 'error': return renderError(item);
       default: return null;
     }
@@ -701,6 +780,26 @@ const AiChat = () => {
     return <AiNameSetup onComplete={handleNameSetup} />;
   }
 
+  const edgePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        return (
+          !sidebarOpen &&
+          evt.nativeEvent.pageX < 45 &&
+          gestureState.dx > 20 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy)
+        );
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx > 35) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setSidebarOpen(true);
+        }
+      },
+    })
+  ).current;
+
   // ── Main chat ───────────────────────────────────────────────
   const showStarterChips = messages.length === 1;
 
@@ -709,6 +808,7 @@ const AiChat = () => {
       style={styles.container}
       behavior="padding"
       keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
+      {...edgePanResponder.panHandlers}
     >
       <StatusBar barStyle="light-content" backgroundColor="#000" />
       <LinearGradient colors={['#0A0A0F', '#050208', '#000']} style={StyleSheet.absoluteFill} />
@@ -726,7 +826,18 @@ const AiChat = () => {
 
         <View style={{ flex: 1 }} />
 
-        <TouchableOpacity activeOpacity={0.95} onPress={() => { Haptics.selectionAsync(); navigation.goBack(); }} hitSlop={10}>
+        <TouchableOpacity
+          activeOpacity={0.95}
+          onPress={() => {
+            Haptics.selectionAsync();
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.push('/(tabs)');
+            }
+          }}
+          hitSlop={10}
+        >
           <Ionicons name="close" size={22} color="rgba(255,255,255,0.6)" />
         </TouchableOpacity>
 
@@ -782,7 +893,7 @@ const AiChat = () => {
       )}
 
       {/* ── Input Bar ── */}
-      <Animated.View style={[styles.inputBar, { paddingBottom: insets.bottom + 10 }]}>
+      <Animated.View style={[styles.inputBar, { paddingBottom: insets.bottom + 12 }]}>
         <Animated.View style={[styles.inputWrapper, inputGlowStyle]}>
           <TextInput
             style={styles.input}

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   TextInput, Image, Dimensions, ScrollView, StatusBar,
@@ -14,7 +14,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import {
   LANGUAGE_OPTIONS, GENRE_OPTIONS,
-  completeOnboarding, FavoriteActor,
+  completeOnboarding, getUserPreferences, FavoriteActor,
 } from '../src/userPreferences';
 import { searchPeople, getImageUrl } from '../src/tmdb';
 
@@ -221,6 +221,18 @@ export default function Onboarding() {
   const [genreIds, setGenreIds] = useState<number[]>([]);
   const [actors, setActors] = useState<FavoriteActor[]>([]);
   const [saving, setSaving] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    getUserPreferences().then(prefs => {
+      if (prefs.onboardingComplete) {
+        setIsEditing(true);
+      }
+      if (prefs.languages && prefs.languages.length > 0) setLanguages(prefs.languages);
+      if (prefs.genreIds && prefs.genreIds.length > 0) setGenreIds(prefs.genreIds);
+      if (prefs.favoriteActors && prefs.favoriteActors.length > 0) setActors(prefs.favoriteActors);
+    });
+  }, []);
 
   const toggleLanguage = (code: string) =>
     setLanguages(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
@@ -234,8 +246,22 @@ export default function Onboarding() {
   const handleFinish = async () => {
     setSaving(true);
     await completeOnboarding({ country: 'IN', languages, genreIds, favoriteActors: actors });
+    
+    // Invalidate local discovery cache so explore page immediately reflects new preferences
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const discoveryKeys = keys.filter(k => k.startsWith('PERSONALISED_PAGE_DATA_'));
+      if (discoveryKeys.length > 0) {
+        await AsyncStorage.multiRemove(discoveryKeys);
+      }
+    } catch {}
+
     setSaving(false);
-    router.replace('/(tabs)');
+    if (router.canGoBack() && isEditing) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
   };
 
   const canContinue = step === 0 ? languages.length > 0 : true;
@@ -250,7 +276,20 @@ export default function Onboarding() {
 
       {/* Header */}
       <Animated.View entering={FadeIn.delay(50)} style={styles.header}>
-        <Text style={styles.appName}>WATCHER</Text>
+        <View style={styles.headerTopRow}>
+          <Text style={styles.appName}>
+            {isEditing ? 'CONTENT PREFERENCES' : 'WATCHER'}
+          </Text>
+          {isEditing && (
+            <TouchableOpacity 
+              activeOpacity={0.8}
+              onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}
+              style={styles.closeBtn}
+            >
+              <Ionicons name="close" size={20} color="#FFF" />
+            </TouchableOpacity>
+          )}
+        </View>
         <StepDots current={step} />
       </Animated.View>
 
@@ -280,14 +319,16 @@ export default function Onboarding() {
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <>
-                <Text style={styles.nextBtnText}>{step < STEP_COUNT - 1 ? 'Continue' : "Let's go!"}</Text>
+                <Text style={styles.nextBtnText}>
+                  {step < STEP_COUNT - 1 ? 'Continue' : isEditing ? 'Save Preferences' : "Let's go!"}
+                </Text>
                 <Ionicons name={step < STEP_COUNT - 1 ? 'arrow-forward' : 'checkmark'} size={18} color="#fff" />
               </>
             )}
           </LinearGradient>
         </TouchableOpacity>
 
-        {step === STEP_COUNT - 1 && (
+        {step === STEP_COUNT - 1 && !isEditing && (
           <TouchableOpacity onPress={handleFinish} style={styles.skipBtn}>
             <Text style={styles.skipText}>Skip for now</Text>
           </TouchableOpacity>
@@ -306,8 +347,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(229,9,20,0.12)',
     transform: [{ scaleX: 2 }],
   },
-  header: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 8, alignItems: 'center' },
-  appName: { color: ACCENT, fontSize: 13, fontWeight: '900', letterSpacing: 6, marginBottom: 16 },
+  header: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 8, alignItems: 'center' },
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', position: 'relative', marginBottom: 16 },
+  appName: { color: ACCENT, fontSize: 13, fontWeight: '900', letterSpacing: 4, textAlign: 'center' },
+  closeBtn: { position: 'absolute', right: 0, top: -4, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
   dotsRow: { flexDirection: 'row', gap: 8 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.15)' },
   dotActive: { width: 24, backgroundColor: ACCENT },

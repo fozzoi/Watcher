@@ -17,13 +17,12 @@ interface MediaCarouselProps {
   title: string;
   type?: string; // ✅ FIX 1: Added type to the interface
   data: any[];
-  navigation: any;
   savedIds: Set<number>;
   toggleWatchlist: (item: any) => void;
 }
 
 // ✅ FIX 2: Destructured 'type' from the props
-const MediaCarousel = memo(({ title, type, data, navigation, savedIds, toggleWatchlist }: MediaCarouselProps) => {
+const MediaCarousel = memo(({ title, type, data, savedIds, toggleWatchlist }: MediaCarouselProps) => {
   const router = useRouter();
 
   if (!data || data.length === 0) return null;
@@ -57,9 +56,9 @@ const MediaCarousel = memo(({ title, type, data, navigation, savedIds, toggleWat
             item={item}
             isAdded={savedIds.has(item.id)}
             toggleWatchlist={toggleWatchlist}
-            onPress={async () => {
-              const fullDetails = await getFullDetails(item);
-              router.push(`/movie/${item.id}`);
+            onPress={() => {
+              const mType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+              router.push(`/movie/${item.id}?media_type=${mType}`);
             }}
           />
         )}
@@ -75,3 +74,4 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   sectionTitle: { color: C.white, fontSize: 21, fontWeight: '800', letterSpacing: -0.4 },
 });
+

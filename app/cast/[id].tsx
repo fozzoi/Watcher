@@ -218,13 +218,9 @@ export default function CastDetails() {
     >
       <TouchableOpacity
         activeOpacity={0.95}
-        onPress={async () => {
-          try {
-            const fullData = await getFullDetails(item);
-            router.push(`/movie/${fullData.id}`);
-          } catch (e) {
-            console.error(e);
-          }
+        onPress={() => {
+          const mType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+          router.push(`/movie/${item.id}?media_type=${mType}`);
         }}
       >
         <View>

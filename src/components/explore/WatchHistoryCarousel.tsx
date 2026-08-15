@@ -7,6 +7,7 @@ import {
   Image,
   StyleSheet,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,17 +19,16 @@ import { HORIZONTAL_MARGIN } from './ExploreConstants';
 interface WatchHistoryCarouselProps {
   history: WatchProgress[];
   onRemove: (tmdbId: number) => void;
-  navigation: any;
 }
 
 // ─── Each card is its own component so it owns its BlurTargetView ref ────────
 interface CardProps {
   item: WatchProgress;
   onRemove: (id: number) => void;
-  navigation: any;
 }
 
-const HistoryCard: React.FC<CardProps> = ({ item, onRemove, navigation }) => {
+const HistoryCard: React.FC<CardProps> = ({ item, onRemove }) => {
+  const router = useRouter();
   // SDK 55: BlurView needs a ref to BlurTargetView to know what to blur
   const posterRef = useRef(null);
 
@@ -52,15 +52,9 @@ const HistoryCard: React.FC<CardProps> = ({ item, onRemove, navigation }) => {
       <TouchableOpacity
         activeOpacity={0.95}
         onPress={() =>
-          navigation.navigate('Player', {
-            tmdbId: item.tmdbId,
-            mediaType: item.mediaType,
-            season: item.lastSeason,
-            episode: item.lastEpisode,
-            title: item.title,
-            poster: item.poster,
-            startIndex: 0,
-          })
+          router.push(
+            `/player?id=${item.tmdbId}&media_type=${item.mediaType}&season=${item.lastSeason || 1}&episode=${item.lastEpisode || 1}&title=${encodeURIComponent(item.title || '')}&poster=${encodeURIComponent(item.poster || '')}`
+          )
         }
       >
         <View style={styles.posterContainer}>
@@ -122,9 +116,7 @@ const HistoryCard: React.FC<CardProps> = ({ item, onRemove, navigation }) => {
         activeOpacity={0.95}
         style={styles.body}
         onPress={() =>
-          navigation.navigate('Detail', {
-            movie: { id: item.tmdbId, media_type: item.mediaType },
-          })
+          router.push(`/movie/${item.tmdbId}?media_type=${item.mediaType}`)
         }
       >
         <Text style={styles.title} numberOfLines={1}>
@@ -173,10 +165,9 @@ const HistoryCard: React.FC<CardProps> = ({ item, onRemove, navigation }) => {
 };
 
 // ─── Main carousel ───────────────────────────────────────────────────────────
-const WatchHistoryCarousel: React.FC<WatchHistoryCarouselProps> = ({
+export const WatchHistoryCarousel: React.FC<WatchHistoryCarouselProps> = ({
   history,
   onRemove,
-  navigation,
 }) => {
   if (!history || history.length === 0) return null;
 
@@ -204,7 +195,11 @@ const WatchHistoryCarousel: React.FC<WatchHistoryCarouselProps> = ({
             entering={FadeInDown.delay(index * 60).springify()}
             layout={Layout.springify()}
           >
-            <HistoryCard item={item} onRemove={onRemove} navigation={navigation} />
+            <HistoryCard
+              key={item.tmdbId}
+              item={item}
+              onRemove={onRemove}
+            />
           </Animated.View>
         ))}
       </ScrollView>

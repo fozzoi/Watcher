@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, Switch, Platform, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing'; 
@@ -11,14 +12,17 @@ import { Feather } from '@expo/vector-icons';
 import { setGlobalConfig } from '../src/tmdb';
 import { resetOnboarding } from '../src/userPreferences';
 import Constants from 'expo-constants';
+import { isNotificationsEnabled, setNotificationsEnabled, sendTestNotification } from '../src/notifications';
 
 const Settings = () => {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const tabBarHeight = 60; 
 
   const [isHiRes, setIsHiRes] = useState(false);
   const [isNsfwFilter, setIsNsfwFilter] = useState(true);
   const [isAutoAi, setIsAutoAi] = useState(true);
+  const [isSmartNotifs, setIsSmartNotifs] = useState(true);
   
   const appVersion = Constants.expoConfig?.version || '1.0.0';
 
@@ -31,6 +35,9 @@ const Settings = () => {
       const savedHiRes = await AsyncStorage.getItem('settings_hires');
       const savedNsfw = await AsyncStorage.getItem('settings_nsfw');
       const savedAutoAi = await AsyncStorage.getItem('settings_auto_ai');
+      const notifsEnabled = await isNotificationsEnabled();
+      
+      setIsSmartNotifs(notifsEnabled);
       
       if (savedHiRes !== null) {
         const val = JSON.parse(savedHiRes);
@@ -63,6 +70,20 @@ const Settings = () => {
   const toggleAutoAi = async (value: boolean) => {
     setIsAutoAi(value);
     await AsyncStorage.setItem('settings_auto_ai', JSON.stringify(value));
+  };
+
+  const toggleSmartNotifs = async (value: boolean) => {
+    setIsSmartNotifs(value);
+    await setNotificationsEnabled(value);
+  };
+
+  const handleTestNotif = async () => {
+    try {
+      await sendTestNotification();
+      Alert.alert("Success! 🍿", "Test notification triggered. Check your notification panel.");
+    } catch (e: any) {
+      Alert.alert("Notification Error", e.message || "Failed to trigger notification. Make sure permissions are granted.");
+    }
   };
 
   // EXPORT LOGIC
@@ -251,9 +272,9 @@ const Settings = () => {
           />
           <View style={styles.separator} />
           <ActionRow 
-            title="Reset Content Preferences" 
-            subtitle="Change your languages, genres and actors" 
-            onPress={handleResetPreferences} 
+            title="Change Content Preferences" 
+            subtitle="Update your languages, genres and favorite actors" 
+            onPress={() => router.push('/onboarding')} 
           />
         </View>
 
@@ -265,6 +286,23 @@ const Settings = () => {
             subtitle="Fetch AI recommendations on detail pages" 
             value={isAutoAi} 
             onValueChange={toggleAutoAi} 
+          />
+        </View>
+
+        {/* ── Notifications ── */}
+        <Text style={styles.sectionLabel}>NOTIFICATIONS</Text>
+        <View style={styles.card}>
+          <ToggleRow 
+            title="Smart Release Alerts" 
+            subtitle="Notify for new episodes & movie premiere dates" 
+            value={isSmartNotifs} 
+            onValueChange={toggleSmartNotifs} 
+          />
+          <View style={styles.separator} />
+          <ActionRow 
+            title="Send Test Notification" 
+            subtitle="Verify background notifications on this device" 
+            onPress={handleTestNotif} 
           />
         </View>
 

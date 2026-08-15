@@ -1,5 +1,6 @@
 import React, { memo } from 'react';
 import { View, Text, ScrollView, FlatList, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
 import { getImageUrl, getFullDetails } from '../../tmdb';
 import MovieCard from '../shared/MovieCard';
 import { HORIZONTAL_MARGIN } from '../explore/ExploreConstants';
@@ -9,10 +10,10 @@ interface SearchResultsListProps {
   tmdbResults: any[];
   savedIds: Set<number>;
   toggleWatchlist: (item: any) => void;
-  navigation: any;
 }
 
-const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds, toggleWatchlist, navigation }: SearchResultsListProps) => {
+const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds, toggleWatchlist }: SearchResultsListProps) => {
+  const router = useRouter();
   const collections = (tmdbResults || []).filter(r => r.media_type === 'collection');
   const movies = (tmdbResults || []).filter(r => r.media_type !== 'collection');
 
@@ -35,7 +36,7 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
               snapToAlignment="start"
               contentContainerStyle={{ paddingHorizontal: 4 }}
               renderItem={({ item }) => (
-                <TouchableOpacity activeOpacity={0.95} style={styles.personItem} onPress={() => navigation.navigate('CastDetails', { personId: item.id })}>
+                <TouchableOpacity activeOpacity={0.95} style={styles.personItem} onPress={() => router.push(`/cast/${item.id}`)}>
                   <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.personImage} />
                   <Text style={styles.personName} numberOfLines={1}>{item.name}</Text>
                 </TouchableOpacity>
@@ -60,7 +61,7 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
                 <TouchableOpacity 
                   activeOpacity={0.95} 
                   style={[styles.collectionChip, { marginRight: 12 }]} 
-                  onPress={() => navigation.navigate('CollectionDetails', { collectionId: item.id, collectionName: item.name || item.title })}
+                  onPress={() => router.push(`/collection/${item.id}`)}
                 >
                   <Image source={{ uri: getImageUrl(item.poster_path, 'w92') }} style={styles.collectionChipImage} />
                   <Text style={styles.collectionChipText} numberOfLines={2}>{item.name || item.title}</Text>
@@ -77,9 +78,9 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
               {movies.map((result: any) => (
                 <MovieCard
                   key={result.id} item={result} isSearchMode={true} isAdded={savedIds.has(result.id)} toggleWatchlist={toggleWatchlist}
-                  onPress={async () => { 
-                    const fullDetails = await getFullDetails(result); 
-                    navigation.navigate('Detail', { movie: fullDetails }); 
+                  onPress={() => {
+                    const mType = result.media_type || (result.first_air_date ? 'tv' : 'movie');
+                    router.push(`/movie/${result.id}?media_type=${mType}`);
                   }}
                 />
               ))}

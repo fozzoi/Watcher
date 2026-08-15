@@ -11,6 +11,11 @@ const TAB_BAR_HEIGHT = 68;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const CustomTabBar = ({ state, descriptors, navigation }: any) => {
+    const currentRoute = state.routes[state.index];
+    if (currentRoute?.name === 'aichat') {
+        return null;
+    }
+
     return (
         <View style={localStyles.overlayContainer} pointerEvents="box-none">
             <LinearGradient

@@ -23,11 +23,9 @@ const HeroOverlay = memo(({ item, router, toggleWatchlist, isAdded }: {
   toggleWatchlist: (item: TMDBResult) => void;
   isAdded: boolean;
 }) => {
-  const handlePress = useCallback(async () => {
-    try {
-      const fullDetails = await getFullDetails(item.tmdb);
-      router.push(`/movie/${item.tmdb.id}`);
-    } catch (e) { console.error(e); }
+  const handlePress = useCallback(() => {
+    const mType = item.tmdb.media_type || (item.tmdb.first_air_date ? 'tv' : 'movie');
+    router.push(`/movie/${item.tmdb.id}?media_type=${mType}`);
   }, [item.tmdb, router]);
 
   const title = item.tmdb.title || item.tmdb.name || '';

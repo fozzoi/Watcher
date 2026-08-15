@@ -488,86 +488,6 @@ export const getNostalgicMovies = async (page: number = 1, genreId?: number): Pr
   } catch (error) { return []; }
 };
 
-// ==========================================
-// 5a. PERSONALISED DISCOVERY (Based on user preferences)
-// ==========================================
-
-export const fetchPersonalisedDiscoveryContent = async (
-  languages: string[],
-  genreIds: number[],
-  genreFilterId?: number,
-  forceRefresh = false
-) => {
-  const gId = genreFilterId === 0 ? undefined : genreFilterId;
-  const cacheKey = `PERSONALISED_PAGE_DATA_${languages.join('_')}_${genreIds.join('_')}_${gId || 'ALL'}`;
-
-  if (!forceRefresh) {
-    try {
-      const saved = await AsyncStorage.getItem(cacheKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Refresh in background
-        fetchFreshPersonalisedContent(languages, genreIds, gId, cacheKey);
-        return parsed;
-      }
-    } catch {}
-  }
-
-  return fetchFreshPersonalisedContent(languages, genreIds, gId, cacheKey);
-};
-
-const fetchFreshPersonalisedContent = async (
-  languages: string[],
-  genreIds: number[],
-  gId: number | undefined,
-  cacheKey: string,
-) => {
-  try {
-    const preferredGenres = gId ?? (genreIds.length > 0 ? genreIds[0] : undefined);
-
-    // Always-shown rows
-    const base = await Promise.all([
-      getTrendingMovies(1, gId),
-      getTrendingTV(1, gId),
-      getUpcomingMovies(1),
-      getHiddenGems(1, gId),
-      getTopRated(1, gId),
-    ]);
-
-    // Per-language rows (up to 6 languages to avoid over-fetching)
-    const langSlice = languages.slice(0, 6);
-    const langResults = await Promise.all(
-      langSlice.flatMap(lang => [
-        getLanguageMovies(lang, 1, gId),
-        getLanguageTV(lang, 1, gId),
-      ])
-    );
-
-    // Build per-language data map
-    const langData: Record<string, { movies: any[]; tv: any[] }> = {};
-    langSlice.forEach((lang, i) => {
-      langData[lang] = {
-        movies: langResults[i * 2] ?? [],
-        tv: langResults[i * 2 + 1] ?? [],
-      };
-    });
-
-    const result = {
-      trendingMovies: base[0],
-      trendingTV: base[1],
-      upcoming: base[2],
-      hiddenGems: base[3],
-      topRated: base[4],
-      langData,
-    };
-
-    AsyncStorage.setItem(cacheKey, JSON.stringify(result)).catch(() => {});
-    return result;
-  } catch (error) {
-    console.error('Error fetching personalised content:', error);
-    return null;
-  }
-};
 
 // ─── "Because you watched X" ─────────────────────────────────────────────────
 
@@ -654,11 +574,21 @@ const fetchFreshDiscoveryContent = async (gId: number | undefined, cacheKey: str
 
 export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
   try {
+    let resolvedMediaType = item.media_type || (item.first_air_date ? "tv" : "movie");
     const append = "credits,release_dates,content_ratings,external_ids,videos";
-    const data = await fetchWithCache(`/${item.media_type}/${item.id}`, { append_to_response: append });
+    
+    let data: any;
+    try {
+      data = await fetchWithCache(`/${resolvedMediaType}/${item.id}`, { append_to_response: append });
+    } catch (err) {
+      // If fetching with the assumed media type fails, try the opposite
+      const fallbackType = resolvedMediaType === "tv" ? "movie" : "tv";
+      data = await fetchWithCache(`/${fallbackType}/${item.id}`, { append_to_response: append });
+      resolvedMediaType = fallbackType;
+    }
 
     let certification = null;
-    if (item.media_type === "movie") {
+    if (resolvedMediaType === "movie") {
       const usRelease = data.release_dates?.results?.find((r: any) => r.iso_3166_1 === "US");
       certification = usRelease?.release_dates?.[0]?.certification || null;
     } else {
@@ -694,13 +624,14 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
     }
 
     let seasonsData = [];
-    if (item.media_type === "tv") {
+    if (resolvedMediaType === "tv") {
       seasonsData = data.seasons || []; 
     }
 
     return {
       ...item,
       ...formatBasicItemData(data), 
+      media_type: resolvedMediaType,
       certification,
       cast,
       director,
@@ -866,28 +797,155 @@ export const searchGenres = async (query: string): Promise<{ id: number; name: s
   } catch (error) { return []; }
 };
 
+export const fetchPersonalisedDiscoveryContent = async (
+  languages: string[] = ['en'],
+  genreIds: number[] = [],
+  genreFilterId: number = 0,
+  forceRefresh = false,
+  favoriteActors: any[] = []
+) => {
+  const gId = genreFilterId === 0 ? undefined : genreFilterId;
+  const actorsKey = (favoriteActors || []).map((a: any) => a.id).join('_');
+  const cacheKey = `PERSONALISED_PAGE_DATA_${languages.join('_')}_${genreIds.join('_')}_${actorsKey}_${gId || 'ALL'}`;
+
+  if (!forceRefresh) {
+    try {
+      const saved = await AsyncStorage.getItem(cacheKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        fetchFreshPersonalisedContent(languages, genreIds, favoriteActors, gId, cacheKey);
+        return parsed;
+      }
+    } catch {}
+  }
+
+  return fetchFreshPersonalisedContent(languages, genreIds, favoriteActors, gId, cacheKey);
+};
+
+const fetchFreshPersonalisedContent = async (
+  languages: string[],
+  genreIds: number[],
+  favoriteActors: any[],
+  gId: number | undefined,
+  cacheKey: string,
+) => {
+  try {
+    const langSlice = (languages && languages.length > 0) ? languages.slice(0, 15) : ['en'];
+    const langResults = await Promise.all(
+      langSlice.flatMap(lang => [
+        getLanguageMovies(lang, 1, gId),
+        getLanguageTV(lang, 1, gId),
+      ])
+    );
+
+    const langData: Record<string, { movies: any[]; tv: any[] }> = {};
+    langSlice.forEach((lang, i) => {
+      const movies = langResults[i * 2] ?? [];
+      const tv = langResults[i * 2 + 1] ?? [];
+      if (movies.length > 0 || tv.length > 0) {
+        langData[lang] = { movies, tv };
+      }
+    });
+
+    const actorSlice = (favoriteActors || []).slice(0, 4);
+    const actorResults = await Promise.all(
+      actorSlice.map(async (actor: any) => {
+        try {
+          const credits = await getPersonCombinedCredits(actor.id);
+          const topItems = (credits.cast || [])
+            .filter((item: any) => item.poster_path && (item.vote_count || 0) > 10)
+            .sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0))
+            .slice(0, 15);
+          return {
+            actorId: actor.id,
+            actorName: actor.name,
+            profilePath: actor.profile_path,
+            items: topItems,
+          };
+        } catch {
+          return null;
+        }
+      })
+    );
+    const actorData = actorResults.filter(Boolean);
+
+    const genreSlice = (genreIds || []).slice(0, 3);
+    const genreResults = await Promise.all(
+      genreSlice.map(async (genreId: number) => {
+        try {
+          const movies = await getMoviesByGenre(genreId, 1);
+          return {
+            genreId,
+            items: movies.slice(0, 15),
+          };
+        } catch {
+          return null;
+        }
+      })
+    );
+    const genreData = genreResults.filter(Boolean);
+
+    const base = await Promise.all([
+      getTrendingMovies(1, gId),
+      getTrendingTV(1, gId),
+      getUpcomingMovies(1),
+      getHiddenGems(1, gId),
+      getTopRated(1, gId),
+    ]);
+
+    let personalizedTrending = [...base[0]];
+    if (langSlice.length > 0) {
+      const topLangMovies = langSlice.flatMap(l => (langData[l]?.movies || []).slice(0, 3));
+      if (topLangMovies.length > 0) {
+        const seen = new Set<number>();
+        const merged: any[] = [];
+        for (const m of [...topLangMovies, ...base[0]]) {
+          if (m && m.id && !seen.has(m.id)) {
+            seen.add(m.id);
+            merged.push(m);
+          }
+        }
+        personalizedTrending = merged;
+      }
+    }
+
+    const result = {
+      trendingMovies: personalizedTrending,
+      trendingTV: base[1],
+      upcoming: base[2],
+      hiddenGems: base[3],
+      topRated: base[4],
+      langData,
+      actorData,
+      genreData,
+    };
+
+    AsyncStorage.setItem(cacheKey, JSON.stringify(result)).catch(() => {});
+    return result;
+  } catch (error) {
+    console.error('Error fetching personalised content:', error);
+    return null;
+  }
+};
+
 export const fetchMoreContentByType = async (type: string, page: number = 1): Promise<TMDBResult[]> => {
   if (type.startsWith('genre/')) { return await getMoviesByGenre(parseInt(type.split('/')[1]), page); }
   if (type.startsWith('similar/')) { const [mediaType, id] = type.split('/').slice(1); return await getSimilarMedia(parseInt(id), mediaType as "movie" | "tv", page); }
+  if (type.startsWith('lang-movies-')) { return await getLanguageMovies(type.replace('lang-movies-', ''), page); }
+  if (type.startsWith('lang-tv-')) { return await getLanguageTV(type.replace('lang-tv-', ''), page); }
+  if (type.startsWith('actor-')) {
+    const actorId = parseInt(type.replace('actor-', ''));
+    try {
+      const credits = await getPersonCombinedCredits(actorId);
+      return (credits.cast || []).filter((item: any) => item.poster_path);
+    } catch { return []; }
+  }
 
   switch (type.toLowerCase()) {
     case 'trendingmovies': return await getTrendingMovies(page);
     case 'trendingtv': return await getTrendingTV(page);
     case 'toprated': return await getTopRated(page);
     case 'regional': return await getRegionalMovies('IN', page);
-    case 'hindimovies': return await getLanguageMovies('hi', page);
-    case 'malayalammovies': return await getLanguageMovies('ml', page);
-    case 'tamilmovies': return await getLanguageMovies('ta', page);
-    case 'koreanmovies': return await getLanguageMovies('ko', page);
-    case 'japanesemovies': return await getLanguageMovies('ja', page);
-    case 'chinesemovies': return await getLanguageMovies('zh', page);
-    case 'hinditv': return await getLanguageTV('hi', page);
-    case 'malayalamtv': return await getLanguageTV('ml', page);
-    case 'koreantv': return await getLanguageTV('ko', page);
-    case 'japanesetv': return await getLanguageTV('ja', page);
-    case 'animemovies': return await getAnimeContent(page, true);
-    case 'animeshows': return await getAnimeContent(page, false);
-    case 'animatedmovies': return await getAnimatedMovies(page);
     case 'upcoming': return await getUpcomingMovies(page);
     case 'hiddengems': return await getHiddenGems(page);
     case 'nostalgia': return await getNostalgicMovies(page);
@@ -967,5 +1025,108 @@ export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie'
   } catch (error: any) {
     console.error("AI Proxy Error:", error.message);
     return [];
+  }
+};
+
+export const fetchChatGemini = async (
+  message: string,
+  history: any[] = [],
+  userMemory: string = '',
+  watchedTitles: string[] = [],
+  watchlistTitles: string[] = [],
+  watchlistCollections: string[] = [],
+  userPreferences: any = null
+): Promise<any> => {
+  try {
+    const response = await axios.post('https://watcher-api-rho.vercel.app/api/gemini', {
+      action: 'chat',
+      message,
+      history,
+      userMemory,
+      watchedTitles,
+      watchlistTitles,
+      watchlistCollections,
+      userPreferences,
+      customApiKey: GLOBAL_CONFIG.customApiKey,
+    });
+
+    let reply = response.data?.reply || { kind: 'text', text: "I'm not sure how to answer that." };
+
+    if (typeof reply === 'string') {
+      try { reply = JSON.parse(reply); } catch {}
+    }
+
+    if (reply?.kind === 'text' && typeof reply.text === 'string' && reply.text.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(reply.text.trim());
+        if (parsed && typeof parsed === 'object' && parsed.kind) {
+          reply = parsed;
+        }
+      } catch {
+        const match = reply.text.match(/\{[\s\S]*\}/);
+        if (match) {
+          try {
+            const parsed = JSON.parse(match[0]);
+            if (parsed && typeof parsed === 'object' && parsed.kind) {
+              reply = parsed;
+            }
+          } catch {}
+        }
+      }
+    }
+
+    if (reply.kind === 'movies' && Array.isArray(reply.titles) && reply.titles.length > 0) {
+      const moviePromises = reply.titles.map(async (t: string) => {
+        try {
+          const results = await searchTMDB(t);
+          return results.find((m) => m.poster_path) || results[0] || null;
+        } catch {
+          return null;
+        }
+      });
+      const resolvedMovies = await Promise.all(moviePromises);
+      reply.movies = resolvedMovies.filter(Boolean);
+    }
+
+    if (reply.kind === 'actors' && Array.isArray(reply.names) && reply.names.length > 0) {
+      const actorPromises = reply.names.map(async (n: string) => {
+        try {
+          const results = await searchPeople(n, 1);
+          return results[0] || null;
+        } catch {
+          return null;
+        }
+      });
+      const resolvedActors = await Promise.all(actorPromises);
+      reply.actors = resolvedActors.filter(Boolean);
+    }
+
+    if (reply.kind === 'movie_detail' && reply.title) {
+      try {
+        const results = await searchTMDB(reply.title);
+        reply.movie = results.find((m) => m.poster_path) || results[0] || null;
+      } catch {
+        reply.movie = null;
+      }
+    }
+
+    return reply;
+  } catch (error: any) {
+    console.error('fetchChatGemini error:', error.message);
+    throw error;
+  }
+};
+
+export const updateUserMemoryWithAi = async (existingMemory: string, userMessage: string): Promise<string> => {
+  try {
+    const response = await axios.post('https://watcher-api-rho.vercel.app/api/gemini', {
+      action: 'update_memory',
+      existingMemory,
+      userMessage,
+      customApiKey: GLOBAL_CONFIG.customApiKey,
+    });
+    return response.data?.memory || existingMemory;
+  } catch (e) {
+    return existingMemory;
   }
 };

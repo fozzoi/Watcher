@@ -540,11 +540,11 @@ const ListDetails = ({ route }) => {
         <Text style={styles.sectionTitle}>Similar Movies</Text>
         {similarMovies.length > 0 && (
           <TouchableOpacity activeOpacity={0.95} onPress={() => router.push({
-            pathname: '/details/list',
+            pathname: '/similarmovies',
             params: { 
-              movies: JSON.stringify(similarMovies),
-              contentType: 'similar',
-              title: `Similar to ${selectedMovie?.title || selectedMovie?.name}`
+              id: selectedMovie?.id,
+              type: selectedMovie?.media_type || 'movie',
+              name: selectedMovie?.title || selectedMovie?.name
             }
           })}>
             <Text style={styles.viewAll}>View All</Text>

@@ -59,7 +59,7 @@ export const resetOnboarding = async (): Promise<void> => {
 // ── Metadata ─────────────────────────────────────────────────────────────────
 
 export const LANGUAGE_OPTIONS = [
-  { code: 'en', label: 'English', flag: '🇺🇸', industry: 'Hollywood' },
+  { code: 'en', label: 'Hollywood', flag: '🇺🇸', industry: 'English Cinema' },
   { code: 'hi', label: 'Hindi', flag: '🇮🇳', industry: 'Bollywood' },
   { code: 'ta', label: 'Tamil', flag: '🇮🇳', industry: 'Kollywood' },
   { code: 'te', label: 'Telugu', flag: '🇮🇳', industry: 'Tollywood' },
