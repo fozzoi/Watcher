@@ -25,7 +25,7 @@ jobs:
       - name: Build APK
         env:
           EAS_LOCAL_BUILD_SKIP_CLEANUP: 1
-          GRADLE_OPTS: "-Xmx3072m -XX:MaxMetaspaceSize=1024m"
+          _JAVA_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=2048m"
         run: eas build --platform android --profile production --local --non-interactive
       - name: Upload APK
         uses: actions/upload-artifact@v4
