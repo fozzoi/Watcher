@@ -893,12 +893,23 @@ const fetchFreshPersonalisedContent = async (
       getTopRated(1, gId),
     ]);
 
-    const currentYear = new Date().getFullYear();
-    const freshTrending = base[0].filter((m: any) => {
-      const year = parseInt((m.release_date || '').substring(0, 4), 10);
-      return !isNaN(year) && year >= (currentYear - 2);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const twoYearsAgoStr = `${new Date().getFullYear() - 2}-01-01`;
+
+    // Filter strictly for currently released movies (no upcoming, unreleased, or future dates)
+    const releasedTrending = base[0].filter((m: any) => {
+      const relDate = m.release_date || '';
+      return (
+        relDate &&
+        relDate <= todayStr &&
+        relDate >= twoYearsAgoStr &&
+        m.poster_path &&
+        (m.vote_count || 0) >= 20
+      );
     });
-    const heroMovies = freshTrending.length >= 4 ? freshTrending.slice(0, 6) : base[0].slice(0, 6);
+    const heroMovies = releasedTrending.length >= 5 
+      ? releasedTrending.slice(0, 10) 
+      : base[0].filter((m: any) => m.release_date && m.release_date <= todayStr).slice(0, 10);
 
     let personalizedTrending = [...base[0]];
     if (langSlice.length > 0) {

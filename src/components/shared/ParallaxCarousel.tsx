@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { View, StyleSheet, Dimensions } from "react-native";
 import Animated, {
   useSharedValue,
@@ -20,6 +20,10 @@ export interface ParallaxCarouselItem {
   image: ImageSourcePropType;
 }
 
+export interface ParallaxCarouselHandle {
+  scrollToIndex: (index: number) => void;
+}
+
 export type ParallaxCarouselProps<ItemT extends ParallaxCarouselItem> = {
   data: readonly ItemT[];
   renderItem: (info: { item: ItemT; index: number }) => ReactNode;
@@ -30,7 +34,7 @@ export type ParallaxCarouselProps<ItemT extends ParallaxCarouselItem> = {
   parallaxIntensity?: number;
   pagingEnabled?: boolean;
   showHorizontalScrollIndicator?: boolean;
-  onMomentumScrollEnd?: (e: any) => void; // ← added for dot tracking
+  onMomentumScrollEnd?: (e: any) => void;
   autoplay?: boolean;
   autoplayInterval?: number;
   loop?: boolean;
@@ -109,21 +113,24 @@ const ParallaxCarouselItemComponent = <ItemT extends ParallaxCarouselItem>({
 
 // ── Carousel ──────────────────────────────────────────────────────────────────
 
-export const ParallaxCarousel = <ItemT extends ParallaxCarouselItem>({
-  data,
-  renderItem,
-  keyExtractor,
-  itemWidth = width,
-  itemHeight = height * 0.75,
-  spacing = 20,
-  parallaxIntensity = 0.25,
-  pagingEnabled = true,
-  showHorizontalScrollIndicator = false,
-  onMomentumScrollEnd,
-  autoplay = false,
-  autoplayInterval = 4000,
-  loop = true,
-}: ParallaxCarouselProps<ItemT>) => {
+function ParallaxCarouselInner<ItemT extends ParallaxCarouselItem>(
+  {
+    data,
+    renderItem,
+    keyExtractor,
+    itemWidth = width,
+    itemHeight = height * 0.75,
+    spacing = 20,
+    parallaxIntensity = 0.25,
+    pagingEnabled = true,
+    showHorizontalScrollIndicator = false,
+    onMomentumScrollEnd,
+    autoplay = false,
+    autoplayInterval = 4000,
+    loop = true,
+  }: ParallaxCarouselProps<ItemT>,
+  ref: React.Ref<ParallaxCarouselHandle>
+) {
   const scrollX = useSharedValue(0);
   const flatListRef = useRef<any>(null);
   const currentIndexRef = useRef(0);
@@ -138,19 +145,18 @@ export const ParallaxCarousel = <ItemT extends ParallaxCarouselItem>({
       scrollX.value = event.contentOffset.x;
     },
     onEndDrag: () => {
-      // Haptic feedback on swipe
       runOnJS(onSwipeHaptic)();
     },
   });
 
-  const stopAutoplay = () => {
+  const stopAutoplay = useCallback(() => {
     if (autoplayTimer.current) {
       clearInterval(autoplayTimer.current);
       autoplayTimer.current = null;
     }
-  };
+  }, []);
 
-  const startAutoplay = () => {
+  const startAutoplay = useCallback(() => {
     stopAutoplay();
     if (!autoplay || !data || data.length < 2) return;
     autoplayTimer.current = setInterval(() => {
@@ -160,7 +166,16 @@ export const ParallaxCarousel = <ItemT extends ParallaxCarouselItem>({
       flatListRef.current?.scrollToOffset({ offset: next * itemWidth, animated: true });
       currentIndexRef.current = next;
     }, autoplayInterval);
-  };
+  }, [autoplay, autoplayInterval, data, itemWidth, loop, stopAutoplay]);
+
+  useImperativeHandle(ref, () => ({
+    scrollToIndex: (index: number) => {
+      stopAutoplay();
+      flatListRef.current?.scrollToOffset({ offset: index * itemWidth, animated: true });
+      currentIndexRef.current = index;
+      setTimeout(() => startAutoplay(), autoplayInterval);
+    }
+  }), [autoplayInterval, itemWidth, startAutoplay, stopAutoplay]);
 
   const defaultKeyExtractor = (item: ItemT, index: number) =>
     keyExtractor ? keyExtractor(item, index) : `item-${index}`;
@@ -215,7 +230,11 @@ export const ParallaxCarousel = <ItemT extends ParallaxCarouselItem>({
       />
     </View>
   );
-};
+}
+
+export const ParallaxCarousel = forwardRef(ParallaxCarouselInner) as <ItemT extends ParallaxCarouselItem>(
+  props: ParallaxCarouselProps<ItemT> & { ref?: React.Ref<ParallaxCarouselHandle> }
+) => React.ReactElement;
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 

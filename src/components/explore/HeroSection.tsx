@@ -62,25 +62,60 @@ const HeroOverlay = memo(({ item, router, toggleWatchlist, isAdded }: {
   );
 });
 
-// ── Dots ──────────────────────────────────────────────────────────────────────
-const Dot = memo(({ isActive }: { isActive: boolean }) => {
-  const rStyle = useAnimatedStyle(() => {
+// ── Reinvented Luminous Capsule Indicator ────────────────────────────────────
+const CapsuleIndicator = memo(({
+  count,
+  active,
+  onSelect,
+}: {
+  count: number;
+  active: number;
+  onSelect: (index: number) => void;
+}) => {
+  return (
+    <View style={styles.indicatorContainer}>
+      <View style={styles.glassTrack}>
+        {Array.from({ length: count }).map((_, i) => (
+          <IndicatorSegment
+            key={i}
+            index={i}
+            isActive={i === active}
+            onPress={() => onSelect(i)}
+          />
+        ))}
+      </View>
+    </View>
+  );
+});
+
+const IndicatorSegment = memo(({
+  index,
+  isActive,
+  onPress,
+}: {
+  index: number;
+  isActive: boolean;
+  onPress: () => void;
+}) => {
+  const animatedStyle = useAnimatedStyle(() => {
     return {
-      width: withSpring(isActive ? 22 : 6, { damping: 15, stiffness: 150 }),
-      backgroundColor: isActive ? '#E50914' : 'rgba(255,255,255,0.2)',
+      width: withSpring(isActive ? 24 : 6, { damping: 16, stiffness: 180 }),
+      backgroundColor: isActive ? '#E50914' : 'rgba(255,255,255,0.25)',
+      opacity: withSpring(isActive ? 1 : 0.6, { damping: 16 }),
     };
   }, [isActive]);
 
-  return <Animated.View style={[styles.dot, rStyle]} />;
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
+      hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
+      style={styles.segmentTouchable}
+    >
+      <Animated.View style={[styles.segmentPill, animatedStyle]} />
+    </TouchableOpacity>
+  );
 });
-
-const Dots = memo(({ count, active }: { count: number; active: number }) => (
-  <View style={styles.dotsRow}>
-    {Array.from({ length: count }).map((_, i) => (
-      <Dot key={i} isActive={i === active} />
-    ))}
-  </View>
-));
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 const HeroSection = memo(({ items, toggleWatchlist, savedIds }: {
@@ -90,20 +125,27 @@ const HeroSection = memo(({ items, toggleWatchlist, savedIds }: {
 }) => {
   const [activeIndex, setActiveIndex] = useState(0);
   const router = useRouter();
+  const carouselRef = React.useRef<any>(null);
 
   if (!items || items.length === 0) return null;
 
   const CARD_WIDTH = width - HORIZONTAL_MARGIN * 2;
-  const sliced = items.slice(0, 5);
+  const sliced = items.slice(0, 10);
 
   const carouselData: HeroCarouselItem[] = sliced.map(tmdb => ({
     image: { uri: getImageUrl(tmdb.poster_path, 'w780') },
     tmdb,
   }));
 
+  const handleSelectSlide = useCallback((index: number) => {
+    setActiveIndex(index);
+    carouselRef.current?.scrollToIndex(index);
+  }, []);
+
   return (
     <View style={[styles.wrapper, { marginHorizontal: HORIZONTAL_MARGIN }]}>
       <ParallaxCarousel
+        ref={carouselRef}
         data={carouselData}
         keyExtractor={(item, i) => `hero-${(item as HeroCarouselItem).tmdb?.id ?? i}`}
         itemWidth={CARD_WIDTH}
@@ -112,7 +154,7 @@ const HeroSection = memo(({ items, toggleWatchlist, savedIds }: {
         parallaxIntensity={0.15}
         pagingEnabled
         autoplay
-        autoplayInterval={5000}
+        autoplayInterval={5500}
         loop
         onMomentumScrollEnd={(e: any) => {
           const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
@@ -127,7 +169,7 @@ const HeroSection = memo(({ items, toggleWatchlist, savedIds }: {
           />
         )}
       />
-      <Dots count={sliced.length} active={activeIndex} />
+      <CapsuleIndicator count={sliced.length} active={activeIndex} onSelect={handleSelectSlide} />
     </View>
   );
 });
@@ -139,6 +181,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderRadius: 20,
     overflow: 'hidden',
+    position: 'relative',
   },
   addBtn: {
     position: 'absolute',
@@ -151,10 +194,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: '50%',
+    height: '55%',
     justifyContent: 'flex-end',
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 32,
     gap: 8,
     borderRadius: 19.5,
   },
@@ -188,23 +231,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'GoogleSansFlex-Regular',
   },
-  dotsRow: {
+  indicatorContainer: {
+    position: 'absolute',
+    bottom: 10,
+    alignSelf: 'center',
+    zIndex: 20,
+  },
+  glassTrack: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 14,
-    gap: 6,
+    backgroundColor: 'rgba(12, 12, 18, 0.65)',
+    paddingHorizontal: 8,
+    paddingVertical: 4.5,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    gap: 4,
   },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+  segmentTouchable: {
+    paddingVertical: 2,
   },
-  dotActive: {
-    width: 22,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#E50914',
+  segmentPill: {
+    height: 4,
+    borderRadius: 2.5,
+    shadowColor: '#E50914',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 5,
+    elevation: 3,
   },
 });

@@ -350,9 +350,9 @@ const ExplorePage = () => {
                 })}
 
                 <MediaCarousel title="Trending Movies" type="trendingmovies" data={allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                <MediaCarousel title="Coming Soon" type="upcoming" data={allContent.upcoming} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="Trending TV Shows" type="trendingtv" data={allContent.trendingTV} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="Top Rated Movies" type="toprated" data={allContent.topRated} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Coming Soon" type="upcoming" data={allContent.upcoming} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="Hidden Gems" type="hiddengems" data={allContent.hiddenGems} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
 
                 {/* Preferred Language Carousels */}
