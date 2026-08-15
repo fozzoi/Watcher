@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
-import { View, StyleSheet, Dimensions } from "react-native";
+import { View, StyleSheet, Dimensions, Platform } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedScrollHandler,
@@ -203,11 +203,11 @@ function ParallaxCarouselInner<ItemT extends ParallaxCarouselItem>(
         data={data}
         keyExtractor={defaultKeyExtractor}
         horizontal
-        pagingEnabled={pagingEnabled}
-        decelerationRate="fast"
+        pagingEnabled={Platform.OS === 'ios' && pagingEnabled}
+        decelerationRate={Platform.OS === 'ios' ? 'fast' : 0.96}
         snapToInterval={itemWidth}
         snapToAlignment="center"
-        disableIntervalMomentum={true}
+        disableIntervalMomentum={false}
         showsHorizontalScrollIndicator={showHorizontalScrollIndicator}
         onScroll={onScroll}
         onScrollBeginDrag={() => stopAutoplay()}

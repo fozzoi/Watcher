@@ -154,7 +154,7 @@ const HeroSection = memo(({ items, toggleWatchlist, savedIds }: {
         parallaxIntensity={0.15}
         pagingEnabled
         autoplay
-        autoplayInterval={5500}
+        autoplayInterval={3500}
         loop
         onMomentumScrollEnd={(e: any) => {
           const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
