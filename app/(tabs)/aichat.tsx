@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   Image, ActivityIndicator, StyleSheet, StatusBar, Keyboard,
   KeyboardAvoidingView, Platform, Dimensions, Modal, Pressable,
+  PanResponder,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
