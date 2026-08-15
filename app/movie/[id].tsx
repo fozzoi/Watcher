@@ -14,6 +14,8 @@ import {
   Alert,
   useWindowDimensions,
   Linking,
+  TextInput,
+  Keyboard,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -37,6 +39,8 @@ import { getProgress } from '../../src/utils/progress';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import FormattedMarkdownText from '../../src/components/aichat/FormattedMarkdownText';
+import { LANGUAGE_OPTIONS } from '../../src/userPreferences';
 
 
 
@@ -270,9 +274,14 @@ const DetailPage = () => {
   const [lensInsight, setLensInsight] = useState<any>(null);
   const [lensLoading, setLensLoading] = useState(false);
   const [lensError, setLensError] = useState<string | null>(null);
-  const [aiTab, setAiTab] = useState<'lens' | 'vibe'>('lens');
+  const [aiTab, setAiTab] = useState<'lens' | 'chat' | 'vibe'>('lens');
   const [directors, setDirectors] = useState<any[]>([]);
   const [collectionData, setCollectionData] = useState<any>(null);
+
+  // Movie Chat State
+  const [movieChatMessages, setMovieChatMessages] = useState<{ id: string; role: 'user' | 'assistant'; text: string }[]>([]);
+  const [movieChatInput, setMovieChatInput] = useState('');
+  const [movieChatLoading, setMovieChatLoading] = useState(false);
 
   // Trailer states
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
@@ -324,6 +333,54 @@ const DetailPage = () => {
       setLensError(e.message || 'Failed to fetch Lens insight.');
     } finally {
       setLensLoading(false);
+    }
+  };
+
+  const sendMovieChatMessage = async (customText?: string) => {
+    const text = (customText || movieChatInput).trim();
+    if (!text || movieChatLoading || !movie) return;
+
+    Keyboard.dismiss();
+    setMovieChatInput('');
+    const userMsg = { id: Date.now().toString(), role: 'user' as const, text };
+    const newHistory = [...movieChatMessages, userMsg];
+    setMovieChatMessages(newHistory);
+    setMovieChatLoading(true);
+
+    try {
+      const origLangInfo = LANGUAGE_OPTIONS.find(l => l.code === movie.original_language);
+      const origLangLabel = origLangInfo ? origLangInfo.label : (movie.spoken_languages?.[0]?.english_name || movie.original_language || '');
+      const countryLabel = movie.production_countries?.[0]?.name || (movie.origin_country?.length > 0 ? movie.origin_country[0] : '');
+
+      const response = await fetch('https://watcher-api-rho.vercel.app/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'movie_chat',
+          message: text,
+          movieContext: {
+            title: movie.title || movie.name,
+            year: releaseYear,
+            mediaType: movie.media_type,
+            originalLanguage: origLangLabel,
+            country: countryLabel,
+            directors: directors.map(d => d.name).join(', '),
+            cast: (movie.cast || []).slice(0, 6).map((c: any) => c.name).join(', '),
+            genres: genres.map(g => g.name).join(', '),
+            rating: movie.vote_average ? movie.vote_average.toFixed(1) : undefined,
+            certification: movie.certification,
+            overview: movie.overview,
+          },
+          history: newHistory.slice(-8),
+        }),
+      });
+      const data = await response.json();
+      const botText = data?.result?.text || data?.result || "Couldn't retrieve answer, please try again.";
+      setMovieChatMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', text: botText }]);
+    } catch (e: any) {
+      setMovieChatMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', text: "Error connecting to AI. Please try again." }]);
+    } finally {
+      setMovieChatLoading(false);
     }
   };
 
@@ -727,6 +784,27 @@ const DetailPage = () => {
               <Text style={styles.metaText}>{movie.number_of_seasons} Seasons</Text>
             </>
           ) : null}
+          {(() => {
+            const origLangInfo = LANGUAGE_OPTIONS.find(l => l.code === movie.original_language);
+            const origLangName = origLangInfo ? origLangInfo.label : (movie.spoken_languages?.[0]?.english_name || (movie.original_language ? movie.original_language.toUpperCase() : null));
+            const countryName = movie.production_countries?.[0]?.name || (movie.origin_country && movie.origin_country.length > 0 ? movie.origin_country[0] : null);
+            return (
+              <>
+                {origLangName ? (
+                  <>
+                    <Text style={styles.metaDot}>·</Text>
+                    <Text style={styles.metaText}>{origLangName}</Text>
+                  </>
+                ) : null}
+                {countryName ? (
+                  <>
+                    <Text style={styles.metaDot}>·</Text>
+                    <Text style={styles.metaText}>{countryName}</Text>
+                  </>
+                ) : null}
+              </>
+            );
+          })()}
         </View>
 
         {genres.length > 0 && (
@@ -834,6 +912,9 @@ const DetailPage = () => {
               <TouchableOpacity activeOpacity={0.95} style={[styles.aiTab, aiTab === 'lens' && styles.aiTabActive]} onPress={() => { setAiTab('lens'); if (!lensInsight && !lensLoading) fetchLensInsight(); }}>
                 <Text style={[styles.aiTabText, aiTab === 'lens' && styles.aiTabTextActive]}>Lens</Text>
               </TouchableOpacity>
+              <TouchableOpacity activeOpacity={0.95} style={[styles.aiTab, aiTab === 'chat' && styles.aiTabActive]} onPress={() => setAiTab('chat')}>
+                <Text style={[styles.aiTabText, aiTab === 'chat' && styles.aiTabTextActive]}>Chat</Text>
+              </TouchableOpacity>
               <TouchableOpacity activeOpacity={0.95} style={[styles.aiTab, aiTab === 'vibe' && styles.aiTabActive]} onPress={() => setAiTab('vibe')}>
                 <Text style={[styles.aiTabText, aiTab === 'vibe' && styles.aiTabTextActive]}>Vibe</Text>
               </TouchableOpacity>
@@ -868,8 +949,7 @@ const DetailPage = () => {
                   </Text>
                   {[
                     { label: 'Vibe', value: lensInsight.vibe, delay: 160 },
-                    { label: "What it's really about", value: lensInsight.whatItsActuallyAbout, delay: 240 },
-                    { label: "What you'll see", value: lensInsight.whatYoullSee, delay: 320 },
+                    { label: 'Story & Premise', value: lensInsight.whatItsActuallyAbout, delay: 240 },
                   ].map((row) => row.value ? (
                       <View key={row.label} style={styles.aiField}>
                         <Text style={styles.aiFieldLabel}>{row.label}</Text>
@@ -877,10 +957,10 @@ const DetailPage = () => {
                       </View>
                     ) : null,
                   )}
-                  {lensInsight.spoilerOverview ? (
-                    <View style={styles.aiSpoiler}>
-                      <Text style={styles.aiSpoilerLabel}>⚠ Spoilers</Text>
-                      <Text style={styles.aiFieldValue}>{lensInsight.spoilerOverview}</Text>
+                  {(lensInsight.certificationWarning || lensInsight.whatYoullSee) ? (
+                    <View style={styles.aiAdvisory}>
+                      <Text style={styles.aiAdvisoryLabel}>⚠ Content Advisory & Certification</Text>
+                      <Text style={styles.aiFieldValue}>{lensInsight.certificationWarning || lensInsight.whatYoullSee}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -890,6 +970,87 @@ const DetailPage = () => {
                   <Text style={styles.aiGenerateText}>Generate Lens insight</Text>
                 </TouchableOpacity>
               )}
+            </View>
+          ) : aiTab === 'chat' ? (
+            <View style={styles.movieChatContainer}>
+              {movieChatMessages.length === 0 ? (
+                <View style={styles.movieChatEmpty}>
+                  <MaterialCommunityIcons name="robot-happy-outline" size={26} color={C.ai} />
+                  <Text style={styles.movieChatGreeting}>
+                    Ask anything about <Text style={{ color: C.white, fontWeight: '700' }}>{movie.title || movie.name}</Text>
+                  </Text>
+                  <Text style={styles.movieChatSub}>
+                    Plot questions, director analysis, character motives, themes, and behind-the-scenes trivia.
+                  </Text>
+                  <View style={styles.movieChatChipsRow}>
+                    {[
+                      '💡 What are the core themes?',
+                      '🎬 Director vision & style',
+                      '🎭 Cast performance highlights',
+                      '❓ Age rating & suitability',
+                    ].map((chip) => (
+                      <TouchableOpacity
+                        key={chip}
+                        activeOpacity={0.8}
+                        style={styles.movieChatChip}
+                        onPress={() => sendMovieChatMessage(chip.replace(/^[^\s]+\s/, ''))}
+                      >
+                        <Text style={styles.movieChatChipText}>{chip}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.movieChatThread}>
+                  {movieChatMessages.map((msg) => (
+                    <View
+                      key={msg.id}
+                      style={[
+                        styles.movieChatBubble,
+                        msg.role === 'user' ? styles.movieChatBubbleUser : styles.movieChatBubbleBot,
+                      ]}
+                    >
+                      {msg.role === 'assistant' ? (
+                        <FormattedMarkdownText
+                          text={msg.text}
+                          baseColor="#E0E0E0"
+                          boldColor="#FFFFFF"
+                          style={styles.movieChatText}
+                        />
+                      ) : (
+                        <Text style={styles.movieChatUserText}>{msg.text}</Text>
+                      )}
+                    </View>
+                  ))}
+                  {movieChatLoading && (
+                    <View style={[styles.movieChatBubble, styles.movieChatBubbleBot, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+                      <ActivityIndicator size="small" color={C.ai} />
+                      <Text style={{ color: C.mutedSoft, fontSize: 13 }}>Analyzing title...</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Input bar */}
+              <View style={styles.movieChatInputRow}>
+                <TextInput
+                  style={styles.movieChatInput}
+                  placeholder={`Ask about ${movie.title || movie.name}...`}
+                  placeholderTextColor="#666"
+                  value={movieChatInput}
+                  onChangeText={setMovieChatInput}
+                  onSubmitEditing={() => sendMovieChatMessage()}
+                  returnKeyType="send"
+                />
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  style={[styles.movieChatSendBtn, !movieChatInput.trim() && { opacity: 0.4 }]}
+                  onPress={() => sendMovieChatMessage()}
+                  disabled={!movieChatInput.trim() || movieChatLoading}
+                >
+                  <Ionicons name="arrow-up" size={17} color="#FFF" />
+                </TouchableOpacity>
+              </View>
             </View>
           ) : (
             <View>
@@ -1431,15 +1592,123 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   aiFieldValue: { color: C.text, fontSize: 13.5, lineHeight: 20 },
-  aiSpoiler: {
-    marginTop: 6,
+  aiAdvisory: {
+    marginTop: 8,
     padding: 12,
-    backgroundColor: 'rgba(255,69,58,0.06)',
+    backgroundColor: 'rgba(255, 179, 0, 0.08)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,69,58,0.25)',
+    borderColor: 'rgba(255, 179, 0, 0.25)',
   },
-  aiSpoilerLabel: { color: C.red, fontSize: 10.5, fontWeight: '800', letterSpacing: 1, marginBottom: 6 },
+  aiAdvisoryLabel: {
+    color: '#FFB300',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  movieChatContainer: {
+    paddingTop: 8,
+  },
+  movieChatEmpty: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    gap: 6,
+  },
+  movieChatGreeting: {
+    color: C.text,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginTop: 4,
+  },
+  movieChatSub: {
+    color: C.muted,
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 17,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  movieChatChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  movieChatChip: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  movieChatChipText: {
+    color: C.text,
+    fontSize: 11.5,
+    fontWeight: '500',
+  },
+  movieChatThread: {
+    gap: 10,
+    marginBottom: 12,
+    maxHeight: 260,
+  },
+  movieChatBubble: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    maxWidth: '90%',
+  },
+  movieChatBubbleUser: {
+    backgroundColor: '#E50914',
+    alignSelf: 'flex-end',
+    borderBottomRightRadius: 2,
+  },
+  movieChatBubbleBot: {
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    alignSelf: 'flex-start',
+    borderBottomLeftRadius: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  movieChatUserText: {
+    color: '#FFF',
+    fontSize: 13.5,
+    lineHeight: 19,
+  },
+  movieChatText: {
+    fontSize: 13.5,
+    lineHeight: 19,
+  },
+  movieChatInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    paddingLeft: 14,
+    paddingRight: 6,
+    paddingVertical: 4,
+    marginTop: 8,
+  },
+  movieChatInput: {
+    flex: 1,
+    color: '#FFF',
+    fontSize: 13,
+    paddingVertical: 6,
+  },
+  movieChatSendBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E50914',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   aiErrorText: { color: C.mutedSoft, fontSize: 13, marginBottom: 8 },
   aiRetry: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
   aiRetryText: { color: C.ai, fontSize: 13, fontWeight: '600' },
