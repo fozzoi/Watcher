@@ -28,7 +28,7 @@ export const FormattedMarkdownText: React.FC<FormattedMarkdownTextProps> = ({
   const parts = text.split(regex);
 
   return (
-    <Text style={style}>
+    <Text style={[{ color: baseColor }, style]}>
       {parts.map((part, index) => {
         if (!part) return null;
 
@@ -57,7 +57,7 @@ export const FormattedMarkdownText: React.FC<FormattedMarkdownTextProps> = ({
           return (
             <Text
               key={index}
-              style={styles.italic}
+              style={[styles.italic, { color: baseColor }]}
             >
               {content}
             </Text>
