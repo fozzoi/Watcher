@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Feather } from '@expo/vector-icons';
 import { setGlobalConfig } from '../src/tmdb';
+import { resetOnboarding } from '../src/userPreferences';
 import Constants from 'expo-constants';
 
 const Settings = () => {
@@ -179,6 +180,23 @@ const Settings = () => {
     );
   };
 
+  const handleResetPreferences = async () => {
+    Alert.alert(
+      "Reset Preferences",
+      "This will clear your saved languages, genres, and favorite actors. The app will restart to show the setup screen.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Reset", style: "destructive",
+          onPress: async () => {
+            await resetOnboarding();
+            Alert.alert("Success", "Preferences reset. Please restart the app to set them again.");
+          }
+        }
+      ]
+    );
+  };
+
   // ── Reusable row components ──
 
   const ToggleRow = ({ title, subtitle, value, onValueChange }: any) => (
@@ -230,6 +248,12 @@ const Settings = () => {
             subtitle="Hide explicit and adult content" 
             value={isNsfwFilter} 
             onValueChange={toggleNsfw} 
+          />
+          <View style={styles.separator} />
+          <ActionRow 
+            title="Reset Content Preferences" 
+            subtitle="Change your languages, genres and actors" 
+            onPress={handleResetPreferences} 
           />
         </View>
 

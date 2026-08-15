@@ -22,11 +22,13 @@ import Animated from 'react-native-reanimated';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  fetchAllDiscoveryContent,
+  fetchPersonalisedDiscoveryContent,
+  getSimilarForHistory,
   searchTMDB,
   searchPeople,
   searchCollections,
 } from '../src/tmdb';
+import { getUserPreferences, LANGUAGE_OPTIONS } from '../src/userPreferences';
 import { getAllProgress, removeProgress, WatchProgress } from '../src/utils/progress'; 
 import { executeNotificationCheck } from '../src/notifications'; 
 
@@ -74,12 +76,10 @@ const ExplorePage = () => {
   
   const [rawContent, setRawContent] = useState<any>(null);
   
+  const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
   const [allContent, setAllContent] = useState<any>({
-    trendingMovies: [], trendingTV: [], topRated: [], regional: [],
-    hindiMovies: [], malayalamMovies: [], tamilMovies: [],
-    hindiTV: [], malayalamTV: [], koreanMovies: [], koreanTV: [],
-    japaneseMovies: [], japaneseTV: [], animeMovies: [], animeShows: [],
-    animatedMovies: [], upcoming: [], hiddenGems: [], nostalgia: [], chineseMovies: []
+    trendingMovies: [], trendingTV: [], topRated: [],
+    upcoming: [], hiddenGems: [], langData: {}
   });
 
   const navigation = useNavigation<any>();
@@ -140,9 +140,17 @@ const ExplorePage = () => {
 
   const fetchContent = useCallback(async (genreId: number = 0, forceRefresh: boolean = false) => {
     try {
-      const content = await fetchAllDiscoveryContent(genreId, forceRefresh);
+      const prefs = await getUserPreferences();
+      const content = await fetchPersonalisedDiscoveryContent(prefs.languages, prefs.genreIds, genreId, forceRefresh);
       if (content) {
           setRawContent(content);
+      }
+
+      const historyStr = await AsyncStorage.getItem('history');
+      if (historyStr) {
+        const history = JSON.parse(historyStr);
+        const similar = await getSimilarForHistory(history);
+        setBecauseYouWatched(similar);
       }
     } catch (err) { console.error(err); }
   }, []);
@@ -165,24 +173,19 @@ const ExplorePage = () => {
        trendingMovies: filterWatched(rawContent.trendingMovies, watchedIds),
        trendingTV: filterWatched(rawContent.trendingTV, watchedIds),
        topRated: filterWatched(rawContent.topRated, watchedIds),
-       regional: filterWatched(rawContent.regional, watchedIds),
-       hindiMovies: filterWatched(rawContent.hindiMovies, watchedIds),
-       malayalamMovies: filterWatched(rawContent.malayalamMovies, watchedIds),
-       tamilMovies: filterWatched(rawContent.tamilMovies, watchedIds),
-       hindiTV: filterWatched(rawContent.hindiTV, watchedIds),
-       malayalamTV: filterWatched(rawContent.malayalamTV, watchedIds),
-       koreanMovies: filterWatched(rawContent.koreanMovies, watchedIds),
-       koreanTV: filterWatched(rawContent.koreanTV, watchedIds),
-       japaneseMovies: filterWatched(rawContent.japaneseMovies, watchedIds),
-       japaneseTV: filterWatched(rawContent.japaneseTV, watchedIds),
-       animeMovies: filterWatched(rawContent.animeMovies, watchedIds),
-       animeShows: filterWatched(rawContent.animeShows, watchedIds),
-       animatedMovies: filterWatched(rawContent.animatedMovies, watchedIds),
        upcoming: filterWatched(rawContent.upcoming, watchedIds),
        hiddenGems: filterWatched(rawContent.hiddenGems, watchedIds),
-       nostalgia: filterWatched(rawContent.nostalgia, watchedIds),
-       chineseMovies: filterWatched(rawContent.chineseMovies, watchedIds),
+       langData: {} as Record<string, any>
     };
+
+    if (rawContent.langData) {
+      Object.keys(rawContent.langData).forEach(lang => {
+        filteredContent.langData[lang] = {
+           movies: filterWatched(rawContent.langData[lang].movies, watchedIds),
+           tv: filterWatched(rawContent.langData[lang].tv, watchedIds)
+        };
+      });
+    }
 
     setAllContent(filteredContent);
     setContentLoading(false);
@@ -336,24 +339,36 @@ const ExplorePage = () => {
                 <HeroSection items={allContent.trendingMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <GenreFilter selectedGenre={selectedGenre} onSelectGenre={setSelectedGenre} />
 
+                {becauseYouWatched.map((row, idx) => {
+                  const filtered = filterWatched(row.items, watchedIds);
+                  if (filtered.length === 0) return null;
+                  return (
+                    <MediaCarousel key={`byw-${idx}`} title={`Because you watched ${row.sourceTitle}`} type="becauseyouwatched" data={filtered} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                  );
+                })}
+
+                <MediaCarousel title="✨ For You (Trending)" type="trendingmovies" data={allContent.trendingMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="🗓️ Coming Soon" type="upcoming" data={allContent.upcoming} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="💎 Hidden Gems" type="hiddengems" data={allContent.hiddenGems} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="Trending TV Shows" type="trendingtv" data={allContent.trendingTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="Top Rated Movies" type="toprated" data={allContent.topRated} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Popular in Your Region" type="regional" data={allContent.regional} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Animated Movies" type="animatedmovies" data={allContent.animatedMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Anime Series" type="animeshows" data={allContent.animeShows} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Anime Movies" type="animemovies" data={allContent.animeMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Korean TV Shows" type="koreantv" data={allContent.koreanTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Korean Movies" type="koreanmovies" data={allContent.koreanMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Japanese TV Shows" type="japanesetv" data={allContent.japaneseTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Japanese Movies" type="japanesemovies" data={allContent.japaneseMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Chinese Movies" type="chinesemovies" data={allContent.chineseMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Hindi Movies" type="hindimovies" data={allContent.hindiMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Hindi Web Series" type="hinditv" data={allContent.hindiTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Malayalam Movies" type="malayalammovies" data={allContent.malayalamMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Malayalam Web Series" type="malayalamtv" data={allContent.malayalamTV} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Tamil Movies" type="tamilmovies" data={allContent.tamilMovies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+
+                {Object.keys(allContent.langData || {}).map(langCode => {
+                   const langInfo = LANGUAGE_OPTIONS.find(l => l.code === langCode);
+                   const langName = langInfo ? langInfo.label : langCode.toUpperCase();
+                   const movies = allContent.langData[langCode].movies;
+                   const tv = allContent.langData[langCode].tv;
+                   return (
+                     <React.Fragment key={langCode}>
+                       {movies && movies.length > 0 && (
+                         <MediaCarousel title={`${langName} Movies`} type={`lang-movies-${langCode}`} data={movies} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                       )}
+                       {tv && tv.length > 0 && (
+                         <MediaCarousel title={`${langName} TV Shows`} type={`lang-tv-${langCode}`} data={tv} navigation={navigation} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                       )}
+                     </React.Fragment>
+                   );
+                })}
               </>
             )}
 

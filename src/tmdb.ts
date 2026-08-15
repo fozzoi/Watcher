@@ -489,6 +489,105 @@ export const getNostalgicMovies = async (page: number = 1, genreId?: number): Pr
 };
 
 // ==========================================
+// 5a. PERSONALISED DISCOVERY (Based on user preferences)
+// ==========================================
+
+export const fetchPersonalisedDiscoveryContent = async (
+  languages: string[],
+  genreIds: number[],
+  genreFilterId?: number,
+  forceRefresh = false
+) => {
+  const gId = genreFilterId === 0 ? undefined : genreFilterId;
+  const cacheKey = `PERSONALISED_PAGE_DATA_${languages.join('_')}_${genreIds.join('_')}_${gId || 'ALL'}`;
+
+  if (!forceRefresh) {
+    try {
+      const saved = await AsyncStorage.getItem(cacheKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Refresh in background
+        fetchFreshPersonalisedContent(languages, genreIds, gId, cacheKey);
+        return parsed;
+      }
+    } catch {}
+  }
+
+  return fetchFreshPersonalisedContent(languages, genreIds, gId, cacheKey);
+};
+
+const fetchFreshPersonalisedContent = async (
+  languages: string[],
+  genreIds: number[],
+  gId: number | undefined,
+  cacheKey: string,
+) => {
+  try {
+    const preferredGenres = gId ?? (genreIds.length > 0 ? genreIds[0] : undefined);
+
+    // Always-shown rows
+    const base = await Promise.all([
+      getTrendingMovies(1, gId),
+      getTrendingTV(1, gId),
+      getUpcomingMovies(1),
+      getHiddenGems(1, gId),
+      getTopRated(1, gId),
+    ]);
+
+    // Per-language rows (up to 6 languages to avoid over-fetching)
+    const langSlice = languages.slice(0, 6);
+    const langResults = await Promise.all(
+      langSlice.flatMap(lang => [
+        getLanguageMovies(lang, 1, gId),
+        getLanguageTV(lang, 1, gId),
+      ])
+    );
+
+    // Build per-language data map
+    const langData: Record<string, { movies: any[]; tv: any[] }> = {};
+    langSlice.forEach((lang, i) => {
+      langData[lang] = {
+        movies: langResults[i * 2] ?? [],
+        tv: langResults[i * 2 + 1] ?? [],
+      };
+    });
+
+    const result = {
+      trendingMovies: base[0],
+      trendingTV: base[1],
+      upcoming: base[2],
+      hiddenGems: base[3],
+      topRated: base[4],
+      langData,
+    };
+
+    AsyncStorage.setItem(cacheKey, JSON.stringify(result)).catch(() => {});
+    return result;
+  } catch (error) {
+    console.error('Error fetching personalised content:', error);
+    return null;
+  }
+};
+
+// ─── "Because you watched X" ─────────────────────────────────────────────────
+
+export const getSimilarForHistory = async (history: any[]): Promise<{ sourceTitle: string; items: any[] }[]> => {
+  const recent = history.slice(0, 2); // last 2 watched
+  const results = await Promise.all(
+    recent.map(async (item) => {
+      try {
+        const mediaType = item.media_type ?? (item.first_air_date ? 'tv' : 'movie');
+        const similar = await getSimilarMedia(mediaType, item.id, 1);
+        return { sourceTitle: item.title || item.name || '', items: similar.slice(0, 10) };
+      } catch {
+        return null;
+      }
+    })
+  );
+  return results.filter((r): r is { sourceTitle: string; items: any[] } => r !== null && r.items.length > 0);
+};
+
+// ==========================================
 // 5. BATCH FETCH WITH ASYNC STORAGE (OFFLINE-FIRST)
 // ==========================================
 

@@ -465,6 +465,14 @@ const WatchListPage = () => {
         <Text style={styles.header}>
             My Library <Text style={styles.headerCount}>({displayList.length})</Text>
         </Text>
+        <TouchableOpacity 
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate('StatsPage' as never)} 
+          style={{ marginLeft: 'auto', backgroundColor: 'rgba(229,9,20,0.15)', borderWidth: 1, borderColor: 'rgba(229,9,20,0.3)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+        >
+          <Ionicons name="bar-chart" size={16} color="#E50914" />
+          <Text style={{ color: '#E50914', fontSize: 13, fontWeight: '700' }}>Insights</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.tabWrapper}>

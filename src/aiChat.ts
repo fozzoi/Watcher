@@ -34,7 +34,8 @@ export async function getGeminiChatReply(
   userMemory: string = '',
   watchedTitles: string[] = [],
   watchlistTitles: string[] = [],
-  watchlistCollections: string[] = []
+  watchlistCollections: string[] = [],
+  userPreferences: any = null
 ): Promise<ChatReplyPayload> {
   const response = await axios.post(API_URL, {
     action: 'chat',
@@ -44,6 +45,7 @@ export async function getGeminiChatReply(
     watchedTitles: watchedTitles.slice(0, 50),
     watchlistTitles: watchlistTitles.slice(0, 100),
     watchlistCollections: watchlistCollections.slice(0, 50),
+    userPreferences,
     customApiKey: GLOBAL_CONFIG.customApiKey,
   });
 

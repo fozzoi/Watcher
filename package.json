@@ -31,7 +31,7 @@
     "dayjs": "^1.11.19",
     "eas": "^0.1.0",
     "expo": "^57.0.12",
-    "expo-background-fetch": "~57.0.9",
+    "expo-background-task": "~1.0.0",
     "expo-blur": "~57.0.2",
     "expo-brightness": "~57.0.1",
     "expo-build-properties": "~57.0.10",

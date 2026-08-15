@@ -19,6 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { getImageUrl, getFullDetails } from '../src/tmdb';
 import { getGeminiChatReply, updateUserMemory } from '../src/aiChat';
+import { getUserPreferences } from '../src/userPreferences';
 import {
   Conversation, listConversations, saveConversation, deleteConversation,
   titleFromFirstMessage, getUserMemory, setUserMemory,
@@ -315,6 +316,7 @@ const AiChat = () => {
   const [watchedTitles, setWatchedTitles] = useState<string[]>([]);
   const [watchlistTitles, setWatchlistTitles] = useState<string[]>([]);
   const [watchlistCollections, setWatchlistCollections] = useState<string[]>([]);
+  const [userPrefs, setUserPrefs] = useState<any>(null);
   const [inputFocused, setInputFocused] = useState(false);
 
   // Animations
@@ -341,21 +343,23 @@ const AiChat = () => {
     role: 'bot',
     kind: 'text',
     text: memory
-      ? `Hey! I'm ${name} ✨ I remember you enjoy ${memory.slice(0, 70)}... What are we watching today?`
-      : `Hey! I'm ${name} ✨ Tell me a mood, a plot, an actor — I'll find something perfect for you.`,
+      ? `Lights, camera, action. I'm ${name} 🎬 Last time I noticed you're into ${memory.slice(0, 60)}... Ready to find your next obsession?`
+      : `Lights, camera, action. I'm ${name} 🎬\n\nThrow me a vibe, a genre, an actor, or just say "surprise me" — I'll find something worth watching.`,
   });
 
   // ── Load everything on mount ────────────────────────────────
   useEffect(() => {
     (async () => {
-      const [name, mem, convos] = await Promise.all([
+      const [name, mem, convos, prefs] = await Promise.all([
         getAiName(),
         getUserMemory(),
         listConversations(),
+        getUserPreferences(),
       ]);
 
       setUserMemoryState(mem);
       setConversations(convos);
+      setUserPrefs(prefs);
 
       // Load watched history
       try {
@@ -457,7 +461,7 @@ const AiChat = () => {
     pushMessage({ id: typingId, role: 'bot', kind: 'typing' });
 
     try {
-      const reply = await getGeminiChatReply(text, messages, userMemory, watchedTitles, watchlistTitles, watchlistCollections);
+      const reply = await getGeminiChatReply(text, messages, userMemory, watchedTitles, watchlistTitles, watchlistCollections, userPrefs);
 
       setMessages((prev) => {
         const withoutTyping = prev.filter((m) => m.id !== typingId);

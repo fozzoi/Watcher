@@ -1,9 +1,13 @@
-import * as BackgroundFetch from 'expo-background-fetch';
+import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import dayjs from 'dayjs';
-import { getMediaDetails } from './tmdb';
+import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
+dayjs.extend(isSameOrBefore);
+
+import { getMediaDetails, fetchPersonalisedDiscoveryContent } from './tmdb';
+import { getUserPreferences } from './userPreferences';
 
 const BACKGROUND_FETCH_TASK = 'background-fetch-releases';
 
@@ -48,6 +52,11 @@ export const executeNotificationCheck = async () => {
     // Helper to check if a release date is "recent" (within the last 7 days or today)
     const isRecentRelease = (dateObj: dayjs.Dayjs) => {
       return dateObj.isAfter(now.subtract(7, 'day')) && dateObj.isSameOrBefore(now.add(1, 'day'));
+    };
+
+    // Helper to check if a release date is "upcoming" (within the next 14 days)
+    const isUpcomingRelease = (dateObj: dayjs.Dayjs) => {
+      return dateObj.isAfter(now) && dateObj.isSameOrBefore(now.add(14, 'day'));
     };
 
     // Check TV Shows in history for new episodes
@@ -97,6 +106,21 @@ export const executeNotificationCheck = async () => {
           notifiedMediaIds.push(notifyKey);
           newNotifications++;
         }
+
+        const upcomingKey = `upcoming_movie_${item.id}`;
+        if (releaseDate && isUpcomingRelease(releaseDate) && !notifiedMediaIds.includes(upcomingKey)) {
+          const daysAway = releaseDate.diff(now, 'day');
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: `Coming to Theaters Soon 🍿`,
+              body: `${item.title || item.name} releases in ${daysAway} days!`,
+              data: { mediaId: item.id, mediaType: 'movie' },
+            },
+            trigger: null,
+          });
+          notifiedMediaIds.push(upcomingKey);
+          newNotifications++;
+        }
       } else if (item.media_type === 'collection') {
         if (item.parts && Array.isArray(item.parts)) {
           for (const part of item.parts) {
@@ -130,6 +154,33 @@ export const executeNotificationCheck = async () => {
       console.error('Failed to save notifiedMediaIds');
     }
 
+    // Weekly 'For You' Picks
+    try {
+      const lastWeeklyStr = await AsyncStorage.getItem('last_weekly_foryou');
+      const lastWeekly = lastWeeklyStr ? dayjs(lastWeeklyStr) : dayjs(0);
+      
+      if (now.diff(lastWeekly, 'day') >= 7) {
+        const prefs = await getUserPreferences();
+        const content = await fetchPersonalisedDiscoveryContent(prefs.languages, prefs.genreIds, 0, false);
+        
+        if (content && content.trendingMovies && content.trendingMovies.length > 0) {
+          const topPick = content.trendingMovies[0];
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: `Your Weekly Pick 🌟`,
+              body: `Based on your taste, you might love ${topPick.title}!`,
+              data: { mediaId: topPick.id, mediaType: 'movie' },
+            },
+            trigger: null,
+          });
+          await AsyncStorage.setItem('last_weekly_foryou', now.toISOString());
+          newNotifications++;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to generate weekly for you pick');
+    }
+
     return newNotifications;
   } catch (error) {
     console.error(error);
@@ -139,7 +190,7 @@ export const executeNotificationCheck = async () => {
 
 TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
   const count = await executeNotificationCheck();
-  return count > 0 ? BackgroundFetch.BackgroundFetchResult.NewData : BackgroundFetch.BackgroundFetchResult.NoData;
+  return count > 0 ? BackgroundTask.BackgroundTaskResult.Success : BackgroundTask.BackgroundTaskResult.NoData;
 });
 
 export async function registerBackgroundFetchAsync() {
@@ -148,9 +199,7 @@ export async function registerBackgroundFetchAsync() {
     return;
   }
 
-  return BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
+  return BackgroundTask.registerTaskAsync(BACKGROUND_FETCH_TASK, {
     minimumInterval: 60 * 60 * 12, // 12 hours
-    stopOnTerminate: false,
-    startOnBoot: true,
   });
 }
