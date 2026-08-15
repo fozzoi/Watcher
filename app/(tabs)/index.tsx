@@ -324,6 +324,8 @@ const ExplorePage = () => {
           <ScrollView 
             scrollEventThrottle={16} 
             removeClippedSubviews={true} 
+            showsVerticalScrollIndicator={false}
+            showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent} 
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />}
           >

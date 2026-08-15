@@ -22,6 +22,8 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
       <ScrollView 
         contentContainerStyle={styles.searchScrollContent} 
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        showsHorizontalScrollIndicator={false}
       >
         {peopleResults.length > 0 && (
           <View style={{ marginBottom: 24 }}>
