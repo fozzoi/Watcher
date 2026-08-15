@@ -785,9 +785,9 @@ const DetailPage = () => {
 
 
         <View style={styles.actionRow}>
-          <TouchableOpacity activeOpacity={0.95} style={[styles.actionBtn, isInWatchlist && styles.actionBtnActive]} onPress={toggleWatchlist}>
-            <Ionicons name={isInWatchlist ? 'bookmark' : 'bookmark-outline'} size={18} color={isInWatchlist ? C.gold : C.white} />
-            <Text style={[styles.actionBtnText, isInWatchlist && { color: C.gold }]}>Watchlist</Text>
+          <TouchableOpacity activeOpacity={0.95} style={[styles.actionBtn, isInWatchlist && styles.actionBtnWatchlistActive]} onPress={toggleWatchlist}>
+            <Ionicons name={isInWatchlist ? 'bookmark' : 'bookmark-outline'} size={18} color={isInWatchlist ? C.red : C.white} />
+            <Text style={[styles.actionBtnText, isInWatchlist && { color: C.red, fontWeight: '700' }]}>Watchlist</Text>
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.95} style={[styles.actionBtn, isWatched && styles.actionBtnActive]} onPress={toggleWatched}>
             <Ionicons name={isWatched ? 'checkmark-circle' : 'checkmark-circle-outline'} size={18} color={isWatched ? C.green : C.mutedSoft} />
@@ -1326,6 +1326,10 @@ const styles = StyleSheet.create({
   actionBtnActive: {
     borderColor: 'rgba(48,209,88,0.35)',
     backgroundColor: 'rgba(48,209,88,0.08)',
+  },
+  actionBtnWatchlistActive: {
+    borderColor: 'rgba(255,69,58,0.4)',
+    backgroundColor: 'rgba(255,69,58,0.1)',
   },
   actionBtnText: { color: C.mutedSoft, fontSize: 11, fontWeight: '600' },
 
