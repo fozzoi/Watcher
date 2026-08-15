@@ -1,4 +1,4 @@
-import * as BackgroundTask from 'expo-background-task';
+import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -190,7 +190,7 @@ export const executeNotificationCheck = async () => {
 
 TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
   const count = await executeNotificationCheck();
-  return count > 0 ? BackgroundTask.BackgroundTaskResult.Success : BackgroundTask.BackgroundTaskResult.NoData;
+  return count > 0 ? BackgroundFetch.BackgroundFetchResult.NewData : BackgroundFetch.BackgroundFetchResult.NoData;
 });
 
 export async function registerBackgroundFetchAsync() {
@@ -199,7 +199,9 @@ export async function registerBackgroundFetchAsync() {
     return;
   }
 
-  return BackgroundTask.registerTaskAsync(BACKGROUND_FETCH_TASK, {
+  return BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
     minimumInterval: 60 * 60 * 12, // 12 hours
+    stopOnTerminate: false,
+    startOnBoot: true,
   });
 }

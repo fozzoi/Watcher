@@ -14,7 +14,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.thewatcher.dev",
+      "package": "com.thewatcher",
       "runtimeVersion": "1.0.0",
       "permissions": [
         "android.permission.INTERNET",
@@ -61,7 +61,8 @@
       "expo-font",
       "expo-sharing",
       "expo-status-bar",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-router"
     ],
     "extra": {
       "eas": {
