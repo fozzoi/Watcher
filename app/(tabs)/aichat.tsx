@@ -327,6 +327,26 @@ const AiChat = () => {
   const inputGlow = useSharedValue(0);
   const sendBtnScale = useSharedValue(1);
 
+  const edgePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        return (
+          !sidebarOpen &&
+          evt.nativeEvent.pageX < 45 &&
+          gestureState.dx > 20 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy)
+        );
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx > 35) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setSidebarOpen(true);
+        }
+      },
+    })
+  ).current;
+
   const inputGlowStyle = useAnimatedStyle(() => ({
     borderColor: interpolateColor(inputGlow.value, [0, 1], ['rgba(255,255,255,0.08)', 'rgba(255,59,59,0.4)']),
     shadowOpacity: inputGlow.value * 0.3,
@@ -781,25 +801,7 @@ const AiChat = () => {
     return <AiNameSetup onComplete={handleNameSetup} />;
   }
 
-  const edgePanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (evt, gestureState) => {
-        return (
-          !sidebarOpen &&
-          evt.nativeEvent.pageX < 45 &&
-          gestureState.dx > 20 &&
-          Math.abs(gestureState.dx) > Math.abs(gestureState.dy)
-        );
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx > 35) {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setSidebarOpen(true);
-        }
-      },
-    })
-  ).current;
+
 
   // ── Main chat ───────────────────────────────────────────────
   const showStarterChips = messages.length === 1;
