@@ -338,7 +338,7 @@ const ExplorePage = () => {
               </>
             ) : (
               <>
-                <HeroSection items={allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                <HeroSection items={allContent.heroMovies || allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <GenreFilter selectedGenre={selectedGenre} onSelectGenre={setSelectedGenre} />
 
                 {becauseYouWatched.map((row, idx) => {
@@ -350,23 +350,6 @@ const ExplorePage = () => {
                 })}
 
                 <MediaCarousel title="Trending Movies" type="trendingmovies" data={allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-
-                {/* Preferred Genres Carousels (e.g. Top Adventure Movies, Top Family Movies) */}
-                {(allContent.genreData || []).map((gen: any) => {
-                  const genreOption = GENRE_OPTIONS.find(g => g.id === gen.genreId);
-                  const genreTitle = genreOption ? `Top ${genreOption.label} Movies` : 'Genre Hits';
-                  return (
-                    <MediaCarousel 
-                      key={`genre-row-${gen.genreId}`}
-                      title={genreTitle} 
-                      type={`genre/${gen.genreId}`} 
-                      data={gen.items} 
-                      savedIds={savedIds} 
-                      toggleWatchlist={toggleWatchlist} 
-                    />
-                  );
-                })}
-
                 <MediaCarousel title="Trending TV Shows" type="trendingtv" data={allContent.trendingTV} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="Top Rated Movies" type="toprated" data={allContent.topRated} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
                 <MediaCarousel title="Coming Soon" type="upcoming" data={allContent.upcoming} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />

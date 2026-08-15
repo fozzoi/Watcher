@@ -893,13 +893,20 @@ const fetchFreshPersonalisedContent = async (
       getTopRated(1, gId),
     ]);
 
+    const currentYear = new Date().getFullYear();
+    const freshTrending = base[0].filter((m: any) => {
+      const year = parseInt((m.release_date || '').substring(0, 4), 10);
+      return !isNaN(year) && year >= (currentYear - 2);
+    });
+    const heroMovies = freshTrending.length >= 4 ? freshTrending.slice(0, 6) : base[0].slice(0, 6);
+
     let personalizedTrending = [...base[0]];
     if (langSlice.length > 0) {
       const topLangMovies = langSlice.flatMap(l => (langData[l]?.movies || []).slice(0, 3));
       if (topLangMovies.length > 0) {
         const seen = new Set<number>();
         const merged: any[] = [];
-        for (const m of [...topLangMovies, ...base[0]]) {
+        for (const m of [...base[0], ...topLangMovies]) {
           if (m && m.id && !seen.has(m.id)) {
             seen.add(m.id);
             merged.push(m);
@@ -910,6 +917,7 @@ const fetchFreshPersonalisedContent = async (
     }
 
     const result = {
+      heroMovies,
       trendingMovies: personalizedTrending,
       trendingTV: base[1],
       upcoming: base[2],

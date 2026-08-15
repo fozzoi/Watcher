@@ -244,20 +244,24 @@ export default function Onboarding() {
     setActors(prev => prev.some(a => a.id === actor.id) ? prev.filter(a => a.id !== actor.id) : [...prev, actor]);
 
   const handleFinish = async () => {
+    if (saving) return;
     setSaving(true);
-    await completeOnboarding({ country: 'IN', languages, genreIds, favoriteActors: actors });
-    
-    // Invalidate local discovery cache so explore page immediately reflects new preferences
     try {
+      await completeOnboarding({ country: 'IN', languages, genreIds, favoriteActors: actors });
+      
+      // Invalidate local discovery cache so explore page immediately reflects new preferences
       const keys = await AsyncStorage.getAllKeys();
       const discoveryKeys = keys.filter(k => k.startsWith('PERSONALISED_PAGE_DATA_'));
       if (discoveryKeys.length > 0) {
         await AsyncStorage.multiRemove(discoveryKeys);
       }
-    } catch {}
+    } catch (e) {
+      console.log('Error finishing onboarding:', e);
+    } finally {
+      setSaving(false);
+    }
 
-    setSaving(false);
-    if (router.canGoBack() && isEditing) {
+    if (isEditing && router.canGoBack()) {
       router.back();
     } else {
       router.replace('/(tabs)');

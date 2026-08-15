@@ -88,16 +88,16 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, isReady]);
 
-  // Initial routing for first-time onboarding
+  // Initial routing for first-time onboarding (only on cold start)
+  const initialRedirectDone = React.useRef(false);
   useEffect(() => {
-    if (!isReady || !fontsLoaded) return;
-    
-    const inOnboardingGroup = segments[0] === 'onboarding';
+    if (!isReady || !fontsLoaded || initialRedirectDone.current) return;
+    initialRedirectDone.current = true;
 
-    if (needsOnboarding && !inOnboardingGroup) {
+    if (needsOnboarding) {
       router.replace('/onboarding');
     }
-  }, [needsOnboarding, isReady, fontsLoaded, segments]);
+  }, [needsOnboarding, isReady, fontsLoaded]);
 
   if (!fontsLoaded || !isReady) {
     return (

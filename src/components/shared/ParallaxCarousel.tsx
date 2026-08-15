@@ -189,6 +189,10 @@ export const ParallaxCarousel = <ItemT extends ParallaxCarouselItem>({
         keyExtractor={defaultKeyExtractor}
         horizontal
         pagingEnabled={pagingEnabled}
+        decelerationRate="fast"
+        snapToInterval={itemWidth}
+        snapToAlignment="center"
+        disableIntervalMomentum={true}
         showsHorizontalScrollIndicator={showHorizontalScrollIndicator}
         onScroll={onScroll}
         onScrollBeginDrag={() => stopAutoplay()}
