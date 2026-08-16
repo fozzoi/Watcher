@@ -38,6 +38,8 @@ import {
 } from '../../src/tmdb';
 import { getProgress } from '../../src/utils/progress';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ShimmerBlock } from '../../src/components/shared/Shimmer';
+import { MovieDetailSkeleton } from '../../src/components/movie/MovieDetailSkeleton';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import FormattedMarkdownText from '../../src/components/aichat/FormattedMarkdownText';
@@ -74,10 +76,6 @@ const C = {
 const AIShimmerBar = ({ width: w = '100%', height = 12 }: any) => (
   <View style={[{ width: w, height, borderRadius: 6, backgroundColor: C.aiSoft, marginBottom: 8 }]} />
 );
-
-const ShimmerBlock = React.memo(({ width, height, borderRadius = 8, style }: any) => (
-  <View style={[{ width, height, borderRadius, backgroundColor: C.surface2 }, style]} />
-));
 
 const EpisodeShimmer = React.memo(({ thumbWidth }: any) => (
   <View style={[styles.epRow, { borderColor: 'transparent' }]}>
@@ -622,7 +620,8 @@ const DetailPage = () => {
   const openTorrentSearch = () => {
     if (!movie) return;
     const query = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.slice(0, 4) || ''}`;
-    router.push(`/search?prefillQuery=${encodeURIComponent(query)}`);
+    const mType = movie.media_type || (movie.first_air_date ? 'tv' : 'movie');
+    router.push(`/search?prefillQuery=${encodeURIComponent(query)}&fromMovieId=${movie.id}&fromMediaType=${mType}`);
   };
 
   const copyTitle = async () => {
@@ -1121,11 +1120,7 @@ const DetailPage = () => {
   }, [lastWatched, episodeThumbWidth, handlePlay]);
 
   if (!initialMovie || !movie) {
-    return (
-      <View style={[styles.root, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#E50914" />
-      </View>
-    );
+    return <MovieDetailSkeleton />;
   }
 
   return (

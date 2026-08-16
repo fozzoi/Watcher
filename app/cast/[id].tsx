@@ -43,6 +43,7 @@ import {
   TMDBImage,
   getFullDetails,
 } from '../../src/tmdb';
+import { CastDetailSkeleton } from '../../src/components/cast/CastDetailSkeleton';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
@@ -333,16 +334,9 @@ export default function CastDetails() {
     );
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <StatusBar barStyle="light-content" />
-        <ActivityIndicator color={C.white} size="large" />
-      </View>
-    );
+  if (loading || !person) {
+    return <CastDetailSkeleton />;
   }
-
-  if (!person) return null;
 
   const headerImages = personImages.length > 0 ? personImages.slice(0, 8) : person.profile_path ? [{ file_path: person.profile_path }] : [];
 

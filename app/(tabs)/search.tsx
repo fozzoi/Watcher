@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { 
   View, StyleSheet, Alert, Linking, StatusBar, 
   ScrollView, TouchableOpacity, TextInput, 
   Keyboard, ActivityIndicator, Text, BackHandler,
   LayoutAnimation, Platform, UIManager, Dimensions
 } from "react-native";
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 
 // Legacy import for Expo 50+ (fixes deprecation warning)
@@ -36,7 +36,11 @@ const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
 export default function Index() {
   const router = useRouter();
-  const { prefillQuery } = useLocalSearchParams<{ prefillQuery?: string }>();
+  const { prefillQuery, fromMovieId, fromMediaType } = useLocalSearchParams<{
+    prefillQuery?: string;
+    fromMovieId?: string;
+    fromMediaType?: string;
+  }>();
   const insets = useSafeAreaInsets();
   
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -69,7 +73,7 @@ export default function Index() {
     setDialogConfig({ ...config, visible: true });
   };
 
-  const handleGoBack = React.useCallback(() => {
+  const handleGoBack = useCallback(() => {
     Keyboard.dismiss();
     setSearchQuery('');
     setResults([]);
@@ -77,38 +81,10 @@ export default function Index() {
 
     if (router.canGoBack()) {
       router.back();
-      return true;
+    } else {
+      router.replace('/(tabs)');
     }
-    return false;
   }, [router]);
-
-  // --- BACK HANDLER ---
-  useEffect(() => {
-    const onBackPress = () => {
-      // 1. If we came from an external screen with prefillQuery
-      if (prefillQuery) {
-        handleGoBack();
-        return true; 
-      }
-
-      // 2. If user searched manually, clear first
-      if (hasSearched || searchQuery.trim() !== '') {
-        handleClear();
-        return true; 
-      }
-
-      // 3. Otherwise pop back if possible
-      if (router.canGoBack()) {
-        router.back();
-        return true;
-      }
-      
-      return false;
-    };
-    
-    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-    return () => subscription.remove();
-  }, [prefillQuery, hasSearched, searchQuery, handleGoBack, router]);
 
   // --- HELPERS ---
   const getQualityInfo = (name: string): { label: string; color: string } => {
@@ -317,7 +293,7 @@ export default function Index() {
 
         <View style={[styles.searchSection, hasSearched && styles.searchSectionActive]}>
             <View style={styles.inputWrapper}>
-                {prefillQuery ? (
+                {prefillQuery || fromMovieId ? (
                     <TouchableOpacity activeOpacity={0.7} onPress={handleGoBack} style={{ paddingLeft: 14, paddingRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                         <Ionicons name="arrow-back" size={22} color="#FFF" />
                     </TouchableOpacity>

@@ -117,6 +117,7 @@ const localStyles = StyleSheet.create({
 export default function TabLayout() {
     return (
         <Tabs
+            backBehavior="history"
             tabBar={(props) => <CustomTabBar {...props} />}
             screenOptions={{
                 headerShown: false,

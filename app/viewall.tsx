@@ -15,6 +15,7 @@ import { FlashList } from '@shopify/flash-list';
 import { getImageUrl, getFullDetails, TMDBResult, getDiscoverMedia, fetchMoreContentByType } from '../src/tmdb';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import { ShimmerBlock } from '../src/components/shared/Shimmer';
 
 const ViewAllPage = () => {
   const router = useRouter();
@@ -170,9 +171,16 @@ const ViewAllPage = () => {
 
       {/* Content */}
       {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#E50914" />
-        </View>
+        <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => (
+              <View key={i} style={styles.cardContainer}>
+                <ShimmerBlock width="100%" height={150} borderRadius={8} />
+                <ShimmerBlock width="80%" height={12} style={{ marginTop: 6 }} />
+              </View>
+            ))}
+          </View>
+        </ScrollView>
       ) : (
         <FlashList
           data={movies}

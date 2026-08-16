@@ -19,6 +19,7 @@ import {
   TMDBCollectionDetails,
   TMDBResult,
 } from '../../src/tmdb';
+import { ShimmerBlock } from '../../src/components/shared/Shimmer';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
@@ -37,10 +38,6 @@ const C = {
 };
 
 // --- SHIMMER COMPONENTS ---
-
-const ShimmerBlock = ({ width, height, borderRadius = 8, style }: any) => (
-  <View style={[{ width, height, borderRadius, backgroundColor: C.surface2 }, style]} />
-);
 
 const MovieCardShimmer = () => (
   <View style={styles.movieCard}>

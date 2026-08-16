@@ -323,7 +323,8 @@ const ListDetails = ({ route }) => {
   
   const openTorrentSearch = () => {
     if (!selectedMovie) return;
-    router.push(`/search?prefillQuery=${encodeURIComponent(`${selectedMovie.title || selectedMovie.name}`)}`);
+    const mType = selectedMovie.media_type || (selectedMovie.first_air_date ? 'tv' : 'movie');
+    router.push(`/search?prefillQuery=${encodeURIComponent(`${selectedMovie.title || selectedMovie.name}`)}&fromMovieId=${selectedMovie.id}&fromMediaType=${mType}`);
   };
 
   const handleSeasonSelect = async (seasonNumber) => {
