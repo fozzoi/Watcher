@@ -1,9 +1,13 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
+import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, Linking } from 'react-native';
 import Constants from 'expo-constants';
 
 export const GITHUB_REPO = 'fozzoi/Watcher';
+const NOTIFY_UPDATES_KEY = 'settings_notify_updates';
+const LAST_NOTIFIED_TAG_KEY = 'last_notified_release_tag';
 
 export interface ReleaseAsset {
   name: string;
@@ -32,6 +36,29 @@ export interface UpdateCheckResult {
   apkUrl: string | null;
   apkSize: number;
 }
+
+/**
+ * Check if the user has enabled update notifications
+ */
+export const isUpdateNotificationEnabled = async (): Promise<boolean> => {
+  try {
+    const val = await AsyncStorage.getItem(NOTIFY_UPDATES_KEY);
+    return val === null ? true : val === 'true';
+  } catch {
+    return true;
+  }
+};
+
+/**
+ * Enable or disable update notifications
+ */
+export const setUpdateNotificationEnabled = async (enabled: boolean): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(NOTIFY_UPDATES_KEY, enabled ? 'true' : 'false');
+  } catch (e) {
+    console.error('Failed to save update notification setting:', e);
+  }
+};
 
 /**
  * Fetch latest release metadata from public GitHub repository
@@ -121,6 +148,65 @@ const isVersionNewer = (remote: string, local: string): boolean => {
     if (r < l) return false;
   }
   return false;
+};
+
+/**
+ * Send an Android system notification for a new app release
+ */
+export const sendUpdateNotification = async (update: UpdateCheckResult): Promise<void> => {
+  try {
+    const enabled = await isUpdateNotificationEnabled();
+    if (!enabled) return;
+
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('watcher-app-updates', {
+        name: 'App Updates',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#E50914',
+      });
+    }
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `🚀 Update Available: ${update.latestVersion}`,
+        body: `A new version of Watcher is ready to install with fresh features & improvements. Tap to update.`,
+        data: {
+          isAppUpdate: true,
+          releaseInfo: update,
+        },
+        sound: true,
+      },
+      trigger: null, // send immediately
+    });
+
+    await AsyncStorage.setItem(LAST_NOTIFIED_TAG_KEY, update.latestVersion);
+  } catch (error) {
+    console.error('Failed to trigger update notification:', error);
+  }
+};
+
+/**
+ * Check for updates and automatically notify if enabled and not already notified
+ */
+export const checkAndNotifyUpdate = async (): Promise<UpdateCheckResult | null> => {
+  try {
+    const enabled = await isUpdateNotificationEnabled();
+    if (!enabled) return null;
+
+    const result = await checkForAppUpdate();
+    if (result.updateAvailable) {
+      const lastNotified = await AsyncStorage.getItem(LAST_NOTIFIED_TAG_KEY);
+      if (lastNotified !== result.latestVersion) {
+        await sendUpdateNotification(result);
+      }
+      return result;
+    }
+    return null;
+  } catch (error) {
+    console.error('Auto update check failed:', error);
+    return null;
+  }
 };
 
 /**

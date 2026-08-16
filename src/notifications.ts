@@ -9,6 +9,7 @@ dayjs.extend(isSameOrBefore);
 
 import { getMediaDetails, fetchPersonalisedDiscoveryContent } from './tmdb';
 import { getUserPreferences } from './userPreferences';
+import { checkAndNotifyUpdate } from './updater';
 
 const BACKGROUND_FETCH_TASK = 'background-fetch-releases';
 const NOTIFS_ENABLED_KEY = 'smart_notifications_enabled';
@@ -52,6 +53,13 @@ export const setNotificationsEnabled = async (enabled: boolean): Promise<void> =
 
 export const executeNotificationCheck = async () => {
   try {
+    // Check for App Updates in background
+    try {
+      await checkAndNotifyUpdate();
+    } catch (e) {
+      console.log('Background update check error:', e);
+    }
+
     const enabled = await isNotificationsEnabled();
     if (!enabled) return 0;
 

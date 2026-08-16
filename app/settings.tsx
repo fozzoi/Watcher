@@ -8,13 +8,14 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker'; 
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 
-import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { setGlobalConfig } from '../src/tmdb';
 import { resetOnboarding } from '../src/userPreferences';
 import Constants from 'expo-constants';
 import { isNotificationsEnabled, setNotificationsEnabled, sendTestNotification } from '../src/notifications';
-import { checkForAppUpdate, downloadAndInstallApk, UpdateCheckResult } from '../src/updater';
-import { Modal, ActivityIndicator } from 'react-native';
+import { checkForAppUpdate, isUpdateNotificationEnabled, setUpdateNotificationEnabled, UpdateCheckResult } from '../src/updater';
+import AppUpdateModal from '../src/components/shared/AppUpdateModal';
+import { ActivityIndicator } from 'react-native';
 
 const Settings = () => {
   const router = useRouter();
@@ -25,12 +26,11 @@ const Settings = () => {
   const [isNsfwFilter, setIsNsfwFilter] = useState(true);
   const [isAutoAi, setIsAutoAi] = useState(true);
   const [isSmartNotifs, setIsSmartNotifs] = useState(true);
+  const [isUpdateNotifs, setIsUpdateNotifs] = useState(true);
   
   // App Update States
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
   
   const appVersion = Constants.expoConfig?.version || '3.0.0';
@@ -46,8 +46,10 @@ const Settings = () => {
       const savedNsfw = await AsyncStorage.getItem('settings_nsfw');
       const savedAutoAi = await AsyncStorage.getItem('settings_auto_ai');
       const notifsEnabled = await isNotificationsEnabled();
+      const updateNotifsEnabled = await isUpdateNotificationEnabled();
       
       setIsSmartNotifs(notifsEnabled);
+      setIsUpdateNotifs(updateNotifsEnabled);
       
       if (savedHiRes !== null) {
         const val = JSON.parse(savedHiRes);
@@ -87,6 +89,11 @@ const Settings = () => {
     await setNotificationsEnabled(value);
   };
 
+  const toggleUpdateNotifs = async (value: boolean) => {
+    setIsUpdateNotifs(value);
+    await setUpdateNotificationEnabled(value);
+  };
+
   const handleTestNotif = async () => {
     try {
       await sendTestNotification();
@@ -116,25 +123,6 @@ const Settings = () => {
       }
     } finally {
       setCheckingUpdate(false);
-    }
-  };
-
-  const handleStartUpdate = async () => {
-    if (!updateResult?.apkUrl) {
-      Alert.alert("No APK Found", "This release does not contain an APK asset yet.");
-      return;
-    }
-    setDownloading(true);
-    setDownloadProgress(0);
-    try {
-      await downloadAndInstallApk(updateResult.apkUrl, (progress) => {
-        setDownloadProgress(progress);
-      });
-      setUpdateModalVisible(false);
-    } catch (error: any) {
-      Alert.alert("Download Error", error.message || "Failed to download update APK.");
-    } finally {
-      setDownloading(false);
     }
   };
 
@@ -361,6 +349,13 @@ const Settings = () => {
         {/* ── App Updates ── */}
         <Text style={styles.sectionLabel}>UPDATES</Text>
         <View style={styles.card}>
+          <ToggleRow 
+            title="Notify on New Updates" 
+            subtitle="Show popup and notifications when a new version is released" 
+            value={isUpdateNotifs} 
+            onValueChange={toggleUpdateNotifs} 
+          />
+          <View style={styles.separator} />
           <TouchableOpacity 
             activeOpacity={0.7} 
             onPress={() => {
@@ -423,66 +418,12 @@ const Settings = () => {
         <Text style={styles.version}>Watcher v{appVersion}</Text>
       </ScrollView>
 
-      {/* ── Update Dialog Modal ── */}
-      <Modal
+      {/* ── Reusable Update Dialog Modal ── */}
+      <AppUpdateModal
         visible={updateModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => { if (!downloading) setUpdateModalVisible(false); }}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalIconContainer}>
-              <MaterialCommunityIcons name="update" size={32} color="#E50914" />
-            </View>
-
-            <Text style={styles.modalTitle}>{updateResult?.releaseName || 'New Version Available!'}</Text>
-            <Text style={styles.modalVersionTag}>Version {updateResult?.latestVersion}</Text>
-
-            {updateResult?.releaseNotes ? (
-              <ScrollView style={styles.modalNotesScroll}>
-                <Text style={styles.modalNotesText}>{updateResult.releaseNotes}</Text>
-              </ScrollView>
-            ) : (
-              <Text style={styles.modalSubtitle}>A new version of Watcher is ready to download and install from GitHub Releases.</Text>
-            )}
-
-            {downloading && (
-              <View style={styles.progressContainer}>
-                <View style={styles.progressBarBg}>
-                  <View style={[styles.progressBarFill, { width: `${Math.round(downloadProgress * 100)}%` }]} />
-                </View>
-                <Text style={styles.progressText}>Downloading APK... {Math.round(downloadProgress * 100)}%</Text>
-              </View>
-            )}
-
-            <View style={styles.modalBtnRow}>
-              {!downloading && (
-                <TouchableOpacity 
-                  activeOpacity={0.8} 
-                  onPress={() => setUpdateModalVisible(false)} 
-                  style={styles.modalCancelBtn}
-                >
-                  <Text style={styles.modalCancelText}>Later</Text>
-                </TouchableOpacity>
-              )}
-
-              <TouchableOpacity 
-                activeOpacity={0.8} 
-                disabled={downloading}
-                onPress={handleStartUpdate} 
-                style={[styles.modalConfirmBtn, downloading && { opacity: 0.6 }]}
-              >
-                {downloading ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.modalConfirmText}>Download & Install</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setUpdateModalVisible(false)}
+        updateResult={updateResult}
+      />
     </View>
   );
 };

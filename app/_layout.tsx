@@ -9,6 +9,8 @@ import * as Brightness from 'expo-brightness';
 import { isOnboardingComplete } from '@/src/userPreferences';
 import * as Notifications from 'expo-notifications';
 import { setupNotificationChannel, registerBackgroundFetchAsync, isNotificationsEnabled } from '@/src/notifications';
+import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
+import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 
 LogBox.ignoreLogs([
   'Method readAsStringAsync imported from "expo-file-system" is deprecated',
@@ -30,6 +32,10 @@ export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
+  // App Update state
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+
   // Initialize Smart Notifications and listener
   useEffect(() => {
     (async () => {
@@ -46,7 +52,12 @@ export default function RootLayout() {
 
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
       const data = response?.notification?.request?.content?.data;
-      if (data?.mediaId) {
+      if (data?.isAppUpdate) {
+        if (data?.releaseInfo) {
+          setUpdateResult(data.releaseInfo);
+        }
+        setShowUpdateModal(true);
+      } else if (data?.mediaId) {
         const mediaType = data.mediaType || 'movie';
         router.push(`/movie/${data.mediaId}?media_type=${mediaType}`);
       }
@@ -54,6 +65,23 @@ export default function RootLayout() {
 
     return () => subscription.remove();
   }, [router]);
+
+  // Check for app updates on launch
+  useEffect(() => {
+    if (!isReady || !fontsLoaded) return;
+    const checkUpdates = async () => {
+      try {
+        const update = await checkAndNotifyUpdate();
+        if (update && update.updateAvailable) {
+          setUpdateResult(update);
+          setShowUpdateModal(true);
+        }
+      } catch (e) {
+        console.log('Update check error on startup:', e);
+      }
+    };
+    checkUpdates();
+  }, [isReady, fontsLoaded]);
 
   useEffect(() => {
     (async () => {
@@ -123,6 +151,12 @@ export default function RootLayout() {
           <Stack.Screen name="cast/[id]" options={{ presentation: 'card' }} />
           <Stack.Screen name="collection/[id]" options={{ presentation: 'card' }} />
         </Stack>
+
+        <AppUpdateModal
+          visible={showUpdateModal}
+          onClose={() => setShowUpdateModal(false)}
+          updateResult={updateResult}
+        />
       </SafeAreaProvider>
   );
 }
