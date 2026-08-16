@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
-import { View, Text, ScrollView, FlatList, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, FlatList, TouchableOpacity, Image, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { useRouter } from 'expo-router';
-import { getImageUrl, getFullDetails } from '../../tmdb';
+import { getImageUrl } from '../../tmdb';
 import MovieCard from '../shared/MovieCard';
 import { HORIZONTAL_MARGIN } from '../explore/ExploreConstants';
 
@@ -22,8 +22,11 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
       <ScrollView 
         contentContainerStyle={styles.searchScrollContent} 
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={(e) => DeviceEventEmitter.emit('exploreScroll', e.nativeEvent.contentOffset.y)}
       >
         {peopleResults.length > 0 && (
           <View style={{ marginBottom: 24 }}>
@@ -37,6 +40,7 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
               snapToInterval={106} // 90 width + 16 margin
               snapToAlignment="start"
               contentContainerStyle={{ paddingHorizontal: 4 }}
+              keyboardDismissMode="on-drag"
               renderItem={({ item }) => (
                 <TouchableOpacity activeOpacity={0.95} style={styles.personItem} onPress={() => router.push(`/cast/${item.id}`)}>
                   <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.personImage} />
@@ -59,6 +63,7 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
               snapToInterval={172} // Chip width 160 + 12 gap
               snapToAlignment="start"
               contentContainerStyle={{ paddingHorizontal: 4 }}
+              keyboardDismissMode="on-drag"
               renderItem={({ item }) => (
                 <TouchableOpacity 
                   activeOpacity={0.95} 
@@ -97,8 +102,8 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
 export default SearchResultsList;
 
 const styles = StyleSheet.create({
-  absoluteContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#141414', zIndex: 20 },
-  searchScrollContent: { paddingTop: 20, paddingBottom: 80, paddingHorizontal: HORIZONTAL_MARGIN },
+  absoluteContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'transparent', zIndex: 20 },
+  searchScrollContent: { paddingTop: 100, paddingBottom: 80, paddingHorizontal: HORIZONTAL_MARGIN },
   searchHeading: { color: '#FFFFFF', fontSize: 20, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 16, marginLeft: 4 },
   searchResultsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   personItem: { width: 90, marginRight: 16, alignItems: 'center' },
@@ -128,4 +133,3 @@ const styles = StyleSheet.create({
     marginLeft: 10 
   },
 });
-

@@ -320,13 +320,21 @@ export default function Index() {
 
         {hasSearched && (
             <ScrollView 
-                contentContainerStyle={styles.scrollContent}
-                keyboardShouldPersistTaps="handled"
-                style={{ width: '100%' }}
+                contentContainerStyle={styles.scrollContent} 
+                showsVerticalScrollIndicator={false}
+                keyboardDismissMode="on-drag"
+                scrollEventThrottle={16}
+                onScroll={(e) => {
+                    import('react-native').then(({ DeviceEventEmitter }) => {
+                        DeviceEventEmitter.emit('exploreScroll', e.nativeEvent.contentOffset.y);
+                    });
+                }}
             >
-                <View style={styles.resultsHeader}>
-                     <Text style={styles.resultsTitle}>{loading ? 'Searching...' : 'Results'}</Text>
-                     <TouchableOpacity activeOpacity={0.95} onPress={() => router.push("/history")}>
+                <View style={styles.filterRow}>
+                     <View style={{ flex: 1 }}>
+                        <Text style={styles.resultsCount}>{results.length} results found</Text>
+                     </View>
+                     <TouchableOpacity activeOpacity={0.95} style={styles.historyIconBtn} onPress={() => router.push("/history")}>
                         <MaterialIcons name="history" size={24} color="#666" />
                      </TouchableOpacity>
                 </View>

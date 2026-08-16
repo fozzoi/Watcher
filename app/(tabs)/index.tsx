@@ -15,12 +15,14 @@ import {
   Keyboard,
   TextInput,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  DeviceEventEmitter
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import Animated from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BlurView, BlurTargetView } from 'expo-blur';
 import {
   fetchPersonalisedDiscoveryContent,
   getSimilarForHistory,
@@ -29,8 +31,6 @@ import {
   searchCollections,
 } from '../../src/tmdb';
 import { getUserPreferences, LANGUAGE_OPTIONS, GENRE_OPTIONS } from '../../src/userPreferences';
-import { getAllProgress, removeProgress, WatchProgress } from '../../src/utils/progress'; 
-import { executeNotificationCheck } from '../../src/notifications'; 
 
 // --- COMPONENTS ---
 import SkeletonHero from '../../src/components/explore/SkeletonHero';
@@ -63,15 +63,13 @@ const ExplorePage = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
   const [watchedIds, setWatchedIds] = useState<Set<number>>(new Set()); 
 
   const [tmdbResults, setTmdbResults] = useState<any[]>([]);
   const [peopleResults, setPeopleResults] = useState<any[]>([]);
-  
-  const [searchHistory, setSearchHistory] = useState<string[]>([]);
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
   
   const [rawContent, setRawContent] = useState<any>(null);
   
@@ -83,6 +81,42 @@ const ExplorePage = () => {
 
   const router = useRouter();
   const searchTimeout = useRef<any>(null);
+
+  const inSearchMode = query.trim() !== '';
+  const isExpanded = isSearchFocused || inSearchMode;
+  
+  const bgOpacity = useSharedValue(0);
+  const searchWidthAnim = useSharedValue(0);
+  const searchBarTranslateY = useSharedValue(0);
+  const lastOffsetY = useRef(0);
+  const scrollIdleTimeout = useRef<any>(null);
+  const targetRef = useRef<View | null>(null);
+
+  useEffect(() => {
+    bgOpacity.value = withTiming(inSearchMode ? 1 : 0, { duration: 300 });
+  }, [inSearchMode]);
+
+  useEffect(() => {
+    searchWidthAnim.value = withTiming(isExpanded ? 1 : 0, { duration: 300 });
+  }, [isExpanded]);
+
+  const animatedBgStyle = useAnimatedStyle(() => {
+    return {
+      opacity: bgOpacity.value,
+    };
+  });
+
+  const animatedSearchStyle = useAnimatedStyle(() => {
+    return {
+      width: `${65 + (searchWidthAnim.value * 35)}%`,
+    };
+  });
+
+  const animatedHeaderStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateY: searchBarTranslateY.value }],
+    };
+  });
 
   const queryRef = useRef(query);
   useEffect(() => { queryRef.current = query; }, [query]);
@@ -266,17 +300,123 @@ const ExplorePage = () => {
     return () => clearTimeout(searchTimeout.current);
   }, [query]);
 
-  const inSearchMode = query.trim() !== '';
 
   return (
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />     
-      <View style={[styles.searchBarContainer, { zIndex: 100 }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}> 
-          <View style={[styles.searchInputContainer, { flex: 1 }]}>
+
+      <BlurTargetView ref={targetRef} style={{ flex: 1, backgroundColor: '#141414' }} collapsable={false}>
+        <ScrollView 
+          keyboardDismissMode="on-drag"
+          onScrollBeginDrag={() => Keyboard.dismiss()}
+          onScroll={(e) => {
+             const currentOffset = e.nativeEvent.contentOffset.y;
+             const diff = currentOffset - lastOffsetY.current;
+             lastOffsetY.current = currentOffset;
+
+             if (currentOffset <= 0) {
+                searchBarTranslateY.value = withTiming(0, { duration: 150 });
+             } else if (diff > 5 && searchBarTranslateY.value === 0 && !isSearchFocused && !inSearchMode) {
+                searchBarTranslateY.value = withTiming(-100, { duration: 300 });
+             } else if (diff < -5 && searchBarTranslateY.value < 0) {
+                searchBarTranslateY.value = withTiming(0, { duration: 300 });
+             }
+
+             DeviceEventEmitter.emit('exploreScroll', currentOffset);
+
+             if (scrollIdleTimeout.current) clearTimeout(scrollIdleTimeout.current);
+             scrollIdleTimeout.current = setTimeout(() => {
+                if (searchBarTranslateY.value < 0) {
+                    searchBarTranslateY.value = withTiming(0, { duration: 300 });
+                }
+             }, 2000);
+          }}
+          scrollEventThrottle={16} 
+          removeClippedSubviews={true} 
+          showsVerticalScrollIndicator={false}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent} 
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />}
+        >
+          {contentLoading ? (
+            <>
+              <SkeletonHero />
+              <View style={{ marginTop: 24 }}>
+                 <SkeletonCarousel />
+                 <SkeletonCarousel />
+                 <SkeletonCarousel />
+              </View>
+            </>
+          ) : (
+            <>
+              <HeroSection items={allContent.heroMovies || allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+              <GenreFilter selectedGenre={selectedGenre} onSelectGenre={setSelectedGenre} />
+
+              {becauseYouWatched.map((row, idx) => {
+                const filtered = filterWatched(row.items, watchedIds);
+                if (filtered.length === 0) return null;
+                return (
+                  <MediaCarousel key={`byw-${idx}`} title={`Because you watched ${row.sourceTitle}`} type="becauseyouwatched" data={filtered} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                );
+              })}
+
+              <MediaCarousel title="Trending Movies" type="trendingmovies" data={allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+              <MediaCarousel title="Coming Soon" type="upcoming" data={allContent.upcoming} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+              <MediaCarousel title="Trending TV Shows" type="trendingtv" data={allContent.trendingTV} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+              <MediaCarousel title="Top Rated Movies" type="toprated" data={allContent.topRated} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+              <MediaCarousel title="Hidden Gems" type="hiddengems" data={allContent.hiddenGems} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+
+              {/* Preferred Language Carousels */}
+              {Object.keys(allContent.langData || {}).map(langCode => {
+                 const langInfo = LANGUAGE_OPTIONS.find(l => l.code === langCode);
+                 const langName = langInfo ? langInfo.label : langCode.toUpperCase();
+                 const movies = allContent.langData[langCode].movies;
+                 const tv = allContent.langData[langCode].tv;
+                 return (
+                   <React.Fragment key={langCode}>
+                     {movies && movies.length > 0 && (
+                       <MediaCarousel title={`${langName} Movies`} type={`lang-movies-${langCode}`} data={movies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                     )}
+                     {tv && tv.length > 0 && (
+                       <MediaCarousel title={`${langName} TV Shows`} type={`lang-tv-${langCode}`} data={tv} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                     )}
+                   </React.Fragment>
+                 );
+              })}
+
+              {/* Favorite Actors Carousels */}
+              {(allContent.actorData || []).map((act: any) => (
+                <MediaCarousel 
+                  key={`actor-${act.actorId}`}
+                  title={`Starring ${act.actorName}`} 
+                  type={`actor-${act.actorId}`} 
+                  data={act.items} 
+                  savedIds={savedIds} 
+                  toggleWatchlist={toggleWatchlist} 
+                />
+              ))}
+            </>
+          )}
+        </ScrollView>
+      </BlurTargetView>
+
+      <Animated.View style={[StyleSheet.absoluteFill, { zIndex: 10 }, animatedBgStyle]} pointerEvents="none">
+        <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(20, 20, 20, 0.6)' }]} />
+      </Animated.View>
+
+      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100 }, animatedHeaderStyle]} pointerEvents="box-none">
+        <LinearGradient colors={['rgba(20, 20, 20, 0.9)', 'rgba(20, 20, 20, 0.4)', 'transparent']} style={styles.searchBarContainer} pointerEvents="box-none">
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}> 
+          <Animated.View style={[styles.searchInputContainer, { overflow: 'hidden' }, animatedSearchStyle]}>
+            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
+            <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#1C1C1E' }, animatedBgStyle]} pointerEvents="none" />
+            <View style={styles.searchIconContainer}>
+              <Ionicons name="search" size={20} color="#FFFFFF" />
+            </View>
             <TextInput
-              placeholder="Search movies, cast..."
-              placeholderTextColor="#8C8C8C"
+              placeholder="Discover..."
+              placeholderTextColor="rgba(255, 255, 255, 0.7)"
               value={query}
               onChangeText={setQuery}
               onFocus={() => setIsSearchFocused(true)}
@@ -289,110 +429,32 @@ const ExplorePage = () => {
               underlineColorAndroid="transparent"
               cursorColor="#E50914"
             />
-            <View style={styles.searchIconContainer}>
-              {searchLoading ? (
+            {searchLoading ? (
+              <View style={{ paddingRight: 16 }}>
                 <ActivityIndicator color="#E50914" size={18} />
-              ) : query.length > 0 ? (
-                <TouchableOpacity activeOpacity={0.95} onPress={() => setQuery('')}>
-                  <MaterialIcons name="close" size={22} color="#8C8C8C" />
-                </TouchableOpacity>
-              ) : (
-                <Ionicons name="search" size={20} color="#8C8C8C" />
-              )}
-            </View>
-          </View>
-
-          <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/settings')} style={styles.iconButton}>
-            <Ionicons name="settings-outline" size={22} color="#FFFFFF" />
-          </TouchableOpacity>
-
-        </View>
-      </View>
-
-      <View style={{ flex: 1, position: 'relative' }}>
-        
-        {inSearchMode && (
-          <SearchResultsList 
-            peopleResults={peopleResults}
-            tmdbResults={tmdbResults}
-            savedIds={savedIds}
-            toggleWatchlist={toggleWatchlist}
-          />
-        )}
-
-        <View style={{ flex: 1, display: inSearchMode ? 'none' : 'flex' }}>
-          <ScrollView 
-            scrollEventThrottle={16} 
-            removeClippedSubviews={true} 
-            showsVerticalScrollIndicator={false}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent} 
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />}
-          >
-            {contentLoading ? (
-              <>
-                <SkeletonHero />
-                <View style={{ marginTop: 24 }}>
-                   <SkeletonCarousel />
-                   <SkeletonCarousel />
-                   <SkeletonCarousel />
-                </View>
-              </>
+              </View>
+            ) : query.length > 0 ? (
+              <TouchableOpacity activeOpacity={0.95} onPress={() => setQuery('')} style={{ paddingRight: 16 }}>
+                <MaterialIcons name="close" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
             ) : (
-              <>
-                <HeroSection items={allContent.heroMovies || allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <GenreFilter selectedGenre={selectedGenre} onSelectGenre={setSelectedGenre} />
-
-                {becauseYouWatched.map((row, idx) => {
-                  const filtered = filterWatched(row.items, watchedIds);
-                  if (filtered.length === 0) return null;
-                  return (
-                    <MediaCarousel key={`byw-${idx}`} title={`Because you watched ${row.sourceTitle}`} type="becauseyouwatched" data={filtered} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                  );
-                })}
-
-                <MediaCarousel title="Trending Movies" type="trendingmovies" data={allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Coming Soon" type="upcoming" data={allContent.upcoming} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Trending TV Shows" type="trendingtv" data={allContent.trendingTV} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Top Rated Movies" type="toprated" data={allContent.topRated} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                <MediaCarousel title="Hidden Gems" type="hiddengems" data={allContent.hiddenGems} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-
-                {/* Preferred Language Carousels */}
-                {Object.keys(allContent.langData || {}).map(langCode => {
-                   const langInfo = LANGUAGE_OPTIONS.find(l => l.code === langCode);
-                   const langName = langInfo ? langInfo.label : langCode.toUpperCase();
-                   const movies = allContent.langData[langCode].movies;
-                   const tv = allContent.langData[langCode].tv;
-                   return (
-                     <React.Fragment key={langCode}>
-                       {movies && movies.length > 0 && (
-                         <MediaCarousel title={`${langName} Movies`} type={`lang-movies-${langCode}`} data={movies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                       )}
-                       {tv && tv.length > 0 && (
-                         <MediaCarousel title={`${langName} TV Shows`} type={`lang-tv-${langCode}`} data={tv} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                       )}
-                     </React.Fragment>
-                   );
-                })}
-
-                {/* Favorite Actors Carousels */}
-                {(allContent.actorData || []).map((act: any) => (
-                  <MediaCarousel 
-                    key={`actor-${act.actorId}`}
-                    title={`Starring ${act.actorName}`} 
-                    type={`actor-${act.actorId}`} 
-                    data={act.items} 
-                    savedIds={savedIds} 
-                    toggleWatchlist={toggleWatchlist} 
-                  />
-                ))}
-              </>
+              <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/settings')} style={{ paddingRight: 16 }}>
+                <Ionicons name="settings-outline" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
             )}
-
-          </ScrollView>
+          </Animated.View>
         </View>
+        </LinearGradient>
+      </Animated.View>
 
-      </View>
+      {inSearchMode && (
+        <SearchResultsList 
+          peopleResults={peopleResults}
+          tmdbResults={tmdbResults}
+          savedIds={savedIds}
+          toggleWatchlist={toggleWatchlist}
+        />
+      )}
     </View>
   );
 };
@@ -401,11 +463,11 @@ export default ExplorePage;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#141414',overflow: 'hidden' },
-  scrollContent: { paddingTop: 10, paddingBottom: 110 }, 
-  searchBarContainer: { paddingHorizontal: HORIZONTAL_MARGIN, paddingTop: (StatusBar.currentHeight || 0) + 12, paddingBottom: 12, backgroundColor: 'rgba(20, 20, 20, 0.98)', borderBottomWidth: 1, borderBottomColor: 'rgba(255, 255, 255, 0.08)' },
-  searchInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#222', borderRadius: 14, height: 48, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
-  searchInput: { flex: 1, backgroundColor: 'transparent', height: 48, fontSize: 16, color: 'white', paddingLeft: 16, fontFamily: 'GoogleSansFlex-Regular' },
-  searchIconContainer: { padding: 8 },
+  scrollContent: { paddingTop: (StatusBar.currentHeight || 0) + 70, paddingBottom: 110 }, 
+  searchBarContainer: { paddingHorizontal: HORIZONTAL_MARGIN, paddingTop: (StatusBar.currentHeight || 0) + 4, paddingBottom: 12, backgroundColor: 'transparent', borderBottomWidth: 0 },
+  searchInputContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 24, height: 48, borderWidth: 0, backgroundColor: 'transparent' },
+  searchInput: { flex: 1, backgroundColor: 'transparent', height: 48, fontSize: 16, color: '#FFFFFF', paddingLeft: 4, fontFamily: 'GoogleSansFlex-Medium' },
+  searchIconContainer: { paddingLeft: 12, paddingRight: 4, justifyContent: 'center', alignItems: 'center' },
   historyDropdown: {
     backgroundColor: '#1C1C1E',
     marginHorizontal: 16,
@@ -434,11 +496,10 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 14,
-    backgroundColor: '#222',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 0,
   },
 
   skeletonContainer: { marginBottom: 24, paddingLeft: HORIZONTAL_MARGIN },

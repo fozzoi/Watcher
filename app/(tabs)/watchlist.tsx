@@ -803,6 +803,12 @@ const WatchListPage = () => {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           columnWrapperStyle={{ gap: 10 }}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+              import('react-native').then(({ DeviceEventEmitter }) => {
+                  DeviceEventEmitter.emit('exploreScroll', e.nativeEvent.contentOffset.y);
+              });
+          }}
         />
       )}
 
