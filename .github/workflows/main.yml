@@ -1,5 +1,10 @@
 name: Build Expo APK
-on: workflow_dispatch
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
 
 # Grant permission to create releases
 permissions:
