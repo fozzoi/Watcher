@@ -20,6 +20,22 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
 
     useEffect(() => {
         const sub = DeviceEventEmitter.addListener('exploreScroll', (offsetY) => {
+            const diff = offsetY - lastScrollY.current;
+            
+            // Ignore large jumps (e.g., switching tabs) to prevent abrupt animations
+            if (Math.abs(diff) > 200) {
+                lastScrollY.current = offsetY;
+                // Ensure tab bar expands if we jumped to the top of a page
+                if (offsetY <= 50 && isShrunk.current) {
+                    isShrunk.current = false;
+                    Animated.parallel([
+                        Animated.timing(scaleAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
+                        Animated.timing(translateYAnim, { toValue: 0, duration: 150, useNativeDriver: true })
+                    ]).start();
+                }
+                return;
+            }
+
             if (offsetY > lastScrollY.current && offsetY > 50) {
                 if (!isShrunk.current) {
                     isShrunk.current = true;

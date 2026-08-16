@@ -405,47 +405,48 @@ const ExplorePage = () => {
         <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(20, 20, 20, 0.6)' }]} />
       </Animated.View>
 
-      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100 }, animatedHeaderStyle]} pointerEvents="box-none">
-        <LinearGradient colors={['rgba(20, 20, 20, 0.9)', 'rgba(20, 20, 20, 0.4)', 'transparent']} style={styles.searchBarContainer} pointerEvents="box-none">
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}> 
-          <Animated.View style={[styles.searchInputContainer, { overflow: 'hidden' }, animatedSearchStyle]}>
-            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
-            <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#1C1C1E' }, animatedBgStyle]} pointerEvents="none" />
-            <View style={styles.searchIconContainer}>
-              <Ionicons name="search" size={20} color="#FFFFFF" />
-            </View>
-            <TextInput
-              placeholder="Discover..."
-              placeholderTextColor="rgba(255, 255, 255, 0.7)"
-              value={query}
-              onChangeText={setQuery}
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => setIsSearchFocused(false)}
-              onSubmitEditing={() => saveSearchToHistory(query)}
-              style={styles.searchInput}
-              selectionColor="#E50914"
-              returnKeyType="search"
-              keyboardAppearance="light"
-              underlineColorAndroid="transparent"
-              cursorColor="#E50914"
-            />
-            {searchLoading ? (
-              <View style={{ paddingRight: 16 }}>
-                <ActivityIndicator color="#E50914" size={18} />
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100 }} pointerEvents="box-none">
+        <LinearGradient colors={['rgba(20, 20, 20, 0.9)', 'rgba(20, 20, 20, 0.4)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: (StatusBar.currentHeight || 0) + 100 }} pointerEvents="none" />
+        <Animated.View style={[styles.searchBarContainer, animatedHeaderStyle]} pointerEvents="box-none">
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}> 
+            <Animated.View style={[styles.searchInputContainer, { overflow: 'hidden' }, animatedSearchStyle]}>
+              <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
+              <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#1C1C1E' }, animatedBgStyle]} pointerEvents="none" />
+              <View style={styles.searchIconContainer}>
+                <Ionicons name="search" size={20} color="#FFFFFF" />
               </View>
-            ) : query.length > 0 ? (
-              <TouchableOpacity activeOpacity={0.95} onPress={() => setQuery('')} style={{ paddingRight: 16 }}>
-                <MaterialIcons name="close" size={22} color="#FFFFFF" />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/settings')} style={{ paddingRight: 16 }}>
-                <Ionicons name="settings-outline" size={22} color="#FFFFFF" />
-              </TouchableOpacity>
-            )}
-          </Animated.View>
-        </View>
-        </LinearGradient>
-      </Animated.View>
+              <TextInput
+                placeholder="Discover..."
+                placeholderTextColor="rgba(255, 255, 255, 0.7)"
+                value={query}
+                onChangeText={setQuery}
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => setIsSearchFocused(false)}
+                onSubmitEditing={() => saveSearchToHistory(query)}
+                style={styles.searchInput}
+                selectionColor="#E50914"
+                returnKeyType="search"
+                keyboardAppearance="light"
+                underlineColorAndroid="transparent"
+                cursorColor="#E50914"
+              />
+              {searchLoading ? (
+                <View style={{ paddingRight: 16 }}>
+                  <ActivityIndicator color="#E50914" size={18} />
+                </View>
+              ) : query.length > 0 ? (
+                <TouchableOpacity activeOpacity={0.95} onPress={() => setQuery('')} style={{ paddingRight: 16 }}>
+                  <MaterialIcons name="close" size={22} color="#FFFFFF" />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/settings')} style={{ paddingRight: 16 }}>
+                  <Ionicons name="settings-outline" size={22} color="#FFFFFF" />
+                </TouchableOpacity>
+              )}
+            </Animated.View>
+          </View>
+        </Animated.View>
+      </View>
 
       {inSearchMode && (
         <SearchResultsList 

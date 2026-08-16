@@ -261,6 +261,16 @@ const DetailPage = () => {
   const [loadingAi, setLoadingAi] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(true);
   const [autoAiEnabled, setAutoAiEnabled] = useState(true);
+  const [deferRender, setDeferRender] = useState(false);
+
+  useEffect(() => {
+    import('react-native').then(({ InteractionManager }) => {
+      InteractionManager.runAfterInteractions(() => {
+        setTimeout(() => setDeferRender(true), 250);
+      });
+    });
+  }, []);
+
   const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [isWatched, setIsWatched] = useState(false);
   const [showFullOverview, setShowFullOverview] = useState(false);
@@ -830,6 +840,8 @@ const DetailPage = () => {
           </View>
         ) : null}
 
+        {deferRender && (
+        <>
         {movie.belongs_to_collection && (
           <TouchableOpacity activeOpacity={0.95}
             style={styles.collectionBanner}
@@ -1063,6 +1075,8 @@ const DetailPage = () => {
               </View>
             )}
           </View>
+        )}
+        </>
         )}
       </View>
     </>

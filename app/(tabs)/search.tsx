@@ -213,25 +213,30 @@ export default function Index() {
         <Animated.View key={index} entering={FadeInUp.delay(index * 100).springify()} style={styles.card}>
           <View style={styles.cardInner}>
             <View style={styles.iconContainer}>
-               <MaterialCommunityIcons name="file-video-outline" size={32} color="#666" />
+               <MaterialCommunityIcons name="file-video" size={30} color="#E50914" />
             </View>
             <View style={styles.cardContent}>
                 <Text style={styles.cardTitle} numberOfLines={2}>{item.name}</Text>
+                
+                <View style={styles.statsContainer}>
+                    <View style={styles.statPill}>
+                         <Feather name="arrow-up" size={12} color={healthColor} />
+                         <Text style={[styles.statText, { color: healthColor, fontWeight: '700' }]}>{item.seeds}</Text>
+                    </View>
+                    <View style={styles.statPill}>
+                         <Feather name="arrow-down" size={12} color="#888" />
+                         <Text style={styles.statText}>{item.peers}</Text>
+                    </View>
+                    <View style={styles.dot} />
+                    <Text style={styles.sizeText}>{item.size}</Text>
+                </View>
+
                 <View style={styles.tagsRow}>
-                    <View style={[styles.tag, { borderColor: quality.color, borderWidth: 1 }]}>
+                    <View style={[styles.tag, { backgroundColor: quality.color + '20', borderColor: quality.color + '50' }]}>
                         <Text style={[styles.tagText, { color: quality.color }]}>{quality.label}</Text>
                     </View>
-                    <View style={styles.tag}><Text style={styles.tagText}>{item.size}</Text></View>
-                    <View style={[styles.tag, { backgroundColor: '#333' }]}><Text style={[styles.tagText, { color: '#AAA' }]}>{item.source}</Text></View>
-                </View>
-                <View style={styles.seedRow}>
-                    <View style={{flexDirection: 'row', alignItems: 'center', gap: 4}}>
-                         <Feather name="arrow-up" size={12} color={healthColor} />
-                         <Text style={{color: healthColor, fontSize: 12, fontWeight:'bold'}}>{item.seeds} Seeds</Text>
-                    </View>
-                    <View style={{flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 12}}>
-                         <Feather name="arrow-down" size={12} color="#888" />
-                         <Text style={{color: '#888', fontSize: 12}}>{item.peers} Peers</Text>
+                    <View style={styles.tagSource}>
+                        <Text style={styles.tagSourceText}>{item.source}</Text>
                     </View>
                 </View>
             </View>
@@ -243,7 +248,7 @@ export default function Index() {
                     onPress={() => handleShareAsFile(item.url, item.name)}
                     disabled={downloadingFile}
                 >
-                    {downloadingFile ? <ActivityIndicator size="small" color="#AAA" /> : <Feather name="share-2" size={18} color="#AAA" />}
+                    {downloadingFile ? <ActivityIndicator size="small" color="#AAA" /> : <Feather name="download" size={18} color="#AAA" />}
                 </TouchableOpacity>
 
                 <TouchableOpacity activeOpacity={0.95} 
@@ -254,8 +259,8 @@ export default function Index() {
                          else showDialog({ title: "No App Found", message: "Please install a torrent client like Flud or LibreTorrent to open magnet links.", type: "warning" });
                     }}
                 >
-                    <MaterialCommunityIcons name="magnet" size={18} color="white" />
-                    <Text style={styles.downloadText}>Open Magnet</Text>
+                    <MaterialCommunityIcons name="magnet" size={18} color="#FFF" />
+                    <Text style={styles.downloadText}>Magnet Link</Text>
                 </TouchableOpacity>
           </View>
         </Animated.View>
@@ -325,15 +330,14 @@ export default function Index() {
                 keyboardDismissMode="on-drag"
                 scrollEventThrottle={16}
                 onScroll={(e) => {
+                    const y = e.nativeEvent.contentOffset.y;
                     import('react-native').then(({ DeviceEventEmitter }) => {
-                        DeviceEventEmitter.emit('exploreScroll', e.nativeEvent.contentOffset.y);
+                        DeviceEventEmitter.emit('exploreScroll', y);
                     });
                 }}
             >
-                <View style={styles.filterRow}>
-                     <View style={{ flex: 1 }}>
-                        <Text style={styles.resultsCount}>{results.length} results found</Text>
-                     </View>
+                <View style={styles.resultsHeader}>
+                     <Text style={styles.resultsTitle}>{loading ? 'Searching...' : `${results.length} Results`}</Text>
                      <TouchableOpacity activeOpacity={0.95} style={styles.historyIconBtn} onPress={() => router.push("/history")}>
                         <MaterialIcons name="history" size={24} color="#666" />
                      </TouchableOpacity>
@@ -381,7 +385,7 @@ export default function Index() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  contentWrapper: { flex: 1, alignItems: 'center' },
+  contentWrapper: { flex: 1, width: '100%' },
   brandContainer: { alignItems: 'center', marginBottom: 40 },
   brandTitle: { color: 'white', fontSize: 28, fontWeight: 'bold', marginBottom: 20 },
   historyPill: { 
@@ -404,32 +408,39 @@ const styles = StyleSheet.create({
       flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', 
       marginBottom: 16, marginTop: 10 
   },
-  resultsTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+  resultsTitle: { color: 'white', fontSize: 18, fontFamily: 'GoogleSansFlex-Bold' },
+  historyIconBtn: { padding: 4 },
   card: { 
-      backgroundColor: '#111', borderRadius: 16, borderWidth: 1, borderColor: '#222',
+      backgroundColor: 'rgba(28, 28, 30, 0.6)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)',
       marginBottom: 16, overflow: 'hidden'
   },
-  cardInner: { flexDirection: 'row', padding: 16 },
+  cardInner: { flexDirection: 'row', padding: 16, alignItems: 'center' },
   iconContainer: {
-      width: 50, height: 50, borderRadius: 12, backgroundColor: '#1A1A1A', 
-      justifyContent: 'center', alignItems: 'center', marginRight: 16
+      width: 48, height: 48, borderRadius: 12, backgroundColor: 'rgba(229, 9, 20, 0.1)', 
+      justifyContent: 'center', alignItems: 'center', marginRight: 16, borderWidth: 1, borderColor: 'rgba(229, 9, 20, 0.2)'
   },
   cardContent: { flex: 1 },
-  cardTitle: { color: 'white', fontSize: 16, fontWeight: 'bold', marginBottom: 8, lineHeight: 22 },
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  tag: { backgroundColor: '#1A1A1A', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  tagText: { color: '#CCC', fontSize: 11, fontWeight: '600' },
-  seedRow: { flexDirection: 'row', alignItems: 'center' },
+  cardTitle: { color: 'white', fontSize: 15, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 8, lineHeight: 20 },
+  statsContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  statPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  statText: { color: '#AAA', fontSize: 12, fontFamily: 'GoogleSansFlex-Medium' },
+  dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#555' },
+  sizeText: { color: '#AAA', fontSize: 12, fontFamily: 'GoogleSansFlex-Medium' },
+  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tag: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
+  tagText: { fontSize: 10, fontFamily: 'GoogleSansFlex-Bold' },
+  tagSource: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  tagSourceText: { color: '#CCC', fontSize: 10, fontFamily: 'GoogleSansFlex-Medium' },
   actionRow: {
-      flexDirection: 'row', backgroundColor: '#161616', padding: 12,
-      borderTopWidth: 1, borderTopColor: '#222', justifyContent: 'space-between', alignItems: 'center'
+      flexDirection: 'row', backgroundColor: 'rgba(0, 0, 0, 0.2)', padding: 12,
+      borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.05)', justifyContent: 'space-between', alignItems: 'center'
   },
-  shareBtn: { padding: 10, borderRadius: 8, backgroundColor: '#222', width: 44, alignItems: 'center' },
+  shareBtn: { padding: 10, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.05)', width: 44, alignItems: 'center' },
   downloadBtn: {
-      flex: 1, marginLeft: 12, backgroundColor: '#E50914', borderRadius: 8,
+      flex: 1, marginLeft: 12, backgroundColor: '#E50914', borderRadius: 10,
       flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 10, gap: 8
   },
-  downloadText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
+  downloadText: { color: 'white', fontFamily: 'GoogleSansFlex-Bold', fontSize: 14 },
   loaderContainer: { marginTop: 50, alignItems: 'center' },
   loadingText: { color: '#666', marginTop: 16 },
   emptyState: { alignItems: 'center', marginTop: 50 },
