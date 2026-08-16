@@ -8,11 +8,13 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker'; 
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { setGlobalConfig } from '../src/tmdb';
 import { resetOnboarding } from '../src/userPreferences';
 import Constants from 'expo-constants';
 import { isNotificationsEnabled, setNotificationsEnabled, sendTestNotification } from '../src/notifications';
+import { checkForAppUpdate, downloadAndInstallApk, UpdateCheckResult } from '../src/updater';
+import { Modal, ActivityIndicator } from 'react-native';
 
 const Settings = () => {
   const router = useRouter();
@@ -24,10 +26,18 @@ const Settings = () => {
   const [isAutoAi, setIsAutoAi] = useState(true);
   const [isSmartNotifs, setIsSmartNotifs] = useState(true);
   
-  const appVersion = Constants.expoConfig?.version || '1.0.0';
+  // App Update States
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  
+  const appVersion = Constants.expoConfig?.version || '3.0.0';
 
   useEffect(() => {
     loadSettings();
+    handleCheckUpdate(true); // Silent check on mount
   }, []);
 
   const loadSettings = async () => {
@@ -83,6 +93,48 @@ const Settings = () => {
       Alert.alert("Success! 🍿", "Test notification triggered. Check your notification panel.");
     } catch (e: any) {
       Alert.alert("Notification Error", e.message || "Failed to trigger notification. Make sure permissions are granted.");
+    }
+  };
+
+  // APP UPDATE LOGIC
+  const handleCheckUpdate = async (silent = false) => {
+    if (checkingUpdate) return;
+    setCheckingUpdate(true);
+    try {
+      const result = await checkForAppUpdate();
+      setUpdateResult(result);
+      if (!silent) {
+        if (result.updateAvailable) {
+          setUpdateModalVisible(true);
+        } else {
+          Alert.alert("Up to Date! ✨", `You are on the latest version of Watcher (v${appVersion}).`);
+        }
+      }
+    } catch (e) {
+      if (!silent) {
+        Alert.alert("Update Check Failed", "Could not connect to GitHub Releases. Please check your internet connection.");
+      }
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleStartUpdate = async () => {
+    if (!updateResult?.apkUrl) {
+      Alert.alert("No APK Found", "This release does not contain an APK asset yet.");
+      return;
+    }
+    setDownloading(true);
+    setDownloadProgress(0);
+    try {
+      await downloadAndInstallApk(updateResult.apkUrl, (progress) => {
+        setDownloadProgress(progress);
+      });
+      setUpdateModalVisible(false);
+    } catch (error: any) {
+      Alert.alert("Download Error", error.message || "Failed to download update APK.");
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -306,6 +358,45 @@ const Settings = () => {
           />
         </View>
 
+        {/* ── App Updates ── */}
+        <Text style={styles.sectionLabel}>UPDATES</Text>
+        <View style={styles.card}>
+          <TouchableOpacity 
+            activeOpacity={0.7} 
+            onPress={() => {
+              if (updateResult?.updateAvailable) {
+                setUpdateModalVisible(true);
+              } else {
+                handleCheckUpdate(false);
+              }
+            }} 
+            style={styles.row}
+          >
+            <View style={styles.rowText}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={styles.rowTitle}>Check for Updates</Text>
+                {updateResult?.updateAvailable && (
+                  <View style={styles.badgeNew}>
+                    <Text style={styles.badgeNewText}>NEW</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.rowSubtitle, updateResult?.updateAvailable && { color: '#30D158' }]}>
+                {checkingUpdate 
+                  ? "Checking GitHub for updates..." 
+                  : updateResult?.updateAvailable 
+                    ? `Update available: ${updateResult.latestVersion}` 
+                    : `Version ${appVersion} (Latest)`}
+              </Text>
+            </View>
+            {checkingUpdate ? (
+              <ActivityIndicator size="small" color="#E50914" />
+            ) : (
+              <Feather name="refresh-cw" size={18} color="#8E8E93" />
+            )}
+          </TouchableOpacity>
+        </View>
+
         {/* ── Data & Storage ── */}
         <Text style={styles.sectionLabel}>DATA & STORAGE</Text>
         <View style={styles.card}>
@@ -331,6 +422,67 @@ const Settings = () => {
 
         <Text style={styles.version}>Watcher v{appVersion}</Text>
       </ScrollView>
+
+      {/* ── Update Dialog Modal ── */}
+      <Modal
+        visible={updateModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => { if (!downloading) setUpdateModalVisible(false); }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIconContainer}>
+              <MaterialCommunityIcons name="update" size={32} color="#E50914" />
+            </View>
+
+            <Text style={styles.modalTitle}>{updateResult?.releaseName || 'New Version Available!'}</Text>
+            <Text style={styles.modalVersionTag}>Version {updateResult?.latestVersion}</Text>
+
+            {updateResult?.releaseNotes ? (
+              <ScrollView style={styles.modalNotesScroll}>
+                <Text style={styles.modalNotesText}>{updateResult.releaseNotes}</Text>
+              </ScrollView>
+            ) : (
+              <Text style={styles.modalSubtitle}>A new version of Watcher is ready to download and install from GitHub Releases.</Text>
+            )}
+
+            {downloading && (
+              <View style={styles.progressContainer}>
+                <View style={styles.progressBarBg}>
+                  <View style={[styles.progressBarFill, { width: `${Math.round(downloadProgress * 100)}%` }]} />
+                </View>
+                <Text style={styles.progressText}>Downloading APK... {Math.round(downloadProgress * 100)}%</Text>
+              </View>
+            )}
+
+            <View style={styles.modalBtnRow}>
+              {!downloading && (
+                <TouchableOpacity 
+                  activeOpacity={0.8} 
+                  onPress={() => setUpdateModalVisible(false)} 
+                  style={styles.modalCancelBtn}
+                >
+                  <Text style={styles.modalCancelText}>Later</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity 
+                activeOpacity={0.8} 
+                disabled={downloading}
+                onPress={handleStartUpdate} 
+                style={[styles.modalConfirmBtn, downloading && { opacity: 0.6 }]}
+              >
+                {downloading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>Download & Install</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -401,6 +553,130 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 32,
     marginBottom: 20,
+  },
+  badgeNew: {
+    backgroundColor: '#E50914',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  badgeNewText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  modalIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(229, 9, 20, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: 'GoogleSansFlex-Bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  modalVersionTag: {
+    fontSize: 13,
+    color: '#E50914',
+    fontFamily: 'GoogleSansFlex-Medium',
+    marginBottom: 12,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: '#A0A0A0',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  modalNotesScroll: {
+    maxHeight: 120,
+    width: '100%',
+    backgroundColor: '#121212',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  modalNotesText: {
+    fontSize: 12,
+    color: '#CCCCCC',
+    lineHeight: 18,
+    fontFamily: 'GoogleSansFlex-Regular',
+  },
+  progressContainer: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  progressBarBg: {
+    width: '100%',
+    height: 8,
+    backgroundColor: '#333333',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#E50914',
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: 12,
+    color: '#8E8E93',
+    textAlign: 'center',
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+    marginTop: 8,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#2C2C2E',
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex-Medium',
+  },
+  modalConfirmBtn: {
+    flex: 2,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#E50914',
+    alignItems: 'center',
+  },
+  modalConfirmText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex-Bold',
   },
 });
 

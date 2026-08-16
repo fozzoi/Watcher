@@ -1,5 +1,10 @@
 name: Build Expo APK
 on: workflow_dispatch
+
+# Grant permission to create releases
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,8 +32,11 @@ jobs:
           EAS_LOCAL_BUILD_SKIP_CLEANUP: 1
           _JAVA_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=2048m"
         run: eas build --platform android --profile production --local --non-interactive
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Upload to GitHub Releases
+        uses: softprops/action-gh-release@v2
         with:
-          name: TheWatcher-APK
-          path: "*.apk"
+          files: "*.apk"
+          tag_name: "v3.0.${{ github.run_number }}"
+          name: "The Watcher Build #${{ github.run_number }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
