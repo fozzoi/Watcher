@@ -8,6 +8,7 @@ export interface DialogButton {
   text: string;
   onPress?: () => void;
   style?: 'default' | 'cancel' | 'destructive' | 'primary';
+  icon?: string;
 }
 
 export interface ThemedDialogProps {
@@ -35,18 +36,18 @@ export const ThemedDialog: React.FC<ThemedDialogProps> = ({
 
   const getIcon = () => {
     if (iconName) {
-      return <Ionicons name={iconName as any} size={28} color="#E50914" />;
+      return <Ionicons name={iconName as any} size={30} color="#E50914" />;
     }
     switch (type) {
       case 'success':
-        return <Ionicons name="checkmark-circle-outline" size={32} color="#30D158" />;
+        return <Ionicons name="checkmark-circle-outline" size={34} color="#30D158" />;
       case 'warning':
-        return <Ionicons name="alert-circle-outline" size={32} color="#FF9F0A" />;
+        return <Ionicons name="alert-circle-outline" size={34} color="#FF9F0A" />;
       case 'danger':
-        return <Ionicons name="trash-outline" size={30} color="#FF453A" />;
+        return <Ionicons name="trash-outline" size={32} color="#FF453A" />;
       case 'info':
       default:
-        return <MaterialCommunityIcons name="filmstrip" size={30} color="#E50914" />;
+        return <MaterialCommunityIcons name="filmstrip" size={32} color="#E50914" />;
     }
   };
 
@@ -78,6 +79,8 @@ export const ThemedDialog: React.FC<ThemedDialogProps> = ({
     }
   };
 
+  const isVerticalStack = buttons.length > 2;
+
   return (
     <Modal
       visible={visible}
@@ -94,11 +97,11 @@ export const ThemedDialog: React.FC<ThemedDialogProps> = ({
           <Text style={styles.title}>{title}</Text>
           {message ? <Text style={styles.message}>{message}</Text> : null}
 
-          <View style={[styles.buttonRow, buttons.length > 2 && styles.buttonColumn]}>
+          <View style={isVerticalStack ? styles.buttonStack : styles.buttonRow}>
             {buttons.map((btn, idx) => {
               const isDestructive = btn.style === 'destructive';
               const isCancel = btn.style === 'cancel';
-              const isPrimary = btn.style === 'primary' || (!btn.style && idx === buttons.length - 1);
+              const isPrimary = btn.style === 'primary' || (!btn.style && idx === buttons.length - 1 && !isVerticalStack);
 
               return (
                 <TouchableOpacity
@@ -109,11 +112,12 @@ export const ThemedDialog: React.FC<ThemedDialogProps> = ({
                     if (onClose) onClose();
                   }}
                   style={[
-                    styles.button,
+                    styles.buttonBase,
+                    !isVerticalStack && styles.buttonInRow,
+                    isVerticalStack && styles.buttonInStack,
                     isCancel && styles.buttonCancel,
                     isDestructive && styles.buttonDestructive,
                     isPrimary && !isDestructive && styles.buttonPrimary,
-                    buttons.length > 2 && { width: '100%', marginBottom: 8 }
                   ]}
                 >
                   <Text
@@ -139,18 +143,18 @@ export const ThemedDialog: React.FC<ThemedDialogProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.82)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   card: {
     width: '100%',
-    maxWidth: Math.min(width - 48, 360),
+    maxWidth: Math.min(width - 40, 360),
     backgroundColor: '#1C1C1E',
     borderRadius: 24,
-    paddingVertical: 24,
-    paddingHorizontal: 20,
+    paddingVertical: 26,
+    paddingHorizontal: 22,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
@@ -161,47 +165,56 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   iconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
   },
   title: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: 'GoogleSansFlex-Bold',
     color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 8,
   },
   message: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontFamily: 'GoogleSansFlex-Regular',
     color: '#A0A0A0',
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 20,
+    lineHeight: 21,
+    marginBottom: 22,
     paddingHorizontal: 4,
   },
   buttonRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
     width: '100%',
     marginTop: 4,
   },
-  buttonColumn: {
+  buttonStack: {
     flexDirection: 'column',
-    gap: 0,
+    width: '100%',
+    marginTop: 4,
+    gap: 10,
   },
-  button: {
-    flex: 1,
-    paddingVertical: 13,
+  buttonBase: {
+    minHeight: 50,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderRadius: 14,
     backgroundColor: '#2C2C2E',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  buttonInRow: {
+    flex: 1,
+  },
+  buttonInStack: {
+    width: '100%',
   },
   buttonCancel: {
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
@@ -215,12 +228,14 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 69, 58, 0.4)',
   },
   buttonText: {
-    fontSize: 14,
-    fontFamily: 'GoogleSansFlex-Medium',
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex-Bold',
     color: '#FFFFFF',
+    textAlign: 'center',
   },
   buttonTextCancel: {
     color: '#8E8E93',
+    fontFamily: 'GoogleSansFlex-Medium',
   },
   buttonTextPrimary: {
     color: '#FFFFFF',
