@@ -35,11 +35,7 @@ const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
 export default function Index() {
   const router = useRouter();
-  const { prefillQuery, fromMovieId, fromMediaType } = useLocalSearchParams<{
-    prefillQuery?: string;
-    fromMovieId?: string;
-    fromMediaType?: string;
-  }>();
+  const { prefillQuery } = useLocalSearchParams<{ prefillQuery?: string }>();
   const insets = useSafeAreaInsets();
   
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -55,35 +51,32 @@ export default function Index() {
     setResults([]);
     setHasSearched(false);
 
-    if (fromMovieId) {
-      router.push(`/movie/${fromMovieId}?media_type=${fromMediaType || 'movie'}`);
-      return true;
-    }
-
-    if (hasSearched || searchQuery.trim() !== '') {
-      handleClear();
-      return true;
-    }
-
     if (router.canGoBack()) {
       router.back();
       return true;
     }
-
     return false;
-  }, [fromMovieId, fromMediaType, hasSearched, searchQuery, router]);
+  }, [router]);
 
   // --- BACK HANDLER ---
   useEffect(() => {
     const onBackPress = () => {
-      if (fromMovieId) {
+      // 1. If we came from an external screen with prefillQuery
+      if (prefillQuery) {
         handleGoBack();
         return true; 
       }
 
+      // 2. If user searched manually, clear first
       if (hasSearched || searchQuery.trim() !== '') {
         handleClear();
         return true; 
+      }
+
+      // 3. Otherwise pop back if possible
+      if (router.canGoBack()) {
+        router.back();
+        return true;
       }
       
       return false;
@@ -91,7 +84,7 @@ export default function Index() {
     
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [fromMovieId, hasSearched, searchQuery, handleGoBack]);
+  }, [prefillQuery, hasSearched, searchQuery, handleGoBack, router]);
 
   // --- HELPERS ---
   const getQualityInfo = (name: string): { label: string; color: string } => {
@@ -301,7 +294,7 @@ export default function Index() {
 
         <View style={[styles.searchSection, hasSearched && styles.searchSectionActive]}>
             <View style={styles.inputWrapper}>
-                {fromMovieId ? (
+                {prefillQuery ? (
                     <TouchableOpacity activeOpacity={0.7} onPress={handleGoBack} style={{ paddingLeft: 14, paddingRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                         <Ionicons name="arrow-back" size={22} color="#FFF" />
                     </TouchableOpacity>

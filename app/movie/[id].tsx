@@ -16,6 +16,7 @@ import {
   Linking,
   TextInput,
   Keyboard,
+  BackHandler,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -289,6 +290,20 @@ const DetailPage = () => {
       if (val !== null) setAutoAiEnabled(JSON.parse(val));
     });
   }, []);
+
+  useEffect(() => {
+    const onBack = () => {
+      if (router.canGoBack()) {
+        router.back();
+        return true;
+      } else {
+        router.replace('/(tabs)');
+        return true;
+      }
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
+  }, [router]);
 
   const fetchAiRecommendations = async () => {
     if (!movie || (!movie.title && !movie.name)) return;
@@ -607,8 +622,7 @@ const DetailPage = () => {
   const openTorrentSearch = () => {
     if (!movie) return;
     const query = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.slice(0, 4) || ''}`;
-    const mType = movie.media_type || (movie.first_air_date ? 'tv' : 'movie');
-    router.push(`/search?prefillQuery=${encodeURIComponent(query)}&fromMovieId=${movie.id}&fromMediaType=${mType}`);
+    router.push(`/search?prefillQuery=${encodeURIComponent(query)}`);
   };
 
   const copyTitle = async () => {
@@ -1119,7 +1133,17 @@ const DetailPage = () => {
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-        <TouchableOpacity activeOpacity={0.95} onPress={() => router.back()} style={styles.glassBtn} activeOpacity={0.95}>
+        <TouchableOpacity 
+          activeOpacity={0.85} 
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)');
+            }
+          }} 
+          style={styles.glassBtn}
+        >
           <Ionicons name="chevron-back" size={22} color={C.white} />
         </TouchableOpacity>
         <TouchableOpacity activeOpacity={0.95} 
