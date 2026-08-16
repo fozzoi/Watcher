@@ -15,7 +15,17 @@ import Constants from 'expo-constants';
 import { isNotificationsEnabled, setNotificationsEnabled, sendTestNotification } from '../src/notifications';
 import { checkForAppUpdate, isUpdateNotificationEnabled, setUpdateNotificationEnabled, UpdateCheckResult } from '../src/updater';
 import AppUpdateModal from '../src/components/shared/AppUpdateModal';
+import { ThemedDialog, DialogButton } from '../src/components/shared/ThemedDialog';
 import { ActivityIndicator } from 'react-native';
+
+interface DialogConfig {
+  visible: boolean;
+  title: string;
+  message?: string;
+  type?: 'info' | 'success' | 'warning' | 'danger';
+  buttons?: DialogButton[];
+  iconName?: string;
+}
 
 const Settings = () => {
   const router = useRouter();
@@ -32,6 +42,16 @@ const Settings = () => {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
+
+  // Themed Dialog State
+  const [dialogConfig, setDialogConfig] = useState<DialogConfig>({
+    visible: false,
+    title: '',
+  });
+
+  const showDialog = (config: Omit<DialogConfig, 'visible'>) => {
+    setDialogConfig({ ...config, visible: true });
+  };
   
   const appVersion = Constants.expoConfig?.version || '3.0.0';
 
@@ -97,9 +117,17 @@ const Settings = () => {
   const handleTestNotif = async () => {
     try {
       await sendTestNotification();
-      Alert.alert("Success! 🍿", "Test notification triggered. Check your notification panel.");
+      showDialog({
+        title: "Success! 🍿",
+        message: "Test notification triggered. Check your notification panel.",
+        type: "success",
+      });
     } catch (e: any) {
-      Alert.alert("Notification Error", e.message || "Failed to trigger notification. Make sure permissions are granted.");
+      showDialog({
+        title: "Notification Error",
+        message: e.message || "Failed to trigger notification. Make sure permissions are granted.",
+        type: "warning",
+      });
     }
   };
 
@@ -114,12 +142,20 @@ const Settings = () => {
         if (result.updateAvailable) {
           setUpdateModalVisible(true);
         } else {
-          Alert.alert("Up to Date! ✨", `You are on the latest version of Watcher (v${appVersion}).`);
+          showDialog({
+            title: "Up to Date! ✨",
+            message: `You are on the latest version of Watcher (v${appVersion}).`,
+            type: "success",
+          });
         }
       }
     } catch (e) {
       if (!silent) {
-        Alert.alert("Update Check Failed", "Could not connect to GitHub Releases. Please check your internet connection.");
+        showDialog({
+          title: "Update Check Failed",
+          message: "Could not connect to GitHub Releases. Please check your internet connection.",
+          type: "warning",
+        });
       }
     } finally {
       setCheckingUpdate(false);
@@ -128,15 +164,16 @@ const Settings = () => {
 
   // EXPORT LOGIC
   const handleExportPrompt = () => {
-    Alert.alert(
-      "Export Library",
-      "Choose a format to export your Watchlist, Artists, and Watched History.",
-      [
+    showDialog({
+      title: "Export Library",
+      message: "Choose a format to export your Watchlist, Artists, and Watched History.",
+      type: "info",
+      buttons: [
+        { text: "Export as .TXT", style: "primary", onPress: () => performExport('txt') },
+        { text: "Export as .JSON", style: "primary", onPress: () => performExport('json') },
         { text: "Cancel", style: "cancel" },
-        { text: "Export as .TXT", onPress: () => performExport('txt') },
-        { text: "Export as .JSON", onPress: () => performExport('json') }
       ]
-    );
+    });
   };
 
   const performExport = async (format: 'txt' | 'json') => {
@@ -178,10 +215,18 @@ const Settings = () => {
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, { mimeType: format === 'json' ? 'application/json' : 'text/plain', dialogTitle: 'Export Watcher Data' });
       } else {
-        Alert.alert("Error", "Sharing is not available on this device.");
+        showDialog({
+          title: "Error",
+          message: "Sharing is not available on this device.",
+          type: "warning",
+        });
       }
     } catch (error) {
-      Alert.alert("Export Failed", "There was an error generating your backup file.");
+      showDialog({
+        title: "Export Failed",
+        message: "There was an error generating your backup file.",
+        type: "danger",
+      });
     }
   };
 
@@ -211,51 +256,75 @@ const Settings = () => {
       }
 
       if (restoredTotal > 0) {
-        Alert.alert("Backup Restored! 🎉", `Successfully restored ${restoredTotal} items.\n\nGo back to your Library to see them.`);
+        showDialog({
+          title: "Backup Restored! 🎉",
+          message: `Successfully restored ${restoredTotal} items.\n\nGo back to your Library to see them.`,
+          type: "success",
+        });
       } else {
-        Alert.alert("Invalid File", "This JSON file does not contain valid Watcher backup data.");
+        showDialog({
+          title: "Invalid File",
+          message: "This JSON file does not contain valid Watcher backup data.",
+          type: "warning",
+        });
       }
     } catch (error) {
-      Alert.alert("Restore Failed", "Make sure you selected a valid Watcher Backup .json file.");
+      showDialog({
+        title: "Restore Failed",
+        message: "Make sure you selected a valid Watcher Backup .json file.",
+        type: "danger",
+      });
     }
   };
 
   const handleClearCache = async () => {
-    Alert.alert(
-      "Clear Cache",
-      "Are you sure? Images will reload next time.",
-      [
+    showDialog({
+      title: "Clear Cache",
+      message: "Are you sure? Images will reload next time.",
+      type: "danger",
+      buttons: [
         { text: "Cancel", style: "cancel" },
         { 
-          text: "Clear", style: "destructive",
+          text: "Clear Cache", 
+          style: "destructive",
           onPress: async () => {
             const cacheDir = FileSystem.cacheDirectory;
             if (cacheDir) {
               await FileSystem.deleteAsync(cacheDir, { idempotent: true });
               await FileSystem.makeDirectoryAsync(cacheDir);
-              Alert.alert("Success", "Cache cleared.");
+              showDialog({
+                title: "Cache Cleared",
+                message: "Temporary cache files have been cleared.",
+                type: "success",
+              });
             }
           }
         }
       ]
-    );
+    });
   };
 
   const handleResetPreferences = async () => {
-    Alert.alert(
-      "Reset Preferences",
-      "This will clear your saved languages, genres, and favorite actors. The app will restart to show the setup screen.",
-      [
+    showDialog({
+      title: "Reset Preferences",
+      message: "This will clear your saved languages, genres, and favorite actors. The app will restart to show the setup screen.",
+      type: "danger",
+      buttons: [
         { text: "Cancel", style: "cancel" },
         { 
-          text: "Reset", style: "destructive",
+          text: "Reset All", 
+          style: "destructive",
           onPress: async () => {
             await resetOnboarding();
-            Alert.alert("Success", "Preferences reset. Please restart the app to set them again.");
+            showDialog({
+              title: "Preferences Reset",
+              message: "Preferences have been reset. Please restart the app.",
+              type: "success",
+            });
           }
         }
       ]
-    );
+    });
   };
 
   // ── Reusable row components ──
@@ -423,6 +492,17 @@ const Settings = () => {
         visible={updateModalVisible}
         onClose={() => setUpdateModalVisible(false)}
         updateResult={updateResult}
+      />
+
+      {/* ── Themed Dialog & Alert ── */}
+      <ThemedDialog
+        visible={dialogConfig.visible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        buttons={dialogConfig.buttons}
+        iconName={dialogConfig.iconName}
+        onClose={() => setDialogConfig(prev => ({ ...prev, visible: false }))}
       />
     </View>
   );

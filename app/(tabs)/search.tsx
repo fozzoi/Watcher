@@ -16,6 +16,7 @@ import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from "@expo/
 import { searchTorrents } from '../../src/Scraper';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
 
 
 
@@ -44,6 +45,29 @@ export default function Index() {
   const [showMore, setShowMore] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [downloadingFile, setDownloadingFile] = useState(false);
+
+  // Themed Dialog State
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message?: string;
+    type?: 'info' | 'success' | 'warning' | 'danger';
+    buttons?: DialogButton[];
+    iconName?: string;
+  }>({
+    visible: false,
+    title: '',
+  });
+
+  const showDialog = (config: {
+    title: string;
+    message?: string;
+    type?: 'info' | 'success' | 'warning' | 'danger';
+    buttons?: DialogButton[];
+    iconName?: string;
+  }) => {
+    setDialogConfig({ ...config, visible: true });
+  };
 
   const handleGoBack = React.useCallback(() => {
     Keyboard.dismiss();
@@ -133,7 +157,7 @@ export default function Index() {
       const sortedResults = scrapedResults.sort((a, b) => (b.seeds || 0) - (a.seeds || 0));
       setResults(sortedResults);
     } catch (error) {
-      Alert.alert("Error", "Failed to fetch search results.");
+      showDialog({ title: "Error", message: "Failed to fetch search results.", type: "danger" });
     } finally {
       setLoading(false);
     }
@@ -148,14 +172,13 @@ export default function Index() {
   };
 
   // --- SMART FILE DOWNLOADER (.torrent) ---
-  // --- SMART FILE DOWNLOADER (.torrent) ---
   const handleShareAsFile = async (url: string, fileName: string) => {
   setDownloadingFile(true);
   try {
     // Extract hash from magnet link
     const match = url.match(/urn:btih:([a-fA-F0-9]{40})/i);
     if (!match) {
-      Alert.alert('Error', 'No valid hash found in this magnet link.');
+      showDialog({ title: "Error", message: "No valid hash found in this magnet link.", type: "danger" });
       return;
     }
 
@@ -174,11 +197,11 @@ export default function Index() {
 
     if (downloadRes.status !== 200 || fileSize < 40) {
       await FileSystem.deleteAsync(fileUri, { idempotent: true });
-      Alert.alert(
-        'Not Available',
-        'This torrent isn\'t in any cache yet.\nUse "Open Magnet" instead — it opens directly in your torrent app.',
-        [{ text: 'OK' }]
-      );
+      showDialog({
+        title: "Not in Cache",
+        message: "This torrent isn't cached yet. Tap 'Open Magnet' to open directly in your torrent client.",
+        type: "warning",
+      });
       return;
     }
 
@@ -190,11 +213,11 @@ export default function Index() {
         UTI: 'com.bittorrent.torrent',
       });
     } else {
-      Alert.alert('Saved', `Torrent saved to: ${fileUri}`);
+      showDialog({ title: "Saved", message: `Torrent saved to: ${fileUri}`, type: "success" });
     }
 
   } catch (error) {
-    Alert.alert('Error', 'Failed to fetch torrent file. Try "Open Magnet" instead.');
+    showDialog({ title: "Error", message: "Failed to fetch torrent file. Try 'Open Magnet' instead.", type: "danger" });
   } finally {
     setDownloadingFile(false);
   }
@@ -252,7 +275,7 @@ export default function Index() {
                     onPress={async () => {
                          const supported = await Linking.canOpenURL(item.url);
                          if(supported) await Linking.openURL(item.url);
-                         else Alert.alert("No App", "Install a torrent client like Flud.");
+                         else showDialog({ title: "No App Found", message: "Please install a torrent client like Flud or LibreTorrent to open magnet links.", type: "warning" });
                     }}
                 >
                     <MaterialCommunityIcons name="magnet" size={18} color="white" />
@@ -357,6 +380,17 @@ export default function Index() {
         )}
 
       </View>
+
+      {/* ── Themed Dialog & Alert ── */}
+      <ThemedDialog
+        visible={dialogConfig.visible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        buttons={dialogConfig.buttons}
+        iconName={dialogConfig.iconName}
+        onClose={() => setDialogConfig(prev => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 }

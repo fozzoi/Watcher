@@ -21,6 +21,7 @@ import { GENRE_OPTIONS } from '../../src/userPreferences';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons, Feather } from '@expo/vector-icons';
+import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { 
@@ -80,6 +81,29 @@ const WatchListPage = () => {
       existing: 0,
       missed: [] as string[]
   });
+
+  // Themed Dialog State
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message?: string;
+    type?: 'info' | 'success' | 'warning' | 'danger';
+    buttons?: DialogButton[];
+    iconName?: string;
+  }>({
+    visible: false,
+    title: '',
+  });
+
+  const showDialog = (config: {
+    title: string;
+    message?: string;
+    type?: 'info' | 'success' | 'warning' | 'danger';
+    buttons?: DialogButton[];
+    iconName?: string;
+  }) => {
+    setDialogConfig({ ...config, visible: true });
+  };
 
   const tabPosition = useSharedValue(0);
   const flatListRef = useRef<FlatList>(null);
@@ -267,7 +291,12 @@ const WatchListPage = () => {
         const parsedJson = JSON.parse(text);
         if (Array.isArray(parsedJson)) {
           extractedMovies = parsedJson.map((item: any) => ({
-            title: item.title || item.name || '',
+            title: typeof item === 'string' ? item : item.title || item.name || '',
+            year: item.year ? String(item.year) : null
+          })).filter((item: any) => item.title !== '');
+        } else if (parsedJson.watchlist && Array.isArray(parsedJson.watchlist)) {
+          extractedMovies = parsedJson.watchlist.map((item: any) => ({
+            title: typeof item === 'string' ? item : item.title || item.name || '',
             year: item.year ? String(item.year) : null
           })).filter((item: any) => item.title !== '');
         } else if (parsedJson.title || parsedJson.name) {
@@ -277,12 +306,52 @@ const WatchListPage = () => {
           }];
         }
       } catch (jsonError) {
-        setSyncProgress('Parsing text file locally...');
         extractedMovies = extractMoviesFromText(text);
       }
 
-      if (extractedMovies.length > 0) {
-        const { addedCount, existingCount, missedTitles } = await handleSyncMovies(extractedMovies);
+      if (extractedMovies.length === 0) {
+        setSyncing(false);
+        showDialog({ title: "No movies found", message: "Could not find any readable movie titles in the selected file.", type: "warning" });
+        return;
+      }
+
+      setSyncProgress(`Matching ${extractedMovies.length} titles on TMDB...`);
+
+      const storedMovies = await AsyncStorage.getItem('watchlist');
+      const currentWatchlist = storedMovies ? JSON.parse(storedMovies) : [];
+      let addedCount = 0;
+      let existingCount = 0;
+      const missedTitles: string[] = [];
+
+      for (let i = 0; i < extractedMovies.length; i++) {
+        const item = extractedMovies[i];
+        setSyncProgress(`Matching [${i + 1}/${extractedMovies.length}]: ${item.title}`);
+        try {
+          const searchData = await searchTMDB(item.title);
+          const topResult = searchData.results?.[0];
+
+          if (topResult) {
+            const alreadyExists = currentWatchlist.some((m: any) => m.id === topResult.id);
+            if (!alreadyExists) {
+              currentWatchlist.unshift(topResult);
+              addedCount++;
+            } else {
+              existingCount++;
+            }
+          } else {
+            missedTitles.push(item.title);
+          }
+        } catch (err) {
+          missedTitles.push(item.title);
+        }
+      }
+
+      if (addedCount > 0) {
+        await AsyncStorage.setItem('watchlist', JSON.stringify(currentWatchlist));
+        setWatchlist(currentWatchlist);
+      }
+
+      if (addedCount > 0 || existingCount > 0 || missedTitles.length > 0) {
         setImportSummary({
             visible: true,
             total: extractedMovies.length,
@@ -291,11 +360,11 @@ const WatchListPage = () => {
             missed: missedTitles
         });
       } else {
-        Alert.alert("No movies found", "Could not detect any valid movie titles.");
+        showDialog({ title: "No movies found", message: "Could not detect any valid movie titles.", type: "warning" });
       }
 
     } catch (e: any) {
-      Alert.alert("Error Details", e.message || "Unknown error occurred while reading the file.");
+      showDialog({ title: "Error Details", message: e.message || "Unknown error occurred while reading the file.", type: "danger" });
       console.error(e);
     } finally {
       setSyncing(false);
@@ -319,7 +388,7 @@ const WatchListPage = () => {
             mimeType: result.assets[0].mimeType || 'image/jpeg'
         });
     } catch (e) {
-        Alert.alert("Error", "Failed to read image.");
+        showDialog({ title: "Error", message: "Failed to read image.", type: "danger" });
     }
   };
 
@@ -351,10 +420,11 @@ const WatchListPage = () => {
   const handleClearAll = () => {
     setIsOptionsMenuOpen(false);
     const tabName = activeTab === 0 ? "Watchlist" : activeTab === 1 ? "Favorite Artists" : "Watch History";
-    Alert.alert(
-        `Clear ${tabName}`,
-        `Are you sure you want to delete all items from your ${tabName}? This cannot be undone.`,
-        [
+    showDialog({
+        title: `Clear ${tabName}`,
+        message: `Are you sure you want to delete all items from your ${tabName}? This cannot be undone.`,
+        type: 'danger',
+        buttons: [
             { text: "Cancel", style: "cancel" },
             { 
                 text: "Clear All", 
@@ -366,7 +436,7 @@ const WatchListPage = () => {
                 } 
             }
         ]
-    );
+    });
   };
 
   // Filter and Sort Data
@@ -1001,6 +1071,17 @@ const WatchListPage = () => {
           </View>
         </View>
       </Modal>
+
+      {/* ── Themed Confirmation & Alerts ── */}
+      <ThemedDialog
+        visible={dialogConfig.visible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        buttons={dialogConfig.buttons}
+        iconName={dialogConfig.iconName}
+        onClose={() => setDialogConfig(prev => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 };

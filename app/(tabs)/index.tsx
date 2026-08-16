@@ -242,7 +242,7 @@ const ExplorePage = () => {
       // Combine collections and movies, placing collections at the top
       setTmdbResults([...validCollections, ...validMovies]);
       setPeopleResults(people.filter((item: any) => item.profile_path));
-    } catch (error) { Alert.alert('Error', 'Search failed'); } finally { setSearchLoading(false); }
+    } catch (error) { console.error('Search failed', error); } finally { setSearchLoading(false); }
   }, []);
 
   const saveSearchToHistory = async (searchText: string) => {

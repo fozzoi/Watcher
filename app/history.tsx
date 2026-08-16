@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
+import { ThemedDialog } from "../src/components/shared/ThemedDialog";
 
 interface HistoryItem {
   query: string;
@@ -150,23 +151,18 @@ const HistoryPage = () => {
 
   return (
     <ScrollView style={styles.container}>
-      {/* --- Alert Modal --- */}
-      <Modal animationType="fade" transparent visible={isAlertVisible}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Clear History</Text>
-            <Text style={styles.modalMessage}>Clear all search history?</Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity activeOpacity={0.95} style={styles.modalButton} onPress={() => setIsAlertVisible(false)}>
-                <Text style={styles.modalButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity activeOpacity={0.95} style={[styles.modalButton, styles.modalButtonDanger]} onPress={handleClearHistory}>
-                <Text style={[styles.modalButtonText, { fontWeight: 'bold' }]}>Clear</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* --- Themed Clear History Dialog --- */}
+      <ThemedDialog
+        visible={isAlertVisible}
+        title="Clear History"
+        message="Are you sure you want to delete all search history? This cannot be undone."
+        type="danger"
+        buttons={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setIsAlertVisible(false) },
+          { text: 'Clear All', style: 'destructive', onPress: handleClearHistory }
+        ]}
+        onClose={() => setIsAlertVisible(false)}
+      />
 
       <View style={styles.header}>
         <Text style={styles.title}>Search History</Text>

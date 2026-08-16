@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { UpdateCheckResult, downloadAndInstallApk } from '../../updater';
+import { ThemedDialog } from './ThemedDialog';
 
 interface AppUpdateModalProps {
   visible: boolean;
@@ -17,12 +18,13 @@ const { width } = Dimensions.get('window');
 const AppUpdateModal = ({ visible, onClose, updateResult }: AppUpdateModalProps) => {
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   if (!updateResult) return null;
 
   const handleStartUpdate = async () => {
     if (!updateResult.apkUrl) {
-      Alert.alert("No APK Found", "This release does not contain an APK asset yet.");
+      setErrorMessage("This release does not contain an APK asset yet.");
       return;
     }
 
@@ -35,7 +37,7 @@ const AppUpdateModal = ({ visible, onClose, updateResult }: AppUpdateModalProps)
       });
       onClose();
     } catch (error: any) {
-      Alert.alert("Download Error", error.message || "Failed to download update APK.");
+      setErrorMessage(error.message || "Failed to download update APK.");
     } finally {
       setDownloading(false);
     }
@@ -107,6 +109,15 @@ const AppUpdateModal = ({ visible, onClose, updateResult }: AppUpdateModalProps)
           </View>
         </View>
       </View>
+
+      <ThemedDialog
+        visible={!!errorMessage}
+        title="Update Notice"
+        message={errorMessage || ''}
+        type="warning"
+        buttons={[{ text: 'OK', style: 'primary', onPress: () => setErrorMessage(null) }]}
+        onClose={() => setErrorMessage(null)}
+      />
     </Modal>
   );
 };
