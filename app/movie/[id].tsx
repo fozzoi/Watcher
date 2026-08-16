@@ -607,7 +607,8 @@ const DetailPage = () => {
   const openTorrentSearch = () => {
     if (!movie) return;
     const query = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.slice(0, 4) || ''}`;
-    router.push(`/search?prefillQuery=${encodeURIComponent(query)}`);
+    const mType = movie.media_type || (movie.first_air_date ? 'tv' : 'movie');
+    router.push(`/search?prefillQuery=${encodeURIComponent(query)}&fromMovieId=${movie.id}&fromMediaType=${mType}`);
   };
 
   const copyTitle = async () => {

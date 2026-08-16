@@ -35,7 +35,11 @@ const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
 export default function Index() {
   const router = useRouter();
-  const { prefillQuery } = useLocalSearchParams();
+  const { prefillQuery, fromMovieId, fromMediaType } = useLocalSearchParams<{
+    prefillQuery?: string;
+    fromMovieId?: string;
+    fromMediaType?: string;
+  }>();
   const insets = useSafeAreaInsets();
   
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -44,28 +48,39 @@ export default function Index() {
   const [showMore, setShowMore] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [downloadingFile, setDownloadingFile] = useState(false);
-  const [isExternalEntry, setIsExternalEntry] = useState(false);
+
+  const handleGoBack = React.useCallback(() => {
+    Keyboard.dismiss();
+    setSearchQuery('');
+    setResults([]);
+    setHasSearched(false);
+
+    if (fromMovieId) {
+      router.push(`/movie/${fromMovieId}?media_type=${fromMediaType || 'movie'}`);
+      return true;
+    }
+
+    if (hasSearched || searchQuery.trim() !== '') {
+      handleClear();
+      return true;
+    }
+
+    if (router.canGoBack()) {
+      router.back();
+      return true;
+    }
+
+    return false;
+  }, [fromMovieId, fromMediaType, hasSearched, searchQuery, router]);
 
   // --- BACK HANDLER ---
- // --- BACK HANDLER ---
   useEffect(() => {
     const onBackPress = () => {
-      // 1. If we came from an external screen (like the Details page)
-      if (isExternalEntry) {
-        setIsExternalEntry(false); // Reset the flag
-        router.back(); // 🚀 Jump straight back to Details immediately!
-
-        // Silently wipe the search screen clean in the background
-        setTimeout(() => {
-          setSearchQuery('');
-          setResults([]);
-          setHasSearched(false);
-        }, 300);
-
+      if (fromMovieId) {
+        handleGoBack();
         return true; 
       }
 
-      // 2. If we just manually typed a search inside the tab
       if (hasSearched || searchQuery.trim() !== '') {
         handleClear();
         return true; 
@@ -76,7 +91,8 @@ export default function Index() {
     
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [isExternalEntry, hasSearched, searchQuery]);
+  }, [fromMovieId, hasSearched, searchQuery, handleGoBack]);
+
   // --- HELPERS ---
   const getQualityInfo = (name: string): { label: string; color: string } => {
     const lowerName = name.toLowerCase();
@@ -88,7 +104,6 @@ export default function Index() {
 
   useEffect(() => {
     if (prefillQuery && typeof prefillQuery === 'string') {
-      setIsExternalEntry(true); // 🎯 Flag that we came from the Details screen!
       setSearchQuery(prefillQuery); 
       handleSearch(prefillQuery); 
     }
@@ -286,7 +301,13 @@ export default function Index() {
 
         <View style={[styles.searchSection, hasSearched && styles.searchSectionActive]}>
             <View style={styles.inputWrapper}>
-                <Ionicons name="search" size={20} color="#666" style={{ marginLeft: 16 }} />
+                {fromMovieId ? (
+                    <TouchableOpacity activeOpacity={0.7} onPress={handleGoBack} style={{ paddingLeft: 14, paddingRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                        <Ionicons name="arrow-back" size={22} color="#FFF" />
+                    </TouchableOpacity>
+                ) : (
+                    <Ionicons name="search" size={20} color="#666" style={{ marginLeft: 16 }} />
+                )}
                 <TextInput
                     style={styles.input}
                     placeholder="Search movies, shows, anime..."
