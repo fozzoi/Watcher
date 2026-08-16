@@ -253,9 +253,14 @@ export const downloadAndInstallApk = async (
   // Get content URI for Android Package Installer
   const contentUri = await FileSystem.getContentUriAsync(result.uri);
 
-  await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-    data: contentUri,
-    flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-    type: 'application/vnd.android.package-archive',
-  });
+  try {
+    await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+      data: contentUri,
+      flags: 268435457, // FLAG_GRANT_READ_URI_PERMISSION (1) | FLAG_ACTIVITY_NEW_TASK (268435456)
+      type: 'application/vnd.android.package-archive',
+    });
+  } catch (intentErr) {
+    console.warn('Direct intent launcher failed, falling back to browser/downloader:', intentErr);
+    await Linking.openURL(downloadUrl);
+  }
 };

@@ -79,7 +79,9 @@ const AppUpdateModal = ({ visible, onClose, updateResult }: AppUpdateModalProps)
               <View style={styles.progressBarBg}>
                 <View style={[styles.progressBarFill, { width: `${Math.round(downloadProgress * 100)}%` }]} />
               </View>
-              <Text style={styles.progressText}>Downloading APK... {Math.round(downloadProgress * 100)}%</Text>
+              <Text style={styles.progressText}>
+                {downloadProgress >= 1 ? 'Launching Android Installer...' : `Downloading APK... ${Math.round(downloadProgress * 100)}%`}
+              </Text>
             </View>
           )}
 
