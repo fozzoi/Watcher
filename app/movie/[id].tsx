@@ -254,7 +254,11 @@ const DetailPage = () => {
         console.error(e);
       }
     };
-    fetchMetadata();
+    // Defer heavy fetching until the JS thread is idle (post-navigation)
+    const task = requestIdleCallback(() => {
+      fetchMetadata();
+    });
+    return () => cancelIdleCallback(task);
   }, [id, media_type]);
   const [externalIds, setExternalIds] = useState<any>({});
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
@@ -264,11 +268,10 @@ const DetailPage = () => {
   const [deferRender, setDeferRender] = useState(false);
 
   useEffect(() => {
-    import('react-native').then(({ InteractionManager }) => {
-      InteractionManager.runAfterInteractions(() => {
-        setTimeout(() => setDeferRender(true), 250);
-      });
+    const task = requestIdleCallback(() => {
+      setDeferRender(true);
     });
+    return () => cancelIdleCallback(task);
   }, []);
 
   const [isInWatchlist, setIsInWatchlist] = useState(false);

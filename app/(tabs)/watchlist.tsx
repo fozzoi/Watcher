@@ -7,14 +7,16 @@ import {
   StyleSheet,
   Text,
   Platform,
-  Image,
   StatusBar,
   Alert,
   Modal,
   TextInput,
   ActivityIndicator,
   ScrollView,
+  DeviceEventEmitter,
 } from 'react-native';
+import { Image } from 'expo-image'; // Highly optimized image rendering
+import { enableFreeze } from 'react-native-screens'; // Prevents background screens from eating CPU
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getImageUrl, searchTMDB, GLOBAL_CONFIG } from '../../src/tmdb';
 import { GENRE_OPTIONS } from '../../src/userPreferences';
@@ -30,11 +32,13 @@ import Animated, {
   withSpring,
   withTiming,
   FadeInDown,
-  FadeInUp
 } from 'react-native-reanimated';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
+
+// Freeze inactive screens for massive performance boost during transitions
+enableFreeze(true);
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 52) / 3; 
@@ -64,7 +68,13 @@ const WatchlistCard = React.memo(({ item, activeTab, onRemove, onPress }: { item
           onPress={() => onPress(item)}
           style={styles.cardContainer}
         >
-            <Image source={{ uri: imageUrl }} style={styles.cardImage} resizeMode="cover" />
+            <Image 
+              source={{ uri: imageUrl }} 
+              style={styles.cardImage} 
+              contentFit="cover" 
+              transition={200}
+              cachePolicy="memory-disk"
+            />
             <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.cardGradient} />
             <View style={styles.cardContent}>
                 <Text style={styles.cardTitle} numberOfLines={2}>{title}</Text>
@@ -93,14 +103,12 @@ const WatchListPage = () => {
   const targetRef = useRef(null);
   const router = useRouter();
 
-  // Data states
-  const [activeTab, setActiveTab] = useState(0); // 0: Watchlist, 1: Artists, 2: Watched
+  const [activeTab, setActiveTab] = useState(0);
   const [watchlist, setWatchlist] = useState<any[]>([]); 
   const [artists, setArtists] = useState<any[]>([]);   
   const [watched, setWatched] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
 
-  // Search & Filters
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMediaType, setSelectedMediaType] = useState<FilterMediaType>('all');
@@ -109,7 +117,6 @@ const WatchListPage = () => {
   const headerHeightAnim = useSharedValue(36);
   const headerOpacityAnim = useSharedValue(1);
   const headerMarginAnim = useSharedValue(12);
-  const lastOffsetY = useRef(0);
 
   const animatedHeaderStyle = useAnimatedStyle(() => {
     return {
@@ -119,11 +126,9 @@ const WatchListPage = () => {
     };
   });
 
-  // Sorting
   const [sortBy, setSortBy] = useState<SortOption>('default');
   const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
 
-  // Modals
   const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isSortModalOpen, setIsSortModalOpen] = useState(false);
@@ -132,7 +137,6 @@ const WatchListPage = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState('');
   
-  // Custom Alert State
   const [importSummary, setImportSummary] = useState({
       visible: false,
       total: 0,
@@ -141,7 +145,6 @@ const WatchListPage = () => {
       missed: [] as string[]
   });
 
-  // Themed Dialog State
   const [dialogConfig, setDialogConfig] = useState<{
     visible: boolean;
     title: string;
@@ -504,11 +507,9 @@ const WatchListPage = () => {
     });
   };
 
-  // Filter and Sort Data
   const displayList = useMemo(() => {
     let list = activeTab === 0 ? watchlist : activeTab === 1 ? artists : watched;
     
-    // 1. Search Query Filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       list = list.filter((item: any) => {
@@ -517,7 +518,6 @@ const WatchListPage = () => {
       });
     }
 
-    // 2. Media Type Filter (for Watchlist & Watched)
     if (activeTab === 0 || activeTab === 2) {
       if (selectedMediaType === 'movie') {
         list = list.filter((item: any) => item.media_type === 'movie' || (!item.first_air_date && item.media_type !== 'collection' && item.media_type !== 'tv'));
@@ -528,7 +528,6 @@ const WatchListPage = () => {
       }
     }
 
-    // 3. Genre Filter
     if (selectedGenreIds.length > 0 && (activeTab === 0 || activeTab === 2)) {
       list = list.filter(item => {
         if (item.genre_ids && Array.isArray(item.genre_ids)) {
@@ -541,7 +540,6 @@ const WatchListPage = () => {
       });
     }
 
-    // 4. Sorting
     if (sortBy === 'default') return list;
 
     return [...list].sort((a, b) => {
@@ -658,6 +656,18 @@ const WatchListPage = () => {
           keyExtractor={(item) => `${activeTab}-${item.id}`}
           renderItem={renderCard}
           numColumns={3}
+          initialNumToRender={9}
+          maxToRenderPerBatch={6} // Reduced to prevent JS thread drops
+          windowSize={3} // Smaller window to preserve memory for 300+ items
+          removeClippedSubviews={Platform.OS === 'android'}
+          getItemLayout={(data, index) => {
+            const ITEM_HEIGHT = CARD_WIDTH * 1.5 + 16;
+            return {
+              length: ITEM_HEIGHT,
+              offset: ITEM_HEIGHT * Math.floor(index / 3),
+              index,
+            };
+          }}
           contentContainerStyle={[styles.listContent, { 
              paddingTop: activeTab === 1 
                  ? insets.top + (isSearchOpen ? 155 : 110) 
@@ -668,9 +678,7 @@ const WatchListPage = () => {
           scrollEventThrottle={16}
           onScroll={(e) => {
               const y = e.nativeEvent.contentOffset.y;
-              import('react-native').then(({ DeviceEventEmitter }) => {
-                  DeviceEventEmitter.emit('exploreScroll', y);
-              });
+              DeviceEventEmitter.emit('exploreScroll', y);
               
               if (y <= 0 && headerHeightAnim.value !== 36) {
                  headerHeightAnim.value = withTiming(36, { duration: 150 });
@@ -710,7 +718,7 @@ const WatchListPage = () => {
       {/* ── INLINE SEARCH BAR (when active) ── */}
       {isSearchOpen && (
         <Animated.View entering={FadeInDown.duration(200)} style={styles.searchBarContainer}>
-          <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
+          <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurViewSdk31Plus" />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(20, 20, 20, 0.4)' }]} pointerEvents="none" />
           <Ionicons name="search" size={16} color="#777" style={{ marginLeft: 12 }} />
           <TextInput
@@ -747,7 +755,7 @@ const WatchListPage = () => {
 
         <View style={styles.tabContainer}>
             <View style={styles.blurContainer}>
-                <BlurView intensity={Platform.OS === 'android' ? 20 : 50} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
+                <BlurView intensity={Platform.OS === 'android' ? 20 : 50} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurViewSdk31Plus" />
                 <View style={{...StyleSheet.absoluteFill, backgroundColor: 'rgba(15,15,15,0.7)'}} />
             </View>
 
@@ -776,31 +784,32 @@ const WatchListPage = () => {
         </TouchableOpacity>
       </View>
 
-      {/* ── SUB-TABS & FILTERS (Watchlist & Watched) ── */}
+      {/* ── SUB-TABS & FILTERS (Modernized UI) ── */}
       {(activeTab === 0 || activeTab === 2) && (
         <View style={styles.filterSection} collapsable={false}>
-          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(20,20,20,0.3)' }]} pointerEvents="none" />
+          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurViewSdk31Plus" />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(25,25,25,0.6)' }]} pointerEvents="none" />
+          
           <ScrollView 
             horizontal 
             showsHorizontalScrollIndicator={false}
+            style={{ marginHorizontal: 16 }}
             contentContainerStyle={styles.filterScrollContent}
           >
-            {/* Sort Indicator Chip */}
             <TouchableOpacity 
               activeOpacity={0.8}
               style={[styles.filterChip, sortBy !== 'default' && styles.filterChipActive]}
               onPress={() => setIsSortModalOpen(true)}
             >
-              <MaterialIcons name="sort" size={15} color={sortBy !== 'default' ? "#E50914" : "#AAA"} />
+              <MaterialIcons name="sort" size={16} color={sortBy !== 'default' ? "#FFF" : "#A0A0A0"} />
               <Text style={[styles.filterChipText, sortBy !== 'default' && styles.filterChipTextActive]}>
                 {sortBy === 'default' ? 'Sort' : sortBy === 'rating' ? `Rating (${sortDirection.toUpperCase()})` : sortBy === 'year' ? `Year (${sortDirection.toUpperCase()})` : `Title (${sortDirection.toUpperCase()})`}
               </Text>
             </TouchableOpacity>
 
-            <View style={styles.chipDivider} />
+            {/* Subtle Divider */}
+            <View style={{ width: 1, height: 16, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: 2 }} />
 
-            {/* Media Type Chips */}
             <TouchableOpacity 
               activeOpacity={0.8} 
               style={[styles.filterChip, selectedMediaType === 'all' && styles.filterChipActive]}
@@ -814,7 +823,7 @@ const WatchListPage = () => {
               style={[styles.filterChip, selectedMediaType === 'movie' && styles.filterChipActive]}
               onPress={() => setSelectedMediaType(selectedMediaType === 'movie' ? 'all' : 'movie')}
             >
-              <Ionicons name="film-outline" size={14} color={selectedMediaType === 'movie' ? "#E50914" : "#888"} />
+              <Ionicons name="film-outline" size={15} color={selectedMediaType === 'movie' ? "#FFF" : "#A0A0A0"} />
               <Text style={[styles.filterChipText, selectedMediaType === 'movie' && styles.filterChipTextActive]}>Movies</Text>
             </TouchableOpacity>
 
@@ -823,7 +832,7 @@ const WatchListPage = () => {
               style={[styles.filterChip, selectedMediaType === 'tv' && styles.filterChipActive]}
               onPress={() => setSelectedMediaType(selectedMediaType === 'tv' ? 'all' : 'tv')}
             >
-              <Ionicons name="tv-outline" size={14} color={selectedMediaType === 'tv' ? "#E50914" : "#888"} />
+              <Ionicons name="tv-outline" size={15} color={selectedMediaType === 'tv' ? "#FFF" : "#A0A0A0"} />
               <Text style={[styles.filterChipText, selectedMediaType === 'tv' && styles.filterChipTextActive]}>Series</Text>
             </TouchableOpacity>
 
@@ -832,11 +841,11 @@ const WatchListPage = () => {
               style={[styles.filterChip, selectedMediaType === 'collection' && styles.filterChipActive]}
               onPress={() => setSelectedMediaType(selectedMediaType === 'collection' ? 'all' : 'collection')}
             >
-              <Ionicons name="albums-outline" size={14} color={selectedMediaType === 'collection' ? "#E50914" : "#888"} />
+              <Ionicons name="albums-outline" size={15} color={selectedMediaType === 'collection' ? "#FFF" : "#A0A0A0"} />
               <Text style={[styles.filterChipText, selectedMediaType === 'collection' && styles.filterChipTextActive]}>Collections</Text>
             </TouchableOpacity>
 
-            <View style={styles.chipDivider} />
+            <View style={{ width: 1, height: 16, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: 2 }} />
 
             {GENRE_OPTIONS.map(g => {
               const isSelected = selectedGenreIds.includes(g.id);
@@ -851,11 +860,11 @@ const WatchListPage = () => {
                     );
                   }}
                 >
-                  <Text style={{fontSize: 12}}>{g.emoji}</Text>
+                  <Text style={{fontSize: 13}}>{g.emoji}</Text>
                   <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
                     {g.label}
                   </Text>
-                  {isSelected && <Ionicons name="close" size={14} color="#E50914" />}
+                  {isSelected && <Ionicons name="close" size={14} color="#FFF" />}
                 </TouchableOpacity>
               );
             })}
@@ -1086,7 +1095,7 @@ const WatchListPage = () => {
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={0.95} onPress={() => setIsLinkModalVisible(false)} />
           <View style={styles.modalContentContainer}>
-            <BlurView intensity={Platform.OS === 'android' ? 25 : 60} tint="dark" style={StyleSheet.absoluteFill} />
+            <BlurView intensity={Platform.OS === 'android' ? 25 : 60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurViewSdk31Plus" />
             <View style={{ ...StyleSheet.absoluteFill, backgroundColor: 'rgba(30,30,30,0.65)' }} />
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Google Watchlist Link</Text>
@@ -1112,7 +1121,7 @@ const WatchListPage = () => {
       <Modal visible={importSummary.visible} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContentContainer}>
-            <BlurView intensity={Platform.OS === 'android' ? 25 : 60} tint="dark" style={StyleSheet.absoluteFill} />
+            <BlurView intensity={Platform.OS === 'android' ? 25 : 60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurViewSdk31Plus" />
             <View style={{ ...StyleSheet.absoluteFill, backgroundColor: 'rgba(30,30,30,0.85)' }} />
             <View style={styles.modalContent}>
               <View style={styles.resultsHeaderRow}>
@@ -1222,45 +1231,45 @@ const styles = StyleSheet.create({
   tabText: { color: '#888', fontFamily: 'GoogleSansFlex-Medium', fontSize: 13 },
   activeTabText: { color: '#FFF', fontFamily: 'GoogleSansFlex-Bold' },
 
-  // Filters
+  // Filters (Modernized)
   filterSection: {
-    height: 40,
+    height: 44, // Slightly taller for modern padding
     marginHorizontal: 16,
     marginTop: 0,
-    marginBottom: 8,
-    borderRadius: 20,
+    marginBottom: 12,
+    borderRadius: 22,
     overflow: 'hidden',
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
-  filterScrollContent: { alignItems: 'center', gap: 8, paddingHorizontal: 16 },
+  filterScrollContent: { alignItems: 'center', gap: 6 }, // Tighter gap for borderless chips
   filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    gap: 6,
+    backgroundColor: 'transparent', // Clean transparent background
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 8, // Thicker touch target
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.04)',
   },
   filterChipActive: {
-    backgroundColor: 'rgba(229,9,20,0.15)',
-    borderColor: 'rgba(229,9,20,0.4)',
+    backgroundColor: '#E50914', // Solid brand color when active
+    shadowColor: '#E50914',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 3,
   },
   filterChipText: {
-    color: '#FFF',
-    fontSize: 12,
+    color: '#A0A0A0', // Softer inactive color
+    fontSize: 13,
     fontFamily: 'GoogleSansFlex-Medium',
   },
   filterChipTextActive: {
-    color: '#FFF',
+    color: '#FFF', // Inverse solid text
     fontFamily: 'GoogleSansFlex-Bold',
   },
-  filterChipEmoji: { fontSize: 12 },
-  chipDivider: { width: 1, height: 16, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: 4 },
 
   // Sync Progress
   syncHubContainer: { paddingHorizontal: 16, marginBottom: 15 },

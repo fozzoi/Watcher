@@ -14,6 +14,10 @@ import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 
 LogBox.ignoreLogs([
   'Method readAsStringAsync imported from "expo-file-system" is deprecated',
+  'ProgressBarAndroid has been extracted',
+  'SafeAreaView has been deprecated',
+  'Clipboard has been extracted',
+  'PushNotificationIOS has been extracted',
 ]);
 
 SplashScreen.preventAutoHideAsync();
