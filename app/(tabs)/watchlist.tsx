@@ -14,7 +14,9 @@ import {
   ActivityIndicator,
   ScrollView,
   DeviceEventEmitter,
+  Pressable,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image'; // Highly optimized image rendering
 import { enableFreeze } from 'react-native-screens'; // Prevents background screens from eating CPU
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -41,7 +43,8 @@ import axios from 'axios';
 enableFreeze(true);
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = (width - 52) / 3; 
+// Recalculated width to account for FlashList padding
+const CARD_WIDTH = (width - 64) / 3; 
 const TAB_WIDTH = width - 128;
 const TAB_ITEM_WIDTH = (TAB_WIDTH - 4) / 3;
 
@@ -63,16 +66,15 @@ const WatchlistCard = React.memo(({ item, activeTab, onRemove, onPress }: { item
 
     return (
       <View style={styles.cardWrapper}>
-        <TouchableOpacity
-          activeOpacity={0.8}
+        <Pressable
           onPress={() => onPress(item)}
-          style={styles.cardContainer}
+          style={({ pressed }) => [styles.cardContainer, pressed && { opacity: 0.8 }]}
         >
             <Image 
               source={{ uri: imageUrl }} 
               style={styles.cardImage} 
               contentFit="cover" 
-              transition={200}
+              recyclingKey={imageUrl}
               cachePolicy="memory-disk"
             />
             <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.cardGradient} />
@@ -81,16 +83,16 @@ const WatchlistCard = React.memo(({ item, activeTab, onRemove, onPress }: { item
                 <Text style={styles.cardSubtitle} numberOfLines={1}>{subtitle}</Text>
             </View>
 
-            <TouchableOpacity activeOpacity={0.95} 
-                style={styles.unsaveButton}
+            <Pressable
+                style={({ pressed }) => [styles.unsaveButton, pressed && { opacity: 0.6 }]}
                 onPress={() => onRemove(item.id, itemType)}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-                <BlurView intensity={40} tint="dark" style={styles.unsaveBlur}>
+                <View style={[styles.unsaveBlur, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
                     <Ionicons name="close" size={16} color="#FFF" />
-                </BlurView>
-            </TouchableOpacity>
-        </TouchableOpacity>
+                </View>
+            </Pressable>
+        </Pressable>
       </View>
     );
 }, (prevProps, nextProps) => {
@@ -650,31 +652,19 @@ const WatchListPage = () => {
           )}
         </View>
       ) : (
-        <FlatList
-          ref={flatListRef}
+        <FlashList
+          ref={flatListRef as any}
           data={displayList}
           keyExtractor={(item) => `${activeTab}-${item.id}`}
           renderItem={renderCard}
           numColumns={3}
-          initialNumToRender={9}
-          maxToRenderPerBatch={6} // Reduced to prevent JS thread drops
-          windowSize={3} // Smaller window to preserve memory for 300+ items
-          removeClippedSubviews={Platform.OS === 'android'}
-          getItemLayout={(data, index) => {
-            const ITEM_HEIGHT = CARD_WIDTH * 1.5 + 16;
-            return {
-              length: ITEM_HEIGHT,
-              offset: ITEM_HEIGHT * Math.floor(index / 3),
-              index,
-            };
-          }}
+          estimatedItemSize={CARD_WIDTH * 1.5 + 16}
           contentContainerStyle={[styles.listContent, { 
              paddingTop: activeTab === 1 
                  ? insets.top + (isSearchOpen ? 155 : 110) 
                  : insets.top + (isSearchOpen ? 200 : 155) 
           }]}
           showsVerticalScrollIndicator={false}
-          columnWrapperStyle={{ gap: 10 }}
           scrollEventThrottle={16}
           onScroll={(e) => {
               const y = e.nativeEvent.contentOffset.y;
@@ -1278,7 +1268,7 @@ const styles = StyleSheet.create({
 
   // Grid
   listContent: { paddingHorizontal: 16, paddingBottom: 100 },
-  cardWrapper: { width: CARD_WIDTH, marginBottom: 16 },
+  cardWrapper: { width: CARD_WIDTH, marginBottom: 16, marginHorizontal: 5 },
   cardContainer: { borderRadius: 12, backgroundColor: '#1C1C1E', overflow: 'hidden', height: CARD_WIDTH * 1.5, position: 'relative', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
   cardImage: { width: '100%', height: '100%', backgroundColor: '#222' },
   cardGradient: { position: 'absolute', left: 0, right: 0, bottom: -2, height: '55%', zIndex: 1 },

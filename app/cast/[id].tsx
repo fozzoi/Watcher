@@ -299,7 +299,7 @@ export default function CastDetails() {
                   <Image
                     source={{ uri: getImageUrl(item.file_path, 'original') }}
                     style={{ width, height: '100%' }}
-                    resizeMode="contain"
+                    contentFit="contain"
                   />
                 </View>
               )}
@@ -361,7 +361,7 @@ export default function CastDetails() {
                   setGalleryVisible(true);
                 }}
               >
-                <Image source={{ uri: getImageUrl(item.file_path, 'h632') }} style={{ width, height: '100%' }} resizeMode="cover" />
+                <Image source={{ uri: getImageUrl(item.file_path, 'h632') }} style={{ width, height: '100%' }} contentFit="cover" />
               </TouchableOpacity>
             )}
           />

@@ -17,6 +17,7 @@ import {
   completeOnboarding, getUserPreferences, FavoriteActor,
 } from '../src/userPreferences';
 import { searchPeople, getImageUrl } from '../src/tmdb';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
 

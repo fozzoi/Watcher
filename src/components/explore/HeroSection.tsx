@@ -96,7 +96,7 @@ const HeroSlide = memo(({
             },
             imageAnimatedStyle,
           ]}
-          resizeMode="cover"
+          contentFit="cover"
         />
       </View>
 

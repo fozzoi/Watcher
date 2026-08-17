@@ -38,7 +38,7 @@ const MovieCard = memo(({ item, onPress, isSearchMode = false, isAdded, toggleWa
         <Image
           source={{ uri: getImageUrl(item.poster_path, 'w185') }}
           style={[styles.sectionImage, { width: cardWidth, height: cardHeight }]}
-          resizeMode="cover"
+          contentFit="cover"
         />
         <View style={styles.cardAddButtonOverlay}>
           <QuickAddButton isAdded={isAdded} onPress={() => toggleWatchlist(item)} />

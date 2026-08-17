@@ -176,7 +176,7 @@ const CollectionDetails = () => {
             ),
           }}
           style={styles.backdropImage}
-          resizeMode="cover"
+          contentFit="cover"
         />
         <LinearGradient
           colors={[

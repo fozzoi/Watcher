@@ -70,6 +70,7 @@ const ExplorePage = () => {
 
   const [tmdbResults, setTmdbResults] = useState<any[]>([]);
   const [peopleResults, setPeopleResults] = useState<any[]>([]);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
   
   const [rawContent, setRawContent] = useState<any>(null);
   

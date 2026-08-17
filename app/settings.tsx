@@ -34,7 +34,6 @@ const Settings = () => {
 
   const [isHiRes, setIsHiRes] = useState(false);
   const [isNsfwFilter, setIsNsfwFilter] = useState(true);
-  const [isAutoAi, setIsAutoAi] = useState(true);
   const [isSmartNotifs, setIsSmartNotifs] = useState(true);
   const [isUpdateNotifs, setIsUpdateNotifs] = useState(true);
   
@@ -64,7 +63,6 @@ const Settings = () => {
     try {
       const savedHiRes = await AsyncStorage.getItem('settings_hires');
       const savedNsfw = await AsyncStorage.getItem('settings_nsfw');
-      const savedAutoAi = await AsyncStorage.getItem('settings_auto_ai');
       const notifsEnabled = await isNotificationsEnabled();
       const updateNotifsEnabled = await isUpdateNotificationEnabled();
       
@@ -81,9 +79,6 @@ const Settings = () => {
         setIsNsfwFilter(val);
         setGlobalConfig('nsfwFilterEnabled', val);
       }
-      if (savedAutoAi !== null) {
-        setIsAutoAi(JSON.parse(savedAutoAi));
-      }
     } catch (e) { console.log("Failed to load settings"); }
   };
 
@@ -97,11 +92,6 @@ const Settings = () => {
     setIsNsfwFilter(value);
     setGlobalConfig('nsfwFilterEnabled', value);
     await AsyncStorage.setItem('settings_nsfw', JSON.stringify(value));
-  };
-
-  const toggleAutoAi = async (value: boolean) => {
-    setIsAutoAi(value);
-    await AsyncStorage.setItem('settings_auto_ai', JSON.stringify(value));
   };
 
   const toggleSmartNotifs = async (value: boolean) => {
@@ -384,17 +374,6 @@ const Settings = () => {
             title="Change Content Preferences" 
             subtitle="Update your languages, genres and favorite actors" 
             onPress={() => router.push('/onboarding')} 
-          />
-        </View>
-
-        {/* ── AI ── */}
-        <Text style={styles.sectionLabel}>AI</Text>
-        <View style={styles.card}>
-          <ToggleRow 
-            title="Auto AI Vibe Match" 
-            subtitle="Fetch AI recommendations on detail pages" 
-            value={isAutoAi} 
-            onValueChange={toggleAutoAi} 
           />
         </View>
 

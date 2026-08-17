@@ -5,9 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  FlatList,
-  Image,
-  ActivityIndicator,
   StatusBar,
   Platform,
   ToastAndroid,
@@ -17,7 +14,10 @@ import {
   TextInput,
   Keyboard,
   BackHandler,
+  InteractionManager,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
+import { Image } from 'expo-image';
 import { Text } from 'react-native-paper';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -39,10 +39,8 @@ import {
 import { getProgress } from '../../src/utils/progress';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
-import { MovieDetailSkeleton } from '../../src/components/movie/MovieDetailSkeleton';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import FormattedMarkdownText from '../../src/components/aichat/FormattedMarkdownText';
 import { LANGUAGE_OPTIONS } from '../../src/userPreferences';
 import MovieChatSection from '../../src/components/movie/MovieChatSection';
 
@@ -66,9 +64,9 @@ const C = {
   red: '#FF453A',
   gold: '#FFD60A',
   green: '#30D158',
-  ai: '#C9A9FF',
-  aiSoft: 'rgba(201,169,255,0.10)',
-  aiBorder: 'rgba(201,169,255,0.28)',
+  ai: '#FF453A',
+  aiSoft: 'rgba(255,69,58,0.10)',
+  aiBorder: 'rgba(255,69,58,0.28)',
 };
 
 // --- SHIMMER & LOADING COMPONENTS ---
@@ -146,7 +144,7 @@ const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => (
         }}
         style={styles.directorImg}
       />
-      <View style={{ flex: 1 }}>
+      <View style={{ maxWidth: 140 }}>
         <Text style={styles.directorName} numberOfLines={1}>
           {item.name}
         </Text>
@@ -264,15 +262,16 @@ const DetailPage = () => {
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   const [loadingAi, setLoadingAi] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(true);
-  const [autoAiEnabled, setAutoAiEnabled] = useState(true);
   const [deferRender, setDeferRender] = useState(false);
 
   useEffect(() => {
-    const task = requestIdleCallback(() => {
-      setDeferRender(true);
-    });
-    return () => cancelIdleCallback(task);
-  }, []);
+    if (movie) {
+      const task = InteractionManager.runAfterInteractions(() => {
+        setDeferRender(true);
+      });
+      return () => task.cancel();
+    }
+  }, [movie !== null]);
 
   const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [isWatched, setIsWatched] = useState(false);
@@ -295,12 +294,6 @@ const DetailPage = () => {
   const similarCardWidth = isTablet ? 160 : width * 0.3;
   const castCardWidth = isTablet ? 120 : width * 0.26;
   const episodeThumbWidth = isTablet ? 200 : width * 0.34;
-
-  useEffect(() => {
-    AsyncStorage.getItem('settings_auto_ai').then((val) => {
-      if (val !== null) setAutoAiEnabled(JSON.parse(val));
-    });
-  }, []);
 
   useEffect(() => {
     const onBack = () => {
@@ -355,13 +348,6 @@ const DetailPage = () => {
       setLensLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (autoAiEnabled && movie && (movie.title || movie.name)) {
-      const task = requestIdleCallback(() => fetchAiRecommendations());
-      return () => cancelIdleCallback(task);
-    }
-  }, [movie?.id, autoAiEnabled]);
 
   // 🎯 Replaces old source checking logic with direct Vercel API check
   const prefetchSources = useCallback(async (seasonToTry = 1, episodeToTry = 1) => {
@@ -434,19 +420,12 @@ const DetailPage = () => {
       checkIfInWatchlist();
       checkIfWatched();
       const actualMediaType = initialMovie.media_type || (initialMovie.first_air_date ? 'tv' : 'movie');
-      const [fullDetails, , genresData, similarData, idsData] = await Promise.all([
-        getMediaDetails(initialMovie.id, actualMediaType),
-        getMovieImages(initialMovie.id, actualMediaType),
-        getMovieGenres(initialMovie.id, actualMediaType),
-        getSimilarMedia(initialMovie.id, actualMediaType),
-        getExternalIds(initialMovie.id, actualMediaType),
-      ]);
-      setMovie(fullDetails);
-      setGenres(genresData);
-      setSimilarMovies(similarData);
-      setExternalIds(idsData);
-
-      const detailData = fullDetails as any;
+      
+      const similarData = await getSimilarMedia(initialMovie.id, actualMediaType);
+      
+      const detailData = initialMovie as any;
+      setGenres(detailData.genres || []);
+      
       const merged: any[] = [];
 
       if (detailData?.director) {
@@ -472,18 +451,29 @@ const DetailPage = () => {
         }
       });
 
-      setDirectors(merged);
+      // 2. Stagger the heavy array updates across multiple frames to keep UI butter smooth
+      requestAnimationFrame(() => {
+        setDirectors(merged);
+        
+        requestAnimationFrame(() => {
+          setSimilarMovies(similarData);
+          
+          requestAnimationFrame(() => {
+            setExternalIds(detailData.external_ids || {});
+          });
+        });
+      });
 
-      if (fullDetails.belongs_to_collection) {
-        getCollectionDetails(fullDetails.belongs_to_collection.id).then(col => {
+      if (detailData.belongs_to_collection) {
+        getCollectionDetails(detailData.belongs_to_collection.id).then(col => {
           setCollectionData(col);
         }).catch(() => {});
       }
 
       if (
         initialMovie.media_type === 'tv' &&
-        Array.isArray(fullDetails.seasons) &&
-        fullDetails.seasons.length > 0
+        Array.isArray(detailData.seasons) &&
+        detailData.seasons.length > 0
       ) {
         const storedProgress = await getProgress(initialMovie.id);
         let seasonToLoad = 1;
@@ -646,7 +636,8 @@ const DetailPage = () => {
   };
 
   const displayTitle = movie?.title || movie?.name;
-  const releaseYear = (movie?.release_date || movie?.first_air_date)?.split('-')[0] || '';
+  const rawDate = movie?.release_date || movie?.first_air_date;
+  const releaseYear = rawDate ? dayjs(rawDate).format('MMM YYYY') : '';
 
   const getPlayLabel = () => {
     if (sourceStatus === 'checking') return 'Finding stream';
@@ -695,7 +686,7 @@ const DetailPage = () => {
         <Image
           source={{ uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }}
           style={StyleSheet.absoluteFill}
-          resizeMode="cover"
+          contentFit="cover"
         />
         
         <LinearGradient
@@ -723,29 +714,21 @@ const DetailPage = () => {
         </View>
 
         <View style={styles.metaRow}>
-          {releaseYear ? (
-            <Text style={styles.metaText}>
-              {movie.release_date || movie.first_air_date ? dayjs(movie.release_date || movie.first_air_date).format('MMM D, YYYY') : releaseYear}
-            </Text>
-          ) : null}
           {movie.runtime > 0 && (
-            <>
-              <Text style={styles.metaDot}>·</Text>
-              <Text style={styles.metaText}>
-                {Math.floor(movie.runtime / 60)}h {movie.runtime % 60}m
-              </Text>
-            </>
+            <Text style={styles.metaText}>
+              {Math.floor(movie.runtime / 60)}h {movie.runtime % 60}m
+            </Text>
           )}
           {movie.vote_average > 0 && (
             <>
-              <Text style={styles.metaDot}>·</Text>
+              {movie.runtime > 0 && <Text style={styles.metaDot}>·</Text>}
               <Ionicons name="star" size={11} color={C.gold} />
               <Text style={[styles.metaText, { marginLeft: 4 }]}>{movie.vote_average.toFixed(1)}</Text>
             </>
           )}
           {movie.certification ? (
             <>
-              <Text style={styles.metaDot}>·</Text>
+              {(movie.runtime > 0 || movie.vote_average > 0) && <Text style={styles.metaDot}>·</Text>}
               <View style={styles.certPill}>
                 <Text style={styles.certText}>{movie.certification}</Text>
               </View>
@@ -753,7 +736,7 @@ const DetailPage = () => {
           ) : null}
           {movie.media_type === 'tv' && movie.number_of_seasons ? (
             <>
-              <Text style={styles.metaDot}>·</Text>
+              {(movie.runtime > 0 || movie.vote_average > 0 || movie.certification) && <Text style={styles.metaDot}>·</Text>}
               <Text style={styles.metaText}>{movie.number_of_seasons} Seasons</Text>
             </>
           ) : null}
@@ -800,11 +783,7 @@ const DetailPage = () => {
           disabled={sourceStatus !== 'available'}
           activeOpacity={0.95}
         >
-          {sourceStatus === 'checking' ? (
-            <ActivityIndicator color="#000" size="small" />
-          ) : (
-            <Ionicons name={lastWatched ? 'play-skip-forward' : 'play'} size={20} color="#000" />
-          )}
+          <Ionicons name={lastWatched ? 'play-skip-forward' : 'play'} size={20} color="#000" />
           <Text style={styles.playBtnText}>{getPlayLabel()}</Text>
         </TouchableOpacity>
         
@@ -856,10 +835,10 @@ const DetailPage = () => {
             <Image
               source={{ uri: getImageUrl(movie.belongs_to_collection.backdrop_path, 'w780') }}
               style={styles.collectionBackdrop}
-              resizeMode="cover"
+              contentFit="cover"
             />
             <LinearGradient
-              colors={['transparent', 'rgba(10,10,11,0.5)', 'rgba(10,10,11,0.9)', '#141414']}
+              colors={['transparent', 'rgba(10,10,10,0.4)', 'rgba(10,10,10,0.8)', '#0A0A0A']}
               locations={[0, 0.4, 0.8, 1]}
               style={StyleSheet.absoluteFill}
             />
@@ -960,7 +939,7 @@ const DetailPage = () => {
                   {[1, 2, 3].map((i) => <View key={i} style={{ flex: 1 }}><CardShimmer width="100%" height={similarCardWidth * 1.5} /></View>)}
                 </View>
               ) : aiRecommendations.length > 0 ? (
-                <FlatList
+                <FlashList
                   horizontal
                   data={aiRecommendations}
                   showsHorizontalScrollIndicator={false}
@@ -968,14 +947,10 @@ const DetailPage = () => {
                   snapToInterval={similarCardWidth + 12}
                   snapToAlignment="start"
                   keyExtractor={keyExtractorId}
-                  style={{ marginHorizontal: -20 }}
                   contentContainerStyle={{ paddingTop: 4, paddingHorizontal: 20 }}
                   renderItem={renderAiItem}
-                  initialNumToRender={4}
-                  maxToRenderPerBatch={4}
-                  windowSize={3}
-                  removeClippedSubviews={true}
-                  getItemLayout={getSimilarItemLayout}
+                  estimatedItemSize={similarCardWidth + 12}
+                  ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
                 />
               ) : (
                 <TouchableOpacity activeOpacity={0.95} onPress={fetchAiRecommendations} style={styles.aiGenerateBtn}>
@@ -999,7 +974,7 @@ const DetailPage = () => {
             <Text style={styles.sectionTitle}>
               {movie.media_type === 'tv' ? 'Created by' : 'Directed by'}
             </Text>
-            <FlatList
+            <FlashList
               horizontal
               data={directors}
               showsHorizontalScrollIndicator={false}
@@ -1007,13 +982,10 @@ const DetailPage = () => {
               snapToInterval={similarCardWidth + 12}
               snapToAlignment="start"
               keyExtractor={keyExtractorId}
-              style={{ marginHorizontal: -20 }}
               contentContainerStyle={{ paddingHorizontal: 20 }}
               renderItem={renderDirectorItem}
-              initialNumToRender={3}
-              maxToRenderPerBatch={4}
-              windowSize={3}
-              removeClippedSubviews={true}
+              estimatedItemSize={similarCardWidth + 12}
+              ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
             />
           </View>
         )}
@@ -1028,7 +1000,7 @@ const DetailPage = () => {
         ) : movie.cast && movie.cast.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Cast</Text>
-            <FlatList
+            <FlashList
               horizontal
               data={movie.cast.slice(0, 15)}
               showsHorizontalScrollIndicator={false}
@@ -1036,14 +1008,10 @@ const DetailPage = () => {
               snapToInterval={castCardWidth + 12}
               snapToAlignment="start"
               keyExtractor={keyExtractorId}
-              style={{ marginHorizontal: -20 }}
-              contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
+              contentContainerStyle={{ paddingHorizontal: 20, paddingRight: 32 }}
               renderItem={renderCastItem}
-              initialNumToRender={4}
-              maxToRenderPerBatch={4}
-              windowSize={3}
-              removeClippedSubviews={false}
-              getItemLayout={getCastItemLayout}
+              estimatedItemSize={castCardWidth + 12}
+              ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
             />
           </View>
         )}
@@ -1098,7 +1066,7 @@ const DetailPage = () => {
       ) : similarMovies.length > 0 && (
         <View style={[styles.section, { marginTop: 24 }]}>
           <Text style={styles.sectionTitle}>More like this</Text>
-          <FlatList
+          <FlashList
             horizontal
             data={similarMovies}
             showsHorizontalScrollIndicator={false}
@@ -1106,14 +1074,10 @@ const DetailPage = () => {
             snapToInterval={similarCardWidth + 12}
             snapToAlignment="start"
             keyExtractor={keyExtractorId}
-            style={{ marginHorizontal: -20 }}
             contentContainerStyle={{ paddingHorizontal: 20 }}
             renderItem={renderSimilarMovieItem}
-            initialNumToRender={4}
-            maxToRenderPerBatch={4}
-            windowSize={3}
-            removeClippedSubviews={false}
-            getItemLayout={getSimilarItemLayout}
+            estimatedItemSize={similarCardWidth + 12}
+            ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
           />
         </View>
       )}
@@ -1137,7 +1101,8 @@ const DetailPage = () => {
   }, [lastWatched, episodeThumbWidth, handlePlay]);
 
   if (!initialMovie || !movie) {
-    return <MovieDetailSkeleton />;
+    // Returning a simple blank view instead of a heavy skeleton prevents UI flashing for cached movies
+    return <View style={styles.root} />;
   }
 
   return (
@@ -1174,15 +1139,18 @@ const DetailPage = () => {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={movie.media_type === 'tv' && !loadingEpisodes ? episodes : []}
-        keyExtractor={keyExtractorId}
-        renderItem={renderEpisodeItem}
-        ListHeaderComponent={renderHeader}
-        ListFooterComponent={renderFooter}
+      <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 140 }}
-      />
+      >
+        {renderHeader()}
+        {movie.media_type === 'tv' && !loadingEpisodes && episodes.map((item: any, index: number) => 
+          <React.Fragment key={item.id || index}>
+            {renderEpisodeItem({ item, index })}
+          </React.Fragment>
+        )}
+        {renderFooter()}
+      </ScrollView>
     </View>
   );
 };
