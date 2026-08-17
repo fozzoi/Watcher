@@ -2,7 +2,7 @@
   "expo": {
     "name": "Watcher",
     "slug": "Watcher",
-    "version": "3.0.15",
+    "version": "3.0.17",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "myapp",
@@ -14,7 +14,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.thewatcher",
+      "package": "com.thewatcher.dev",
       "runtimeVersion": "1.0.0",
       "permissions": [
         "android.permission.INTERNET",
@@ -72,18 +72,6 @@
     "extra": {
       "eas": {
         "projectId": "a208162b-f69c-4bc1-969b-d670ee577a01"
-      }
-    },
-    "ios": {
-      "backgroundColor": "#000000",
-      "bundleIdentifier": "com.WatcherApp",
-      "infoPlist": {
-        "UIBackgroundModes": [
-          "fetch"
-        ]
-      },
-      "runtimeVersion": {
-        "policy": "appVersion"
       }
     },
     "updates": {
