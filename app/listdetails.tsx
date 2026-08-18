@@ -15,7 +15,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { hasSavedItem, addSavedItem, removeSavedItem } from '../src/database';
 import { 
   fetchMoreContentByType, 
   getImageUrl, 
@@ -275,35 +275,20 @@ const ListDetails = ({ route }) => {
     }
   };
 
-  const checkIfInWatchlist = async (movieDetails) => {
+  const checkIfInWatchlist = (movieDetails: any) => {
     if (!movieDetails) return;
-    try {
-      const stored = await AsyncStorage.getItem('watchlist');
-      const list = stored ? JSON.parse(stored) : [];
-      setIsInWatchlist(list.some((item) => item.id === movieDetails.id));
-    } catch (error) {
-      console.error('Failed to check watchlist:', error);
-    }
+    setIsInWatchlist(hasSavedItem(movieDetails.id, 'watchlist'));
   };
 
-  const toggleWatchlist = async () => {
+  const toggleWatchlist = () => {
     if (!selectedMovie) return;
-    try {
-      const stored = await AsyncStorage.getItem('watchlist');
-      const list = stored ? JSON.parse(stored) : [];
-      const exists = list.some((item) => item.id === selectedMovie.id);
-
-      if (exists) {
-        const updatedList = list.filter((item) => item.id !== selectedMovie.id);
-        await AsyncStorage.setItem('watchlist', JSON.stringify(updatedList));
-        setIsInWatchlist(false);
-      } else {
-        const updatedList = [...list, selectedMovie];
-        await AsyncStorage.setItem('watchlist', JSON.stringify(updatedList));
-        setIsInWatchlist(true);
-      }
-    } catch (error) {
-      console.error('Failed to update watchlist:', error);
+    const exists = hasSavedItem(selectedMovie.id, 'watchlist');
+    if (exists) {
+      removeSavedItem(selectedMovie.id, 'watchlist');
+      setIsInWatchlist(false);
+    } else {
+      addSavedItem(selectedMovie, 'watchlist');
+      setIsInWatchlist(true);
     }
   };
 

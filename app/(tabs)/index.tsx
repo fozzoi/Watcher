@@ -22,6 +22,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSavedItems, addSavedItem, removeSavedItem, hasSavedItem } from '../../src/database';
 import { BlurView, BlurTargetView } from 'expo-blur';
 import {
   fetchPersonalisedDiscoveryContent,
@@ -139,14 +140,11 @@ const ExplorePage = () => {
 
   const loadUserData = useCallback(async () => {
     try {
-      const mStr = await AsyncStorage.getItem('watchlist');
-      const aStr = await AsyncStorage.getItem('favoriteArtists');
-      const m = mStr ? JSON.parse(mStr) : [];
-      const a = aStr ? JSON.parse(aStr) : [];
+      const m = getSavedItems('watchlist');
+      const a = getSavedItems('artist');
       setSavedIds(new Set([...m.map((i: any) => i.id), ...a.map((i: any) => i.id)]));
 
-      const watchedStr = await AsyncStorage.getItem('history');
-      const w = watchedStr ? JSON.parse(watchedStr) : [];
+      const w = getSavedItems('history');
       setWatchedIds(new Set(w.map((i: any) => i.id)));
 
       const sHistoryStr = await AsyncStorage.getItem('searchHistoryExpl');
@@ -173,9 +171,8 @@ const ExplorePage = () => {
         setRawContent(content);
       }
 
-      const historyStr = await AsyncStorage.getItem('history');
-      if (historyStr) {
-        const history = JSON.parse(historyStr);
+      const history = getSavedItems('history');
+      if (history && history.length > 0) {
         const similar = await getSimilarForHistory(history);
         setBecauseYouWatched(similar);
       }
@@ -196,15 +193,16 @@ const ExplorePage = () => {
     }, [loadUserData, fetchContent, selectedGenre])
   );
 
-  const toggleWatchlist = useCallback(async (item: any) => {
+  const toggleWatchlist = useCallback((item: any) => {
     const isPerson = !!(item.profile_path || item.known_for_department);
-    const key = isPerson ? 'favoriteArtists' : 'watchlist';
+    const type = isPerson ? 'artist' : 'watchlist';
     try {
-      const currentStr = await AsyncStorage.getItem(key);
-      let currentList = currentStr ? JSON.parse(currentStr) : [];
-      if (currentList.find((i: any) => i.id === item.id)) currentList = currentList.filter((i: any) => i.id !== item.id);
-      else currentList.push(item);
-      await AsyncStorage.setItem(key, JSON.stringify(currentList));
+      const exists = hasSavedItem(item.id, type);
+      if (exists) {
+        removeSavedItem(item.id, type);
+      } else {
+        addSavedItem(item, type);
+      }
       setSavedIds(prev => { const n = new Set(prev); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
     } catch (e) { console.error(e); }
   }, []);

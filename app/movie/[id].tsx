@@ -37,7 +37,7 @@ import {
   getCollectionDetails,
 } from '../../src/tmdb';
 import { getProgress } from '../../src/utils/progress';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSavedItems, addSavedItem, removeSavedItem, hasSavedItem } from '../../src/database';
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -531,83 +531,73 @@ const DetailPage = () => {
     router.push(`/player?id=${movie.id}&media_type=${movie.media_type}&trailerUrl=${encodeURIComponent(trailerKey || '')}&imdbId=${externalIds.imdb_id}&title=${encodeURIComponent(movie.title || movie.name)}&season=${targetSeason}&episode=${targetEpisode}&poster=${encodeURIComponent(movie.poster_path)}&episodeName=${encodeURIComponent(episode ? episode.name : `Episode ${targetEpisode}`)}`);
   }, [sourceStatus, movie, externalIds, lastWatched, episodes, router, trailerKey]);
 
-  const checkIfInWatchlist = async () => {
+  const checkIfInWatchlist = () => {
     const targetId = movie?.id || initialMovie?.id;
     if (!targetId) return;
-    try {
-      const stored = await AsyncStorage.getItem('watchlist');
-      const list = stored ? JSON.parse(stored) : [];
-      setIsInWatchlist(list.some((item: any) => item.id === targetId));
-    } catch {}
+    setIsInWatchlist(hasSavedItem(targetId, 'watchlist'));
   };
 
-  const toggleWatchlist = async () => {
-    try {
-      const stored = await AsyncStorage.getItem('watchlist');
-      const list = stored ? JSON.parse(stored) : [];
-      const exists = list.some((item: any) => item.id === movie.id);
-      const newList = exists ? list.filter((item: any) => item.id !== movie.id) : [...list, movie];
-      await AsyncStorage.setItem('watchlist', JSON.stringify(newList));
-      setIsInWatchlist(!exists);
-      if (Platform.OS === 'android')
-        ToastAndroid.show(exists ? 'Removed from Watchlist' : 'Added to Watchlist', ToastAndroid.SHORT);
-    } catch {}
+  const toggleWatchlist = () => {
+    if (!movie) return;
+    const exists = hasSavedItem(movie.id, 'watchlist');
+    if (exists) {
+      removeSavedItem(movie.id, 'watchlist');
+    } else {
+      addSavedItem(movie, 'watchlist');
+    }
+    setIsInWatchlist(!exists);
+    if (Platform.OS === 'android') {
+      const { ToastAndroid } = require('react-native');
+      ToastAndroid.show(exists ? 'Removed from Watchlist' : 'Added to Watchlist', ToastAndroid.SHORT);
+    }
   };
 
-  const checkIfWatched = async () => {
+  const checkIfWatched = () => {
     const targetId = movie?.id || initialMovie?.id;
     if (!targetId) return;
-    try {
-      const stored = await AsyncStorage.getItem('history');
-      const list = stored ? JSON.parse(stored) : [];
-      setIsWatched(list.some((item: any) => item.id === targetId));
-    } catch {}
+    setIsWatched(hasSavedItem(targetId, 'history'));
   };
 
   const toggleWatched = async () => {
-    try {
-      const stored = await AsyncStorage.getItem('history');
-      const list = stored ? JSON.parse(stored) : [];
-      const exists = list.some((item: any) => item.id === movie.id);
-      const newList = exists ? list.filter((item: any) => item.id !== movie.id) : [...list, movie];
-      await AsyncStorage.setItem('history', JSON.stringify(newList));
-      setIsWatched(!exists);
+    if (!movie) return;
+    const exists = hasSavedItem(movie.id, 'history');
+    if (exists) {
+      removeSavedItem(movie.id, 'history');
+    } else {
+      addSavedItem(movie, 'history');
+    }
+    setIsWatched(!exists);
 
-      // Auto-watched collection logic
-      if (!exists && movie.belongs_to_collection) {
-        const wList = await AsyncStorage.getItem('watchlist');
-        if (wList) {
-          const watchlistArr = JSON.parse(wList);
-          const colInWatchlist = watchlistArr.find((i: any) => i.id === movie.belongs_to_collection.id && i.media_type === 'collection');
+    // Auto-watched collection logic
+    if (!exists && movie.belongs_to_collection) {
+      const watchlistArr = getSavedItems('watchlist');
+      const colInWatchlist = watchlistArr.find((i: any) => i.id === movie.belongs_to_collection.id && i.media_type === 'collection');
+      
+      if (colInWatchlist) {
+        const { getCollectionDetails } = require('../../src/tmdb');
+        const colDetails = await getCollectionDetails(movie.belongs_to_collection.id);
+        if (colDetails && colDetails.parts) {
+          const historyArr = getSavedItems('history');
+          const allWatched = colDetails.parts.every((part: any) => 
+              historyArr.some((hi: any) => hi.id === part.id)
+          );
           
-          if (colInWatchlist) {
-            const { getCollectionDetails } = require('../../src/tmdb');
-            const colDetails = await getCollectionDetails(movie.belongs_to_collection.id);
-            if (colDetails && colDetails.parts) {
-              const allWatched = colDetails.parts.every((part: any) => 
-                  newList.some((hi: any) => hi.id === part.id)
-              );
-              
-              if (allWatched) {
-                const updatedWatchlist = watchlistArr.filter((i: any) => i.id !== colDetails.id);
-                await AsyncStorage.setItem('watchlist', JSON.stringify(updatedWatchlist));
-                
-                const existsInHistory = newList.some((i: any) => i.id === colDetails.id);
-                if (!existsInHistory) {
-                  const historyWithCol = [...newList, colDetails];
-                  await AsyncStorage.setItem('history', JSON.stringify(historyWithCol));
-                }
-                
-                if (Platform.OS === 'android') {
-                  const { ToastAndroid } = require('react-native');
-                  ToastAndroid.show(`${colDetails.name} marked as watched!`, ToastAndroid.SHORT);
-                }
-              }
+          if (allWatched) {
+            removeSavedItem(colDetails.id, 'watchlist');
+            
+            const existsInHistory = hasSavedItem(colDetails.id, 'history');
+            if (!existsInHistory) {
+              addSavedItem(colDetails, 'history');
+            }
+            
+            if (Platform.OS === 'android') {
+              const { ToastAndroid } = require('react-native');
+              ToastAndroid.show(`${colDetails.name} marked as watched!`, ToastAndroid.SHORT);
             }
           }
         }
       }
-    } catch {}
+    }
   };
 
   const openTelegramSearch = () => {

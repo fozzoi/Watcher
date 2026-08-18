@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSavedItems } from '../src/database';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 const ACCENT = '#E50914';
@@ -29,13 +29,10 @@ export default function StatsPage() {
     loadStats();
   }, []);
 
-  const loadStats = async () => {
+  const loadStats = () => {
     try {
-      const historyStr = await AsyncStorage.getItem('history');
-      const watchlistStr = await AsyncStorage.getItem('watchlist');
-      
-      const history = historyStr ? JSON.parse(historyStr) : [];
-      const watchlist = watchlistStr ? JSON.parse(watchlistStr) : [];
+      const history = getSavedItems('history');
+      const watchlist = getSavedItems('watchlist');
 
       let totalMovies = 0;
       let totalTv = 0;
@@ -63,8 +60,7 @@ export default function StatsPage() {
 
       // (We could parse actors if we stored them in history, but normally we don't. 
       // If favoriteArtists is populated, we can use that instead for now.)
-      const artistsStr = await AsyncStorage.getItem('favoriteArtists');
-      const artists = artistsStr ? JSON.parse(artistsStr) : [];
+      const artists = getSavedItems('artist');
       const topActor = artists.length > 0 ? artists[0].name : 'Unknown';
 
       setStats({

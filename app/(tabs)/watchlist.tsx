@@ -20,6 +20,7 @@ import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image'; // Highly optimized image rendering
 import { enableFreeze } from 'react-native-screens'; // Prevents background screens from eating CPU
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems } from '../../src/database';
 import { getImageUrl, searchTMDB, GLOBAL_CONFIG } from '../../src/tmdb';
 import { GENRE_OPTIONS } from '../../src/userPreferences';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -181,13 +182,9 @@ const WatchListPage = () => {
 
   const loadData = async () => {
     try {
-      const storedMovies = await AsyncStorage.getItem('watchlist');
-      const storedArtists = await AsyncStorage.getItem('favoriteArtists');
-      const storedWatched = await AsyncStorage.getItem('history');
-
-      if (storedMovies) setWatchlist(JSON.parse(storedMovies));
-      if (storedArtists) setArtists(JSON.parse(storedArtists));
-      if (storedWatched) setWatched(JSON.parse(storedWatched));
+      setWatchlist(getSavedItems('watchlist'));
+      setArtists(getSavedItems('artist'));
+      setWatched(getSavedItems('history'));
 
       runDailyAutoSync();
     } catch (error) {
@@ -223,8 +220,7 @@ const WatchListPage = () => {
     let existingCount = 0;
     let missedTitles: string[] = [];
 
-    const stored = await AsyncStorage.getItem('watchlist');
-    let currentList = stored ? JSON.parse(stored) : [];
+    const currentList = getSavedItems('watchlist');
 
     for (let i = 0; i < titles.length; i++) {
       setSyncProgress(`Checking ${i + 1}/${titles.length}: ${titles[i].title}`);
@@ -247,7 +243,7 @@ const WatchListPage = () => {
       }
     }
 
-    await AsyncStorage.setItem('watchlist', JSON.stringify(currentList));
+    currentList.forEach((item: any) => addSavedItem(item, 'watchlist'));
     setWatchlist(currentList);
     setSyncProgress('');
     return { addedCount, existingCount, missedTitles };
@@ -388,8 +384,7 @@ const WatchListPage = () => {
 
       setSyncProgress(`Matching ${extractedMovies.length} titles on TMDB...`);
 
-      const storedMovies = await AsyncStorage.getItem('watchlist');
-      const currentWatchlist = storedMovies ? JSON.parse(storedMovies) : [];
+      const currentWatchlist = getSavedItems('watchlist');
       let addedCount = 0;
       let existingCount = 0;
       const missedTitles: string[] = [];
@@ -418,7 +413,7 @@ const WatchListPage = () => {
       }
 
       if (addedCount > 0) {
-        await AsyncStorage.setItem('watchlist', JSON.stringify(currentWatchlist));
+        currentWatchlist.forEach((item: any) => addSavedItem(item, 'watchlist'));
         setWatchlist(currentWatchlist);
       }
 
@@ -474,23 +469,23 @@ const WatchListPage = () => {
     transform: [{ translateX: tabPosition.value }]
   }));
 
-  const handleRemove = useCallback(async (id: number, type: 'watchlist' | 'artist' | 'history') => {
+  const handleRemove = useCallback((id: number, type: 'watchlist' | 'artist' | 'history') => {
     if (type === 'watchlist') {
       setWatchlist(prev => {
         const newList = prev.filter(item => item.id !== id);
-        AsyncStorage.setItem('watchlist', JSON.stringify(newList));
+        removeSavedItem(id, 'watchlist');
         return newList;
       });
     } else if (type === 'artist') {
       setArtists(prev => {
         const newList = prev.filter(item => item.id !== id);
-        AsyncStorage.setItem('favoriteArtists', JSON.stringify(newList));
+        removeSavedItem(id, 'artist');
         return newList;
       });
     } else if (type === 'history') {
       setWatched(prev => {
         const newList = prev.filter(item => item.id !== id);
-        AsyncStorage.setItem('history', JSON.stringify(newList));
+        removeSavedItem(id, 'history');
         return newList;
       });
     }
@@ -509,9 +504,9 @@ const WatchListPage = () => {
           text: "Clear All",
           style: "destructive",
           onPress: async () => {
-            if (activeTab === 0) { setWatchlist([]); await AsyncStorage.removeItem('watchlist'); }
-            if (activeTab === 1) { setArtists([]); await AsyncStorage.removeItem('favoriteArtists'); }
-            if (activeTab === 2) { setWatched([]); await AsyncStorage.removeItem('history'); }
+            if (activeTab === 0) { setWatchlist([]); clearSavedItems('watchlist'); }
+            if (activeTab === 1) { setArtists([]); clearSavedItems('artist'); }
+            if (activeTab === 2) { setWatched([]); clearSavedItems('history'); }
           }
         }
       ]

@@ -7,6 +7,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing'; 
 import * as DocumentPicker from 'expo-document-picker'; 
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
+import { getSavedItems, addSavedItem } from '../src/database'; 
 
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { setGlobalConfig } from '../src/tmdb';
@@ -168,13 +169,9 @@ const Settings = () => {
 
   const performExport = async (format: 'txt' | 'json') => {
     try {
-      const mStr = await AsyncStorage.getItem('watchlist');
-      const aStr = await AsyncStorage.getItem('favoriteArtists');
-      const hStr = await AsyncStorage.getItem('history');
-
-      const rawWatchlist = mStr ? JSON.parse(mStr) : [];
-      const rawArtists = aStr ? JSON.parse(aStr) : [];
-      const rawHistory = hStr ? JSON.parse(hStr) : [];
+      const rawWatchlist = getSavedItems('watchlist');
+      const rawArtists = getSavedItems('artist');
+      const rawHistory = getSavedItems('history');
 
       let fileContent = "";
       const dateString = new Date().toISOString().split('T')[0];
@@ -233,15 +230,15 @@ const Settings = () => {
 
       let restoredTotal = 0;
       if (backupData.watchlist && Array.isArray(backupData.watchlist)) {
-        await AsyncStorage.setItem('watchlist', JSON.stringify(backupData.watchlist));
+        backupData.watchlist.forEach((i: any) => addSavedItem(i, 'watchlist'));
         restoredTotal += backupData.watchlist.length;
       }
       if (backupData.artists && Array.isArray(backupData.artists)) {
-        await AsyncStorage.setItem('favoriteArtists', JSON.stringify(backupData.artists));
+        backupData.artists.forEach((i: any) => addSavedItem(i, 'artist'));
         restoredTotal += backupData.artists.length;
       }
       if (backupData.history && Array.isArray(backupData.history)) {
-        await AsyncStorage.setItem('history', JSON.stringify(backupData.history));
+        backupData.history.forEach((i: any) => addSavedItem(i, 'history'));
         restoredTotal += backupData.history.length;
       }
 

@@ -16,7 +16,7 @@ import {
   ToastAndroid,
   Alert,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { hasSavedItem, addSavedItem, removeSavedItem } from '../../src/database';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
@@ -93,14 +93,8 @@ export default function CastDetails() {
     checkIfLiked();
   }, [personId]);
 
-  const checkIfLiked = async () => {
-    try {
-      const stored = await AsyncStorage.getItem('favoriteArtists');
-      if (stored) {
-        const artists = JSON.parse(stored);
-        setIsLiked(artists.some((a: any) => a.id === personId));
-      }
-    } catch {}
+  const checkIfLiked = () => {
+    setIsLiked(hasSavedItem(personId, 'artist'));
   };
 
   const loadData = async () => {
@@ -138,9 +132,6 @@ export default function CastDetails() {
     );
 
     try {
-      const stored = await AsyncStorage.getItem('favoriteArtists');
-      let artists = stored ? JSON.parse(stored) : [];
-
       if (newValue) {
         const artistToSave = {
           id: person.id,
@@ -149,12 +140,10 @@ export default function CastDetails() {
           known_for_department: person.known_for_department,
           popularity: person.popularity,
         };
-        if (!artists.some((a: any) => a.id === person.id)) artists.push(artistToSave);
+        addSavedItem(artistToSave, 'artist');
       } else {
-        artists = artists.filter((a: any) => a.id !== person.id);
+        removeSavedItem(person.id, 'artist');
       }
-
-      await AsyncStorage.setItem('favoriteArtists', JSON.stringify(artists));
     } catch {
       setIsLiked(!newValue);
     }

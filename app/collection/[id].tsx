@@ -12,7 +12,7 @@ import { Text } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { hasSavedItem, addSavedItem, removeSavedItem } from '../../src/database';
 import {
   getCollectionDetails,
   getImageUrl,
@@ -64,20 +64,9 @@ const CollectionDetails = () => {
   const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [isWatched, setIsWatched] = useState(false);
 
-  const checkStatus = async (col: TMDBCollectionDetails) => {
-    try {
-      const watchlistStr = await AsyncStorage.getItem('watchlist');
-      if (watchlistStr) {
-        const list = JSON.parse(watchlistStr);
-        setIsInWatchlist(list.some((item: any) => item.id === col.id));
-      }
-      
-      const historyStr = await AsyncStorage.getItem('history');
-      if (historyStr) {
-        const list = JSON.parse(historyStr);
-        setIsWatched(list.some((item: any) => item.id === col.id));
-      }
-    } catch {}
+  const checkStatus = (col: TMDBCollectionDetails) => {
+    setIsInWatchlist(hasSavedItem(col.id, 'watchlist'));
+    setIsWatched(hasSavedItem(col.id, 'history'));
   };
 
   useEffect(() => {
@@ -103,28 +92,26 @@ const CollectionDetails = () => {
     router.push(`/movie/${movie.id}`);
   };
 
-  const toggleWatchlist = async () => {
+  const toggleWatchlist = () => {
     if (!collection) return;
-    try {
-      const stored = await AsyncStorage.getItem('watchlist');
-      const list = stored ? JSON.parse(stored) : [];
-      const exists = list.some((item: any) => item.id === collection.id);
-      const newList = exists ? list.filter((item: any) => item.id !== collection.id) : [...list, collection];
-      await AsyncStorage.setItem('watchlist', JSON.stringify(newList));
-      setIsInWatchlist(!exists);
-    } catch {}
+    const exists = hasSavedItem(collection.id, 'watchlist');
+    if (exists) {
+      removeSavedItem(collection.id, 'watchlist');
+    } else {
+      addSavedItem(collection, 'watchlist');
+    }
+    setIsInWatchlist(!exists);
   };
 
-  const toggleWatched = async () => {
+  const toggleWatched = () => {
     if (!collection) return;
-    try {
-      const stored = await AsyncStorage.getItem('history');
-      const list = stored ? JSON.parse(stored) : [];
-      const exists = list.some((item: any) => item.id === collection.id);
-      const newList = exists ? list.filter((item: any) => item.id !== collection.id) : [...list, collection];
-      await AsyncStorage.setItem('history', JSON.stringify(newList));
-      setIsWatched(!exists);
-    } catch {}
+    const exists = hasSavedItem(collection.id, 'history');
+    if (exists) {
+      removeSavedItem(collection.id, 'history');
+    } else {
+      addSavedItem(collection, 'history');
+    }
+    setIsWatched(!exists);
   };
 
   const renderMovieItem = ({ item }: { item: TMDBResult }) => {

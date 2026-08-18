@@ -16,7 +16,7 @@ import Animated, {
   interpolateColor, SlideInRight, ZoomIn, runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSavedItems } from '../../src/database';
 
 import { getImageUrl, getFullDetails, fetchChatGemini, fetchPersonalisedDiscoveryContent } from '../../src/tmdb';
 import { getUserPreferences } from '../../src/userPreferences';
@@ -387,16 +387,14 @@ const AiChat = () => {
 
       // Load watched history
       try {
-        const watchedStr = await AsyncStorage.getItem('history');
-        const watched = watchedStr ? JSON.parse(watchedStr) : [];
+        const watched = getSavedItems('history');
         setWatchedIds(new Set(watched.map((i: any) => i.id)));
         setWatchedTitles(watched.map((i: any) => i.title || i.name || '').filter(Boolean));
       } catch {}
 
       // Load watchlist (saved movies/TV and collections the user wants to watch)
       try {
-        const watchlistStr = await AsyncStorage.getItem('watchlist');
-        const wl = watchlistStr ? JSON.parse(watchlistStr) : [];
+        const wl = getSavedItems('watchlist');
         const collections = wl.filter((i: any) => i.media_type === 'collection');
         const movies = wl.filter((i: any) => i.media_type !== 'collection');
         setWatchlistTitles(movies.map((i: any) => i.title || i.name || '').filter(Boolean));

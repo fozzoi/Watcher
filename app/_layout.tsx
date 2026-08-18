@@ -11,6 +11,7 @@ import * as Notifications from 'expo-notifications';
 import { setupNotificationChannel, registerBackgroundFetchAsync, isNotificationsEnabled } from '@/src/notifications';
 import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
+import { initDb, performMigration } from '@/src/database';
 
 LogBox.ignoreLogs([
   'Method readAsStringAsync imported from "expo-file-system" is deprecated',
@@ -109,12 +110,19 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    async function checkOnboarding() {
+    async function initializeApp() {
+      try {
+        initDb();
+        await performMigration();
+      } catch (e) {
+        console.error('Database init failed:', e);
+      }
+      
       const complete = await isOnboardingComplete();
       setNeedsOnboarding(!complete);
       setIsReady(true);
     }
-    checkOnboarding();
+    initializeApp();
   }, []);
 
   useEffect(() => {
