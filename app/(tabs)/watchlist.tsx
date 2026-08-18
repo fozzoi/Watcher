@@ -41,8 +41,8 @@ import axios from 'axios';
 
 
 const { width } = Dimensions.get('window');
-// Recalculated width to account for FlashList padding
-const CARD_WIDTH = (width - 64) / 3;
+// Recalculated width to account for FlashList padding (2 columns)
+const CARD_WIDTH = (width - 48) / 2;
 const TAB_WIDTH = width - 148;
 const TAB_ITEM_WIDTH = (TAB_WIDTH - 4) / 3;
 
@@ -57,7 +57,7 @@ const WatchlistCard = React.memo(({ item, activeTab, onRemove, onPress }: { item
 
   const title = !isArtist ? (item.title || item.name) : item.name;
   const subtitle = !isArtist
-    ? (item.vote_average ? `★ ${item.vote_average.toFixed(1)}` : '')
+    ? ''
     : (item.known_for_department || 'Artist');
 
   const itemType = activeTab === 0 ? 'watchlist' : activeTab === 1 ? 'artist' : 'history';
@@ -618,7 +618,7 @@ const WatchListPage = () => {
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
-          scrollEventThrottle={16}
+          scrollEventThrottle={32}
           onMomentumScrollEnd={(e) => {
             const newIndex = Math.round(e.nativeEvent.contentOffset.x / width);
             if (activeTab !== newIndex) {
@@ -685,13 +685,13 @@ const WatchListPage = () => {
                     extraData={tabIndex}
                     keyExtractor={(item) => `${tabIndex}-${item.id}`}
                     renderItem={renderCard}
-                    numColumns={3}
+                    numColumns={2}
                     estimatedItemSize={CARD_WIDTH * 1.5 + 16}
                     contentContainerStyle={[styles.listContent, {
                       paddingTop: insets.top + 115
                     }]}
                     showsVerticalScrollIndicator={false}
-                    scrollEventThrottle={16}
+                    scrollEventThrottle={32}
                     onScroll={(e) => {
                       if (!isTabActive) return; // Only process scrolling for active tab
                       const y = e.nativeEvent.contentOffset.y;
@@ -767,7 +767,7 @@ const WatchListPage = () => {
             style={[styles.headerIconButton, isSearchOpen && styles.headerIconButtonActive]}
           >
             <View style={styles.blurContainer}>
-            <BlurView intensity={Platform.OS === 'android' ? 20 : 50} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurViewSdk31Plus" />
+              {/* <BlurView intensity={Platform.OS === 'android' ? 20 : 50} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" /> */}
               <View style={{ ...StyleSheet.absoluteFill, backgroundColor: isSearchOpen ? '#FF000D' : 'rgba(15,15,15,0.7)' }} pointerEvents="none" />
             </View>
             <Ionicons name={isSearchOpen ? "close" : "search"} size={18} color="#FFF" />
@@ -775,7 +775,7 @@ const WatchListPage = () => {
 
           <View style={styles.tabContainer}>
             <View style={styles.blurContainer}>
-            <BlurView intensity={Platform.OS === 'android' ? 20 : 50} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurViewSdk31Plus" />
+              <BlurView intensity={Platform.OS === 'android' ? 20 : 50} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
               <View style={{ ...StyleSheet.absoluteFill, backgroundColor: 'rgba(15,15,15,0.7)' }} />
             </View>
 
@@ -801,7 +801,7 @@ const WatchListPage = () => {
             style={styles.headerIconButton}
           >
             <View style={styles.blurContainer}>
-              <BlurView intensity={Platform.OS === 'android' ? 20 : 50} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurViewSdk31Plus" />
+              {/* <BlurView intensity={Platform.OS === 'android' ? 20 : 50} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" /> */}
               <View style={{ ...StyleSheet.absoluteFill, backgroundColor: 'rgba(15,15,15,0.7)' }} pointerEvents="none" />
             </View>
             <Feather name="more-vertical" size={20} color="#FFF" />
@@ -811,7 +811,7 @@ const WatchListPage = () => {
         {/* ── INLINE SEARCH BAR (when active) ── */}
         {isSearchOpen && (
           <Animated.View entering={FadeInDown.duration(200)} style={styles.searchBarContainer}>
-            <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurViewSdk31Plus" />
+            <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(20, 20, 20, 0.4)' }]} pointerEvents="none" />
             <Ionicons name="search" size={16} color="#777" style={{ marginLeft: 12 }} />
             <TextInput
@@ -837,7 +837,7 @@ const WatchListPage = () => {
       {/* ── SUB-TABS & FILTERS (Moved to Bottom for 1-Handed Use) ── */}
       {(activeTab === 0 || activeTab === 2) && (
         <Animated.View style={[styles.filterSection, { bottom: insets.bottom + 95 }, animatedFilterStyle]} collapsable={false}>
-          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurViewSdk31Plus" />
+          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(25,25,25,0.6)' }]} pointerEvents="none" />
 
           <ScrollView
@@ -1144,7 +1144,7 @@ const WatchListPage = () => {
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={0.95} onPress={() => setIsLinkModalVisible(false)} />
           <View style={styles.modalContentContainer}>
-            <BlurView intensity={Platform.OS === 'android' ? 25 : 60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurViewSdk31Plus" />
+            <BlurView intensity={Platform.OS === 'android' ? 25 : 60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
             <View style={{ ...StyleSheet.absoluteFill, backgroundColor: 'rgba(30,30,30,0.65)' }} />
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Google Watchlist Link</Text>
@@ -1170,7 +1170,7 @@ const WatchListPage = () => {
       <Modal visible={importSummary.visible} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContentContainer}>
-            <BlurView intensity={Platform.OS === 'android' ? 25 : 60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurViewSdk31Plus" />
+            <BlurView intensity={Platform.OS === 'android' ? 25 : 60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
             <View style={{ ...StyleSheet.absoluteFill, backgroundColor: 'rgba(30,30,30,0.85)' }} />
             <View style={styles.modalContent}>
               <View style={styles.resultsHeaderRow}>

@@ -72,7 +72,7 @@ export default function CastDetails() {
   const HEADER_HEIGHT = height * 0.5;
   const COLLAPSED_HEADER_HEIGHT = TOP_BAR_PADDING + 46;
   const CARD_GAP = 12;
-  const CARD_WIDTH = (width - 40 - CARD_GAP * 2) / 3;
+  const CARD_WIDTH = (width - 40 - CARD_GAP) / 2;
 
   const [person, setPerson] = useState<TMDBPerson | null>(null);
   const [credits, setCredits] = useState<TMDBResult[]>([]);
@@ -84,11 +84,7 @@ export default function CastDetails() {
   const likedScale = useSharedValue(1);
 
   const [galleryVisible, setGalleryVisible] = useState(false);
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-
   const headerListRef = useRef<FlatList>(null);
-  const mainGalleryRef = useRef<FlatList>(null);
-  const thumbnailGalleryRef = useRef<FlatList>(null);
 
   const scrollY = useSharedValue(0);
 
@@ -168,8 +164,8 @@ export default function CastDetails() {
     transform: [{ scale: likedScale.value }],
   }));
 
-  const handleGalleryShare = async () => {
-    const currentImgPath = personImages[currentImageIndex]?.file_path || person?.profile_path;
+  const handlePageShare = async () => {
+    const currentImgPath = personImages[0]?.file_path || person?.profile_path;
     if (!currentImgPath) return;
     const imageUrl = getImageUrl(currentImgPath, 'original');
     try {
@@ -215,7 +211,7 @@ export default function CastDetails() {
   const CreditCard = ({ item, index }: { item: TMDBResult; index: number }) => (
     <Animated.View
       entering={FadeInDown.delay(Math.min(index, 10) * 40)}
-      style={[styles.creditCard, { width: CARD_WIDTH, marginRight: (index + 1) % 3 === 0 ? 0 : CARD_GAP }]}
+      style={[styles.creditCard, { width: CARD_WIDTH, marginRight: (index + 1) % 2 === 0 ? 0 : CARD_GAP }]}
     >
       <TouchableOpacity
         activeOpacity={0.95}
@@ -229,10 +225,6 @@ export default function CastDetails() {
             source={{ uri: getImageUrl(item.poster_path, 'w342') }}
             style={[styles.creditImage, { width: CARD_WIDTH, height: CARD_WIDTH * 1.5 }]}
           />
-          <View style={styles.ratingBadge}>
-            <Ionicons name="star" size={9} color={C.gold} />
-            <Text style={styles.ratingText}>{(item.vote_average || 0).toFixed(1)}</Text>
-          </View>
         </View>
         <Text style={styles.creditTitle} numberOfLines={2}>
           {item.title || item.name}
@@ -246,93 +238,7 @@ export default function CastDetails() {
     </Animated.View>
   );
 
-  const renderGalleryModal = () => {
-    const imagesToRender =
-      personImages.length > 0
-        ? personImages
-        : person?.profile_path
-        ? [{ file_path: person.profile_path, aspect_ratio: 1, height: 0, width: 0 }]
-        : [];
 
-    return (
-      <Modal
-        visible={galleryVisible}
-        transparent
-        onRequestClose={() => setGalleryVisible(false)}
-        animationType="fade"
-        statusBarTranslucent
-      >
-        <View style={[styles.modalContainer, { width, height }]}>
-          <StatusBar hidden />
-
-          <View style={styles.modalHeader}>
-            <TouchableOpacity activeOpacity={0.95} style={styles.glassBtn} onPress={() => setGalleryVisible(false)}>
-              <Ionicons name="close" size={22} color={C.white} />
-            </TouchableOpacity>
-
-            <Text style={styles.galleryCounter}>
-              {currentImageIndex + 1} / {imagesToRender.length}
-            </Text>
-
-            <TouchableOpacity activeOpacity={0.95} style={styles.glassBtn} onPress={handleGalleryShare}>
-              <Ionicons name="share-outline" size={19} color={C.white} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={{ flex: 1, justifyContent: 'center' }}>
-            <FlatList
-              ref={mainGalleryRef}
-              data={imagesToRender}
-              horizontal
-              pagingEnabled
-              initialScrollIndex={currentImageIndex}
-              getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(_, index) => `modal-main-${index}`}
-              onMomentumScrollEnd={(ev) => {
-                const newIndex = Math.round(ev.nativeEvent.contentOffset.x / width);
-                setCurrentImageIndex(newIndex);
-                thumbnailGalleryRef.current?.scrollToIndex({ index: newIndex, animated: true, viewPosition: 0.5 });
-              }}
-              renderItem={({ item }) => (
-                <View style={{ width, height, justifyContent: 'center', alignItems: 'center' }}>
-                  <Image
-                    source={{ uri: getImageUrl(item.file_path, 'original') }}
-                    style={{ width, height: '100%' }}
-                    contentFit="contain"
-                  />
-                </View>
-              )}
-            />
-          </View>
-
-          {imagesToRender.length > 1 && (
-            <View style={styles.thumbnailStripContainer}>
-              <FlatList
-                ref={thumbnailGalleryRef}
-                data={imagesToRender}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={(_, index) => `modal-thumb-${index}`}
-                contentContainerStyle={{ paddingHorizontal: 20 }}
-                renderItem={({ item, index }) => (
-                  <TouchableOpacity activeOpacity={0.95}
-                    onPress={() => {
-                      setCurrentImageIndex(index);
-                      mainGalleryRef.current?.scrollToIndex({ index, animated: true });
-                    }}
-                    style={[styles.thumbnailWrapper, currentImageIndex === index && styles.thumbnailActive]}
-                  >
-                    <Image source={{ uri: getImageUrl(item.file_path, 'w154') }} style={styles.thumbnailImage} />
-                  </TouchableOpacity>
-                )}
-              />
-            </View>
-          )}
-        </View>
-      </Modal>
-    );
-  };
 
   if (loading || !person) {
     return <CastDetailSkeleton />;
@@ -354,15 +260,9 @@ export default function CastDetails() {
             showsHorizontalScrollIndicator={false}
             keyExtractor={(_, index) => `header-${index}`}
             renderItem={({ item, index }) => (
-              <TouchableOpacity
-                activeOpacity={0.95}
-                onPress={() => {
-                  setCurrentImageIndex(index);
-                  setGalleryVisible(true);
-                }}
-              >
+              <View style={{ width, height: '100%' }}>
                 <Image source={{ uri: getImageUrl(item.file_path, 'h632') }} style={{ width, height: '100%' }} contentFit="cover" />
-              </TouchableOpacity>
+              </View>
             )}
           />
           <LinearGradient
@@ -374,13 +274,8 @@ export default function CastDetails() {
         </Animated.View>
 
         <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-          <TouchableOpacity activeOpacity={0.95} onPress={() => router.back()} style={styles.glassBtn} activeOpacity={0.95}>
+          <TouchableOpacity activeOpacity={0.95} onPress={() => router.back()} style={styles.glassBtn}>
             <Ionicons name="chevron-back" size={22} color={C.white} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleLovePress} style={styles.glassBtn} activeOpacity={0.95}>
-            <Animated.View style={animatedHeartStyle}>
-              <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={20} color={isLiked ? C.red : C.white} />
-            </Animated.View>
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -433,7 +328,7 @@ export default function CastDetails() {
           </TouchableOpacity>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity activeOpacity={0.95} style={styles.actionBtn} onPress={handleGalleryShare}>
+            <TouchableOpacity activeOpacity={0.95} style={styles.actionBtn} onPress={handlePageShare}>
               <Feather name="share-2" size={17} color={C.mutedSoft} />
               <Text style={styles.actionBtnText}>Share</Text>
             </TouchableOpacity>
@@ -441,7 +336,6 @@ export default function CastDetails() {
               <TouchableOpacity activeOpacity={0.95}
                 style={styles.actionBtn}
                 onPress={() => {
-                  setCurrentImageIndex(0);
                   setGalleryVisible(true);
                 }}
               >
@@ -471,22 +365,152 @@ export default function CastDetails() {
               </View>
             </View>
 
-            <FlashList
-              data={credits}
-              renderItem={({ item, index }) => <CreditCard item={item} index={index} />}
-              numColumns={3}
-              scrollEnabled={false}
-              estimatedItemSize={CARD_WIDTH * 1.5 + 60}
-              initialNumToRender={9}
-            />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+              {credits.map((item, index) => (
+                <CreditCard key={`${item.id}-${index}`} item={item} index={index} />
+              ))}
+            </View>
           </View>
         </View>
       </Animated.ScrollView>
 
-      {renderGalleryModal()}
+      {person && (
+        <GalleryModal
+          visible={galleryVisible}
+          onClose={() => setGalleryVisible(false)}
+          personImages={personImages}
+          person={person}
+        />
+      )}
     </View>
   );
 }
+
+const GalleryModal = React.memo(({
+  visible,
+  onClose,
+  personImages,
+  person
+}: {
+  visible: boolean;
+  onClose: () => void;
+  personImages: TMDBImage[];
+  person: TMDBPerson;
+}) => {
+  const { width, height } = useWindowDimensions();
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  const mainGalleryRef = useRef<FlatList>(null);
+  const thumbnailGalleryRef = useRef<FlatList>(null);
+
+  useEffect(() => {
+    if (visible) setCurrentImageIndex(0);
+  }, [visible]);
+
+  const imagesToRender =
+    personImages.length > 0
+      ? personImages
+      : person?.profile_path
+      ? [{ file_path: person.profile_path, aspect_ratio: 1, height: 0, width: 0 }]
+      : [];
+
+  const handleGalleryShare = async () => {
+    const currentImgPath = imagesToRender[currentImageIndex]?.file_path || person?.profile_path;
+    if (!currentImgPath) return;
+    const imageUrl = getImageUrl(currentImgPath, 'original');
+    try {
+      await Share.share({
+        message: `Check out ${person?.name}! Shared from Watcher app. ${imageUrl}`,
+        url: imageUrl,
+      });
+    } catch {}
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      onRequestClose={onClose}
+      animationType="fade"
+      statusBarTranslucent
+    >
+      <View style={[styles.modalContainer, { width, height }]}>
+        <StatusBar hidden />
+
+        <View style={styles.modalHeader}>
+          <TouchableOpacity activeOpacity={0.95} style={styles.glassBtn} onPress={onClose}>
+            <Ionicons name="close" size={22} color={C.white} />
+          </TouchableOpacity>
+
+          <Text style={styles.galleryCounter}>
+            {currentImageIndex + 1} / {imagesToRender.length}
+          </Text>
+
+          <TouchableOpacity activeOpacity={0.95} style={styles.glassBtn} onPress={handleGalleryShare}>
+            <Ionicons name="share-outline" size={19} color={C.white} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ flex: 1, justifyContent: 'center' }}>
+          <FlatList
+            ref={mainGalleryRef}
+            data={imagesToRender}
+            horizontal
+            pagingEnabled
+            initialScrollIndex={0}
+            getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(_, index) => `modal-main-${index}`}
+            windowSize={3}
+            maxToRenderPerBatch={2}
+            initialNumToRender={1}
+            onMomentumScrollEnd={(ev) => {
+              const newIndex = Math.round(ev.nativeEvent.contentOffset.x / width);
+              setCurrentImageIndex(newIndex);
+              thumbnailGalleryRef.current?.scrollToIndex({ index: newIndex, animated: true, viewPosition: 0.5 });
+            }}
+            renderItem={({ item }) => (
+              <View style={{ width, height, justifyContent: 'center', alignItems: 'center' }}>
+                <Image
+                  source={{ uri: getImageUrl(item.file_path, 'h632') }}
+                  style={{ width: width * 0.9, height: (width * 0.9) * (4 / 3), borderRadius: 16 }}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                />
+              </View>
+            )}
+          />
+        </View>
+
+        {imagesToRender.length > 1 && (
+          <View style={styles.thumbnailStripContainer}>
+            <FlatList
+              ref={thumbnailGalleryRef}
+              data={imagesToRender}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(_, index) => `modal-thumb-${index}`}
+              contentContainerStyle={{ paddingHorizontal: 20 }}
+              renderItem={({ item, index }) => (
+                <TouchableOpacity activeOpacity={0.95}
+                  onPress={() => {
+                    setCurrentImageIndex(index);
+                    mainGalleryRef.current?.scrollToIndex({ index, animated: true });
+                  }}
+                  style={[styles.thumbnailWrapper, currentImageIndex === index && styles.thumbnailActive]}
+                >
+                  <Image source={{ uri: getImageUrl(item.file_path, 'w154') }} style={styles.thumbnailImage} />
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        )}
+      </View>
+    </Modal>
+  );
+});
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },

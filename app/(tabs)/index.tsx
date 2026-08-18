@@ -64,16 +64,16 @@ const ExplorePage = () => {
   const [query, setQuery] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  
+
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
-  const [watchedIds, setWatchedIds] = useState<Set<number>>(new Set()); 
+  const [watchedIds, setWatchedIds] = useState<Set<number>>(new Set());
 
   const [tmdbResults, setTmdbResults] = useState<any[]>([]);
   const [peopleResults, setPeopleResults] = useState<any[]>([]);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
-  
+
   const [rawContent, setRawContent] = useState<any>(null);
-  
+
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
   const [allContent, setAllContent] = useState<any>({
     trendingMovies: [], trendingTV: [], topRated: [],
@@ -85,7 +85,7 @@ const ExplorePage = () => {
 
   const inSearchMode = query.trim() !== '';
   const isExpanded = isSearchFocused || inSearchMode;
-  
+
   const bgOpacity = useSharedValue(0);
   const searchWidthAnim = useSharedValue(0);
   const searchBarTranslateY = useSharedValue(0);
@@ -163,14 +163,14 @@ const ExplorePage = () => {
     try {
       const prefs = await getUserPreferences();
       const content = await fetchPersonalisedDiscoveryContent(
-        prefs.languages, 
-        prefs.genreIds, 
-        genreId, 
-        forceRefresh, 
+        prefs.languages,
+        prefs.genreIds,
+        genreId,
+        forceRefresh,
         prefs.favoriteActors
       );
       if (content) {
-          setRawContent(content);
+        setRawContent(content);
       }
 
       const historyStr = await AsyncStorage.getItem('history');
@@ -183,8 +183,8 @@ const ExplorePage = () => {
   }, []);
 
   useFocusEffect(
-    useCallback(() => { 
-      loadUserData(); 
+    useCallback(() => {
+      loadUserData();
       getUserPreferences().then(prefs => {
         const actorsKey = (prefs.favoriteActors || []).map((a: any) => a.id).join(',');
         const currentHash = `${(prefs.languages || []).join(',')}-${(prefs.genreIds || []).join(',')}-${actorsKey}`;
@@ -200,18 +200,18 @@ const ExplorePage = () => {
     const isPerson = !!(item.profile_path || item.known_for_department);
     const key = isPerson ? 'favoriteArtists' : 'watchlist';
     try {
-        const currentStr = await AsyncStorage.getItem(key);
-        let currentList = currentStr ? JSON.parse(currentStr) : [];
-        if (currentList.find((i: any) => i.id === item.id)) currentList = currentList.filter((i: any) => i.id !== item.id);
-        else currentList.push(item);
-        await AsyncStorage.setItem(key, JSON.stringify(currentList));
-        setSavedIds(prev => { const n = new Set(prev); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
+      const currentStr = await AsyncStorage.getItem(key);
+      let currentList = currentStr ? JSON.parse(currentStr) : [];
+      if (currentList.find((i: any) => i.id === item.id)) currentList = currentList.filter((i: any) => i.id !== item.id);
+      else currentList.push(item);
+      await AsyncStorage.setItem(key, JSON.stringify(currentList));
+      setSavedIds(prev => { const n = new Set(prev); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
     } catch (e) { console.error(e); }
   }, []);
 
-  useEffect(() => { 
-    setContentLoading(true); 
-    fetchContent(selectedGenre, false); 
+  useEffect(() => {
+    setContentLoading(true);
+    fetchContent(selectedGenre, false);
   }, [selectedGenre, fetchContent]);
 
   const onRefresh = useCallback(async () => {
@@ -224,27 +224,27 @@ const ExplorePage = () => {
     if (!rawContent) return;
 
     const filteredContent = {
-       trendingMovies: filterWatched(rawContent.trendingMovies, watchedIds),
-       trendingTV: filterWatched(rawContent.trendingTV, watchedIds),
-       topRated: filterWatched(rawContent.topRated, watchedIds),
-       upcoming: filterWatched(rawContent.upcoming, watchedIds),
-       hiddenGems: filterWatched(rawContent.hiddenGems, watchedIds),
-       langData: {} as Record<string, any>,
-       actorData: (rawContent.actorData || []).map((a: any) => ({
-         ...a,
-         items: filterWatched(a.items, watchedIds)
-       })).filter((a: any) => a.items.length > 0),
-       genreData: (rawContent.genreData || []).map((g: any) => ({
-         ...g,
-         items: filterWatched(g.items, watchedIds)
-       })).filter((g: any) => g.items.length > 0),
+      trendingMovies: filterWatched(rawContent.trendingMovies, watchedIds),
+      trendingTV: filterWatched(rawContent.trendingTV, watchedIds),
+      topRated: filterWatched(rawContent.topRated, watchedIds),
+      upcoming: filterWatched(rawContent.upcoming, watchedIds),
+      hiddenGems: filterWatched(rawContent.hiddenGems, watchedIds),
+      langData: {} as Record<string, any>,
+      actorData: (rawContent.actorData || []).map((a: any) => ({
+        ...a,
+        items: filterWatched(a.items, watchedIds)
+      })).filter((a: any) => a.items.length > 0),
+      genreData: (rawContent.genreData || []).map((g: any) => ({
+        ...g,
+        items: filterWatched(g.items, watchedIds)
+      })).filter((g: any) => g.items.length > 0),
     };
 
     if (rawContent.langData) {
       Object.keys(rawContent.langData).forEach(lang => {
         filteredContent.langData[lang] = {
-           movies: filterWatched(rawContent.langData[lang].movies, watchedIds),
-           tv: filterWatched(rawContent.langData[lang].tv, watchedIds)
+          movies: filterWatched(rawContent.langData[lang].movies, watchedIds),
+          tv: filterWatched(rawContent.langData[lang].tv, watchedIds)
         };
       });
     }
@@ -257,7 +257,7 @@ const ExplorePage = () => {
     let trimmed = searchText.trim();
     if (!trimmed) { setTmdbResults([]); setPeopleResults([]); setSearchLoading(false); return; }
     setSearchLoading(true);
-    
+
     // Intelligent Year Parsing: Remove e.g. " 2008" or " (2008)" from the end of the query
     const yearMatch = trimmed.match(/(?:\s+|\()([1-2][0-9]{3})(?:\))?$/);
     if (yearMatch) {
@@ -266,14 +266,14 @@ const ExplorePage = () => {
 
     try {
       const [movies, people, collections] = await Promise.all([
-        searchTMDB(trimmed), 
+        searchTMDB(trimmed),
         searchPeople(trimmed),
         searchCollections(trimmed)
       ]);
-      
+
       const validMovies = movies.filter((item: any) => item.poster_path);
       const validCollections = collections.filter((item: any) => item.poster_path);
-      
+
       // Combine collections and movies, placing collections at the top
       setTmdbResults([...validCollections, ...validMovies]);
       setPeopleResults(people.filter((item: any) => item.profile_path));
@@ -304,48 +304,48 @@ const ExplorePage = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />     
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       <BlurTargetView ref={targetRef} style={{ flex: 1, backgroundColor: '#141414' }} collapsable={false}>
-        <ScrollView 
+        <ScrollView
           keyboardDismissMode="on-drag"
           onScrollBeginDrag={() => Keyboard.dismiss()}
           onScroll={(e) => {
-             const currentOffset = e.nativeEvent.contentOffset.y;
-             const diff = currentOffset - lastOffsetY.current;
-             lastOffsetY.current = currentOffset;
+            const currentOffset = e.nativeEvent.contentOffset.y;
+            const diff = currentOffset - lastOffsetY.current;
+            lastOffsetY.current = currentOffset;
 
-             if (currentOffset <= 0) {
-                searchBarTranslateY.value = withTiming(0, { duration: 150 });
-             } else if (diff > 5 && searchBarTranslateY.value === 0 && !isSearchFocused && !inSearchMode) {
-                searchBarTranslateY.value = withTiming(-100, { duration: 300 });
-             } else if (diff < -5 && searchBarTranslateY.value < 0) {
+            if (currentOffset <= 0) {
+              searchBarTranslateY.value = withTiming(0, { duration: 150 });
+            } else if (diff > 5 && searchBarTranslateY.value === 0 && !isSearchFocused && !inSearchMode) {
+              searchBarTranslateY.value = withTiming(-100, { duration: 300 });
+            } else if (diff < -5 && searchBarTranslateY.value < 0) {
+              searchBarTranslateY.value = withTiming(0, { duration: 300 });
+            }
+
+            DeviceEventEmitter.emit('exploreScroll', currentOffset);
+
+            if (scrollIdleTimeout.current) clearTimeout(scrollIdleTimeout.current);
+            scrollIdleTimeout.current = setTimeout(() => {
+              if (searchBarTranslateY.value < 0) {
                 searchBarTranslateY.value = withTiming(0, { duration: 300 });
-             }
-
-             DeviceEventEmitter.emit('exploreScroll', currentOffset);
-
-             if (scrollIdleTimeout.current) clearTimeout(scrollIdleTimeout.current);
-             scrollIdleTimeout.current = setTimeout(() => {
-                if (searchBarTranslateY.value < 0) {
-                    searchBarTranslateY.value = withTiming(0, { duration: 300 });
-                }
-             }, 2000);
+              }
+            }, 2000);
           }}
-          scrollEventThrottle={16} 
-          removeClippedSubviews={true} 
+          scrollEventThrottle={32}
+          removeClippedSubviews={true}
           showsVerticalScrollIndicator={false}
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent} 
+          contentContainerStyle={styles.scrollContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />}
         >
           {contentLoading ? (
             <>
               <SkeletonHero />
               <View style={{ marginTop: 24 }}>
-                 <SkeletonCarousel />
-                 <SkeletonCarousel />
-                 <SkeletonCarousel />
+                <SkeletonCarousel />
+                <SkeletonCarousel />
+                <SkeletonCarousel />
               </View>
             </>
           ) : (
@@ -369,31 +369,31 @@ const ExplorePage = () => {
 
               {/* Preferred Language Carousels */}
               {Object.keys(allContent.langData || {}).map(langCode => {
-                 const langInfo = LANGUAGE_OPTIONS.find(l => l.code === langCode);
-                 const langName = langInfo ? langInfo.label : langCode.toUpperCase();
-                 const movies = allContent.langData[langCode].movies;
-                 const tv = allContent.langData[langCode].tv;
-                 return (
-                   <React.Fragment key={langCode}>
-                     {movies && movies.length > 0 && (
-                       <MediaCarousel title={`${langName} Movies`} type={`lang-movies-${langCode}`} data={movies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                     )}
-                     {tv && tv.length > 0 && (
-                       <MediaCarousel title={`${langName} TV Shows`} type={`lang-tv-${langCode}`} data={tv} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                     )}
-                   </React.Fragment>
-                 );
+                const langInfo = LANGUAGE_OPTIONS.find(l => l.code === langCode);
+                const langName = langInfo ? langInfo.label : langCode.toUpperCase();
+                const movies = allContent.langData[langCode].movies;
+                const tv = allContent.langData[langCode].tv;
+                return (
+                  <React.Fragment key={langCode}>
+                    {movies && movies.length > 0 && (
+                      <MediaCarousel title={`${langName} Movies`} type={`lang-movies-${langCode}`} data={movies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                    )}
+                    {tv && tv.length > 0 && (
+                      <MediaCarousel title={`${langName} TV Shows`} type={`lang-tv-${langCode}`} data={tv} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+                    )}
+                  </React.Fragment>
+                );
               })}
 
               {/* Favorite Actors Carousels */}
               {(allContent.actorData || []).map((act: any) => (
-                <MediaCarousel 
+                <MediaCarousel
                   key={`actor-${act.actorId}`}
-                  title={`Starring ${act.actorName}`} 
-                  type={`actor-${act.actorId}`} 
-                  data={act.items} 
-                  savedIds={savedIds} 
-                  toggleWatchlist={toggleWatchlist} 
+                  title={`Starring ${act.actorName}`}
+                  type={`actor-${act.actorId}`}
+                  data={act.items}
+                  savedIds={savedIds}
+                  toggleWatchlist={toggleWatchlist}
                 />
               ))}
             </>
@@ -409,7 +409,7 @@ const ExplorePage = () => {
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100 }} pointerEvents="box-none">
         <LinearGradient colors={['rgba(20, 20, 20, 0.9)', 'rgba(20, 20, 20, 0.4)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: (StatusBar.currentHeight || 0) + 100 }} pointerEvents="none" />
         <Animated.View style={[styles.searchBarContainer, animatedHeaderStyle]} pointerEvents="box-none">
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}> 
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
             <Animated.View style={[styles.searchInputContainer, { overflow: 'hidden' }, animatedSearchStyle]}>
               <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
               <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#1C1C1E' }, animatedBgStyle]} pointerEvents="none" />
@@ -450,7 +450,7 @@ const ExplorePage = () => {
       </View>
 
       {inSearchMode && (
-        <SearchResultsList 
+        <SearchResultsList
           peopleResults={peopleResults}
           tmdbResults={tmdbResults}
           savedIds={savedIds}
@@ -464,8 +464,8 @@ const ExplorePage = () => {
 export default ExplorePage;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#141414',overflow: 'hidden' },
-  scrollContent: { paddingTop: (StatusBar.currentHeight || 0) + 70, paddingBottom: 110 }, 
+  container: { flex: 1, backgroundColor: '#141414', overflow: 'hidden' },
+  scrollContent: { paddingTop: (StatusBar.currentHeight || 0) + 70, paddingBottom: 110 },
   searchBarContainer: { paddingHorizontal: HORIZONTAL_MARGIN, paddingTop: (StatusBar.currentHeight || 0) + 4, paddingBottom: 12, backgroundColor: 'transparent', borderBottomWidth: 0 },
   searchInputContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 24, height: 48, borderWidth: 0, backgroundColor: 'transparent' },
   searchInput: { flex: 1, backgroundColor: 'transparent', height: 48, fontSize: 16, color: '#FFFFFF', paddingLeft: 4, fontFamily: 'GoogleSansFlex-Medium' },
