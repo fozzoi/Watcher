@@ -132,8 +132,12 @@ export default function Index() {
       const scrapedResults = await searchTorrents(query);
       const sortedResults = scrapedResults.sort((a, b) => (b.seeds || 0) - (a.seeds || 0));
       setResults(sortedResults);
-    } catch (error) {
-      showDialog({ title: "Error", message: "Failed to fetch search results.", type: "danger" });
+    } catch (error: any) {
+      if (error.message && error.message.includes("NSFW")) {
+        showDialog({ title: "Content Blocked", message: error.message, type: "danger" });
+      } else {
+        showDialog({ title: "Error", message: "Failed to fetch search results.", type: "danger" });
+      }
     } finally {
       setLoading(false);
     }

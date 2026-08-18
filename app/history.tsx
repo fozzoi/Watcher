@@ -127,12 +127,12 @@ const HistoryPage = () => {
 
   const groupedHistory = groupHistoryByDate();
 
-  const renderHistoryItem = (item: HistoryItem, index: number, groupOffset: number) => {
-    const itemIndex = index + groupOffset;
+  const renderHistoryItem = (item: HistoryItem, index: number, groupOffset: number, isLast: boolean = false) => {
+    const itemIndex = groupOffset + index;
     const { animatedStyle, panHandlers } = getSwipeableItemProps(itemIndex);
     
     return (
-      <View key={index} style={styles.swipeContainer}>
+      <View key={itemIndex} style={[styles.swipeContainer, !isLast && { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' }]}>
         <Animated.View style={[styles.historyItemContainer, animatedStyle]} {...panHandlers}>
           <TouchableOpacity activeOpacity={0.95}
             style={styles.historyItem}
@@ -181,7 +181,7 @@ const HistoryPage = () => {
                 for (let i = 0; i < groupIndex; i++) {
                   groupOffset += Object.values(groupedHistory)[i].length;
                 }
-                return renderHistoryItem(item, index, groupOffset);
+                return renderHistoryItem(item, index, groupOffset, index === items.length - 1);
               })}
             </View>
           </View>
@@ -203,56 +203,58 @@ export default HistoryPage;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#141414", // Netflix background color
+    backgroundColor: "#121212", 
     paddingHorizontal: 16,
-    paddingTop: 40,
+    paddingTop: 50,
     paddingBottom: 120,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 8,
-    marginTop: 20,
+    marginBottom: 24,
+    marginTop: 10,
+    paddingHorizontal: 4,
   },
   title: {
-    color: "white",
-    fontSize: 28,
-    fontWeight: "bold",
+    color: "#FFF",
+    fontSize: 26,
     fontFamily: "GoogleSansFlex-Bold",
-    letterSpacing: 0.3,
+    letterSpacing: -0.5,
   },
   clearButtonContainer: {
-    backgroundColor: "rgba(255, 55, 55, 0.1)",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
   },
   clearButton: {
-    color: "#E50914", // Netflix red
-    fontWeight: "600",
+    color: "#FFF", 
+    fontSize: 13,
     fontFamily: 'GoogleSansFlex-Medium',
   },
   groupContainer: {
     marginBottom: 28,
   },
   groupTitle: {
-    color: "#E5E5E5", // Light gray
-    fontSize: 20,
-    fontWeight: "600",
-    fontFamily: 'GoogleSansFlex-Medium',
+    color: "#888",
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex-Bold',
+    textTransform: 'uppercase',
     marginBottom: 12,
-    letterSpacing: 0.2,
+    letterSpacing: 0.5,
+    marginLeft: 4,
   },
   itemsContainer: {
-    borderRadius: 8,
+    borderRadius: 16,
+    backgroundColor: '#1C1C1E',
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.04)',
   },
   swipeContainer: {
     position: "relative",
-    marginBottom: 2,
-    height: 64, // Fixed height for swipe items
+    height: 72, 
     overflow: "hidden",
   },
   historyItemContainer: {
@@ -264,40 +266,37 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   historyItem: {
-    backgroundColor: "#2a2a2a",
-    padding: 16,
+    backgroundColor: "#1C1C1E", 
+    paddingHorizontal: 20,
     height: "100%",
     justifyContent: "center",
-    borderRadius: 4,
   },
   queryText: {
-    color: "white",
+    color: "#FFF",
     fontSize: 16,
-    fontWeight: "500",
     fontFamily: 'GoogleSansFlex-Medium',
     marginBottom: 4,
+    letterSpacing: -0.2,
   },
   dateText: {
-    color: "#B3B3B3", // Netflix light gray text
+    color: "#777",
     fontSize: 12,
-    fontFamily: 'GoogleSansFlex-Regular',
+    fontFamily: 'GoogleSansFlex-Medium',
   },
   deleteButton: {
     position: "absolute",
-    backgroundColor: "#E50914", // Netflix red
+    backgroundColor: "#E50914",
     right: 0,
     top: 0,
     bottom: 0,
-    width: 100,
+    width: 85,
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 5,
   },
   deleteButtonText: {
     color: "white",
-    fontWeight: "600",
-    fontFamily: 'GoogleSansFlex-Medium',
-    fontSize: 16,
+    fontFamily: 'GoogleSansFlex-Bold',
+    fontSize: 13,
   },
   emptyContainer: {
     alignItems: "center",
@@ -305,67 +304,17 @@ const styles = StyleSheet.create({
     marginTop: 100,
   },
   emptyText: {
-    color: "#E5E5E5",
+    color: "#FFF",
     textAlign: "center",
     fontSize: 18,
-    fontWeight: "600",
     fontFamily: 'GoogleSansFlex-Bold',
   },
   emptySubText: {
-    color: "#999999",
+    color: "#777",
     textAlign: "center",
     marginTop: 8,
     fontSize: 14,
     fontFamily: 'GoogleSansFlex-Regular',
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#141414',
-    borderRadius: 8,
-    padding: 20,
-    width: '80%',
-    alignItems: 'center',
-  },
-  modalTitle: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-    fontFamily: 'GoogleSansFlex-Bold',
-    marginBottom: 10,
-  },
-  modalMessage: {
-    color: '#B3B3B3',
-    fontSize: 16,
-    fontFamily: 'GoogleSansFlex-Regular',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  modalButton: {
-    padding: 10,
-    flex: 1,
-    marginHorizontal: 5,
-  },
-  modalButtonText: {
-    color: 'white',
-    textAlign: 'center',
-    fontSize: 16,
-    fontFamily: 'GoogleSansFlex-Regular',
-  },
-  modalButtonDanger: {
-    backgroundColor: '#E50914',
-    borderRadius: 4,
-  },
-  modalButtonTextDanger: {
-    fontWeight: 'bold',
-  },
+  // We keep modal styles around for ThemedDialog if it uses them, but ThemedDialog handles itself.
 });
