@@ -3,6 +3,7 @@ import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSavedItems } from './database';
 import dayjs from 'dayjs';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 dayjs.extend(isSameOrBefore);
@@ -68,18 +69,16 @@ export const executeNotificationCheck = async () => {
 
     let watchlist: any[] = [];
     try {
-      const watchlistStr = await AsyncStorage.getItem('watchlist');
-      watchlist = watchlistStr ? JSON.parse(watchlistStr) : [];
+      watchlist = getSavedItems('watchlist');
     } catch (e) {
-      console.error('Failed to parse watchlist for notifications');
+      console.error('Failed to fetch watchlist for notifications');
     }
     
     let history: any[] = [];
     try {
-      const historyStr = await AsyncStorage.getItem('history');
-      history = historyStr ? JSON.parse(historyStr) : [];
+      history = getSavedItems('history');
     } catch (e) {
-      console.error('Failed to parse history for notifications');
+      console.error('Failed to fetch history for notifications');
     }
 
     let notifiedMediaIds: string[] = [];
