@@ -20,9 +20,12 @@ LogBox.ignoreLogs([
   'PushNotificationIOS has been extracted',
 ]);
 
+import { enableFreeze } from 'react-native-screens';
+
 SplashScreen.preventAutoHideAsync();
 
-
+// Globally freeze inactive screens across the entire app for massive performance boosts
+enableFreeze(true);
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();

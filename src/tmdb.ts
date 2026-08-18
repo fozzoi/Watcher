@@ -139,6 +139,7 @@ export interface TMDBResult {
   media_type: "movie" | "tv";
   release_date?: string;
   first_air_date?: string;
+  digital_release_date?: string | null;
   certification?: string;
   status?: string; 
   budget?: number; 
@@ -588,9 +589,20 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
     }
 
     let certification = null;
+    let digital_release_date = null;
     if (resolvedMediaType === "movie") {
       const usRelease = data.release_dates?.results?.find((r: any) => r.iso_3166_1 === "US");
       certification = usRelease?.release_dates?.[0]?.certification || null;
+      
+      const allReleases = data.release_dates?.results || [];
+      for (const country of allReleases) {
+        const dates = country.release_dates || [];
+        const digitalDate = dates.find((d: any) => d.type === 4 || d.type === 5); // 4 = Digital, 5 = Physical
+        if (digitalDate && digitalDate.release_date) {
+          digital_release_date = digitalDate.release_date;
+          break;
+        }
+      }
     } else {
       const usRating = data.content_ratings?.results?.find((r: any) => r.iso_3166_1 === "US");
       certification = usRating?.rating || null;
@@ -633,6 +645,7 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
       ...formatBasicItemData(data), 
       media_type: resolvedMediaType,
       certification,
+      digital_release_date,
       cast,
       director,
       seasons: seasonsData,

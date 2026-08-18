@@ -1025,7 +1025,7 @@ const DetailPage = () => {
               overScrollMode="never"
               bounces={false}
               style={{ marginHorizontal: -20 }}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 14 }}
+              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 14, gap: 10 }}
             >
               {movie.seasons.filter((s: any) => s.season_number > 0).map((s: any) => (
                   <TouchableOpacity activeOpacity={0.95}

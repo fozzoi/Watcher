@@ -1,7 +1,8 @@
 import React from 'react';
 import { 
-  View, Text, Modal, TouchableOpacity, StyleSheet, Dimensions 
+  View, Text, Modal, TouchableOpacity, StyleSheet, Dimensions, Platform 
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 
 export interface DialogButton {
@@ -151,13 +152,13 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: Math.min(width - 40, 360),
-    backgroundColor: '#1C1C1E',
-    borderRadius: 24,
+    backgroundColor: '#121212', // Sleek dark solid color
+    borderRadius: 28, // Rounder for modern minimal look
     paddingVertical: 26,
     paddingHorizontal: 22,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.05)', // Subtle edge
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.6,

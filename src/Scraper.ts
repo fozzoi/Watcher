@@ -27,39 +27,7 @@ export const searchTorrents = async (query: string): Promise<TorrentResult[]> =>
   const cleaned = cleanQuery(query);
   let aggregatedResults: TorrentResult[] = [];
 
-  // 1. Direct Local Fetch: The Pirate Bay (via ApiBay)
-  const fetchLocalTPB = async () => {
-    try {
-      const res = await axios.get(`https://apibay.org/q.php`, { 
-        params: { q: cleaned, cat: '' }, 
-        timeout: 7000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'application/json, text/plain, */*'
-        }
-      });
-      
-      if (res.data && Array.isArray(res.data) && res.data.length > 0 && res.data[0]?.id !== "0") {
-        res.data.forEach((t: any) => {
-          if (t.id && t.id !== "0") {
-            const bytes = parseInt(t.size) || 0;
-            const sizeGB = bytes > 0 ? `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB` : 'Unknown';
-            aggregatedResults.push({
-              id: `tpb-${t.id}`,
-              name: t.name,
-              size: sizeGB,
-              source: 'ThePirateBay',
-              url: `magnet:?xt=urn:btih:${t.info_hash}&dn=${encodeURIComponent(t.name)}${TRACKERS}`,
-              seeds: parseInt(t.seeders) || 0,
-              peers: parseInt(t.leechers) || 0,
-            });
-          }
-        });
-      }
-    } catch (err: any) {
-      console.log('⚠️ Local Phone TPB Fetch Error:', err.message);
-    }
-  };
+
 
   // 2. Cloud Proxy Fetch: Hit Vercel Backend (YTS, 1337x, Nyaa, TPB/BitSearch)
   const fetchVercelScrapers = async () => {
@@ -87,8 +55,8 @@ export const searchTorrents = async (query: string): Promise<TorrentResult[]> =>
     }
   };
 
-  // Fire both requests concurrently
-  await Promise.allSettled([fetchLocalTPB(), fetchVercelScrapers()]);
+  // Fire request
+  await fetchVercelScrapers();
 
   // ==========================================
   // 🎯 SMART FILTERING & DEDUPLICATION
@@ -115,7 +83,7 @@ export const searchTorrents = async (query: string): Promise<TorrentResult[]> =>
   if (keywords.length > 0) {
     finalResults = uniqueResults.filter(t => {
       const normalizedTitle = t.name.toLowerCase().replace(/[\.\_\-\:\']/g, ' ');
-      return keywords.some(k => normalizedTitle.includes(k));
+      return keywords.every(k => normalizedTitle.includes(k));
     });
     // Fallback if filter is too restrictive
     if (finalResults.length === 0) finalResults = uniqueResults;

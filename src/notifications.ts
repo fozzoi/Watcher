@@ -102,91 +102,124 @@ export const executeNotificationCheck = async () => {
       return dateObj.isAfter(now) && dateObj.isSameOrBefore(now.add(14, 'day'));
     };
 
-    // 1. Check TV Shows in history/watchlist for new episodes
+    // 1. & 2. Check TV Shows and Movies with chunking
     const tvItems = [...history, ...watchlist].filter(i => i.media_type === 'tv' || i.first_air_date);
-    const uniqueTvItems = Array.from(new Map(tvItems.map(item => [item.id, item])).values());
+    const movieItems = watchlist.filter(i => i.media_type === 'movie' || (!i.first_air_date && i.media_type !== 'collection'));
+    
+    // De-duplicate
+    const itemsToCheck = Array.from(new Map([...tvItems, ...movieItems].map(item => [item.id, item])).values());
 
-    for (const item of uniqueTvItems) {
-      try {
-        const details = await getMediaDetails(item.id, 'tv');
-        const lastAirDateStr = (details as any).last_air_date;
-        if (lastAirDateStr) {
-          const lastAirDate = dayjs(lastAirDateStr);
-          const notifyKey = `tv_${item.id}_${lastAirDateStr}`;
+    // Chunk size of 5 to prevent timeouts/rate limits in background
+    const chunkSize = 5;
+    for (let i = 0; i < itemsToCheck.length; i += chunkSize) {
+      const chunk = itemsToCheck.slice(i, i + chunkSize);
+      await Promise.all(chunk.map(async (item) => {
+        try {
+          const mType = item.media_type === 'tv' || item.first_air_date ? 'tv' : 'movie';
+          const details = await getMediaDetails(item.id, mType);
+          
+          if (mType === 'tv') {
+            const lastAirDateStr = (details as any).last_air_date;
+            if (lastAirDateStr) {
+              const lastAirDate = dayjs(lastAirDateStr);
+              const notifyKey = `tv_${item.id}_${lastAirDateStr}`;
 
-          if (isRecentRelease(lastAirDate) && !notifiedMediaIds.includes(notifyKey)) {
+              if (isRecentRelease(lastAirDate) && !notifiedMediaIds.includes(notifyKey)) {
+                await Notifications.scheduleNotificationAsync({
+                  content: {
+                    title: `New Episode: ${details.title || details.name}`,
+                    body: `A new episode aired on ${lastAirDate.format('MMM D, YYYY')}!`,
+                    data: { mediaId: item.id, mediaType: 'tv' },
+                    ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+                  },
+                  trigger: null,
+                });
+                notifiedMediaIds.push(notifyKey);
+                newNotifications++;
+              }
+            }
+          } else {
+            // Movie Notifications
+            // 1. Digital/OTT Release
+            if (details.digital_release_date) {
+              const digitalDate = dayjs(details.digital_release_date);
+              const notifyKey = `movie_ott_${item.id}`;
+              if (isRecentRelease(digitalDate) && !notifiedMediaIds.includes(notifyKey)) {
+                await Notifications.scheduleNotificationAsync({
+                  content: {
+                    title: `Now on OTT! 🍿`,
+                    body: `${details.title || details.name} is now available on streaming/digital.`,
+                    data: { mediaId: item.id, mediaType: 'movie' },
+                    ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+                  },
+                  trigger: null,
+                });
+                notifiedMediaIds.push(notifyKey);
+                newNotifications++;
+              }
+            }
+            
+            // 2. Theatrical Release
+            if (details.release_date) {
+              const releaseDate = dayjs(details.release_date);
+              const notifyKey = `movie_theater_${item.id}`;
+              if (isRecentRelease(releaseDate) && !notifiedMediaIds.includes(notifyKey)) {
+                await Notifications.scheduleNotificationAsync({
+                  content: {
+                    title: `In Theaters! 🎬`,
+                    body: `${details.title || details.name} is now released.`,
+                    data: { mediaId: item.id, mediaType: 'movie' },
+                    ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+                  },
+                  trigger: null,
+                });
+                notifiedMediaIds.push(notifyKey);
+                newNotifications++;
+              }
+              
+              const upcomingKey = `upcoming_movie_${item.id}`;
+              if (isUpcomingRelease(releaseDate) && !notifiedMediaIds.includes(upcomingKey)) {
+                const daysAway = releaseDate.diff(now, 'day');
+                await Notifications.scheduleNotificationAsync({
+                  content: {
+                    title: `Premiere Soon 🍿`,
+                    body: `${details.title || details.name} releases in ${daysAway} days (${releaseDate.format('MMM D')})!`,
+                    data: { mediaId: item.id, mediaType: 'movie' },
+                    ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+                  },
+                  trigger: null,
+                });
+                notifiedMediaIds.push(upcomingKey);
+                newNotifications++;
+              }
+            }
+          }
+        } catch (e) {
+          console.error(`Error processing background fetch for item ${item.id}`, e);
+        }
+      }));
+    }
+
+    // 3. Check Collections
+    const collections = watchlist.filter(i => i.media_type === 'collection');
+    for (const item of collections) {
+      if (item.parts && Array.isArray(item.parts)) {
+        for (const part of item.parts) {
+          const partReleaseDate = part.release_date ? dayjs(part.release_date) : null;
+          const notifyKey = `collection_part_${part.id}`;
+
+          if (partReleaseDate && isRecentRelease(partReleaseDate) && !notifiedMediaIds.includes(notifyKey)) {
             await Notifications.scheduleNotificationAsync({
               content: {
-                title: `New Episode: ${details.title || details.name}`,
-                body: `A new episode aired on ${lastAirDate.format('MMM D, YYYY')}!`,
-                data: { mediaId: item.id, mediaType: 'tv' },
+                title: `New in ${item.name}! 🌟`,
+                body: `${part.title} is now out.`,
+                data: { mediaId: part.id, mediaType: 'movie' },
                 ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
               },
               trigger: null,
             });
             notifiedMediaIds.push(notifyKey);
             newNotifications++;
-          }
-        }
-      } catch (e) {
-        console.error('Error fetching details for TV show', item.id);
-      }
-    }
-
-    // 2. Check Watchlist Movies & Collections
-    for (const item of watchlist) {
-      if (item.media_type === 'movie' || (!item.first_air_date && item.media_type !== 'collection')) {
-        const releaseDate = item.release_date ? dayjs(item.release_date) : null;
-        const notifyKey = `movie_${item.id}`;
-
-        if (releaseDate && isRecentRelease(releaseDate) && !notifiedMediaIds.includes(notifyKey)) {
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: `Watchlist Release! 🎬`,
-              body: `${item.title || item.name} is now released. Tap to watch.`,
-              data: { mediaId: item.id, mediaType: 'movie' },
-              ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-            },
-            trigger: null,
-          });
-          notifiedMediaIds.push(notifyKey);
-          newNotifications++;
-        }
-
-        const upcomingKey = `upcoming_movie_${item.id}`;
-        if (releaseDate && isUpcomingRelease(releaseDate) && !notifiedMediaIds.includes(upcomingKey)) {
-          const daysAway = releaseDate.diff(now, 'day');
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: `Premiere Soon 🍿`,
-              body: `${item.title || item.name} releases in ${daysAway} days (${releaseDate.format('MMM D')})!`,
-              data: { mediaId: item.id, mediaType: 'movie' },
-              ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-            },
-            trigger: null,
-          });
-          notifiedMediaIds.push(upcomingKey);
-          newNotifications++;
-        }
-      } else if (item.media_type === 'collection') {
-        if (item.parts && Array.isArray(item.parts)) {
-          for (const part of item.parts) {
-            const partReleaseDate = part.release_date ? dayjs(part.release_date) : null;
-            const notifyKey = `collection_part_${part.id}`;
-
-            if (partReleaseDate && isRecentRelease(partReleaseDate) && !notifiedMediaIds.includes(notifyKey)) {
-              await Notifications.scheduleNotificationAsync({
-                content: {
-                  title: `New in ${item.name}! 🌟`,
-                  body: `${part.title} is now out.`,
-                  data: { mediaId: part.id, mediaType: 'movie' },
-                  ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-                },
-                trigger: null,
-              });
-              notifiedMediaIds.push(notifyKey);
-              newNotifications++;
-            }
           }
         }
       }
