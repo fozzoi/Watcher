@@ -46,7 +46,7 @@ jobs:
         env:
           EAS_LOCAL_BUILD_SKIP_CLEANUP: 1
           _JAVA_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=2048m"
-        run: eas build --platform android --profile devlopment --local --non-interactive
+        run: eas build --platform android --profile development --local --non-interactive
         
       # Uploads the built APK and creates a release tag matching the app.json version
       - name: Upload to GitHub Releases
