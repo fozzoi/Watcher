@@ -2,7 +2,7 @@
   "expo": {
     "name": "Watcher",
     "slug": "Watcher",
-    "version": "3.0.19",
+    "version": "3.0.21",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "myapp",
@@ -14,7 +14,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.thewatcher",
+      "package": "com.thewatcher.dev",
       "runtimeVersion": "1.0.0",
       "permissions": [
         "android.permission.INTERNET",
@@ -22,7 +22,29 @@
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.WAKE_LOCK",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.REQUEST_INSTALL_PACKAGES"
+        "android.permission.REQUEST_INSTALL_PACKAGES",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.WRITE_SETTINGS",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.REQUEST_INSTALL_PACKAGES",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.WRITE_SETTINGS"
       ]
     },
     "web": {
@@ -58,7 +80,8 @@
             "enableShrinkResourcesInReleaseBuilds": true,
             "buildArchs": [
               "arm64-v8a"
-            ]
+            ],
+            "enableMinifyInReleaseBuilds": true
           }
         }
       ],
@@ -76,6 +99,11 @@
     },
     "updates": {
       "url": "https://u.expo.dev/a208162b-f69c-4bc1-969b-d670ee577a01"
+    },
+    "ios": {
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     }
   }
 }

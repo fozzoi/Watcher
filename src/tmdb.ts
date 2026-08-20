@@ -644,6 +644,7 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
       ...item,
       ...formatBasicItemData(data), 
       media_type: resolvedMediaType,
+      genres: data.genres || [],
       certification,
       digital_release_date,
       cast,
