@@ -13,6 +13,7 @@ import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 import { initDb, performMigration } from '@/src/database';
 
+// Disable non-critical warnings
 LogBox.ignoreLogs([
   'Method readAsStringAsync imported from "expo-file-system" is deprecated',
   'ProgressBarAndroid has been extracted',
@@ -30,7 +31,7 @@ enableFreeze(true);
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
-  
+
   const [fontsLoaded] = useFonts({
     'GoogleSansFlex-Regular': require('../assets/fonts/GoogleSansFlex-Regular.ttf'),
     'GoogleSansFlex-Medium': require('../assets/fonts/GoogleSansFlex-Medium.ttf'),
@@ -117,7 +118,7 @@ export default function RootLayout() {
       } catch (e) {
         console.error('Database init failed:', e);
       }
-      
+
       const complete = await isOnboardingComplete();
       setNeedsOnboarding(!complete);
       setIsReady(true);
@@ -151,27 +152,27 @@ export default function RootLayout() {
   }
 
   return (
-      <SafeAreaProvider style={{ flex: 1, backgroundColor: '#141414' }}>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: '#141414' },
-          }}
-        >
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
-          <Stack.Screen name="player" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
-          <Stack.Screen name="stats" options={{ presentation: 'card', animation: 'slide_from_right' }} />
-          <Stack.Screen name="movie/[id]" options={{ presentation: 'card' }} />
-          <Stack.Screen name="cast/[id]" options={{ presentation: 'card' }} />
-          <Stack.Screen name="collection/[id]" options={{ presentation: 'card' }} />
-        </Stack>
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#141414' }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: '#141414' },
+        }}
+      >
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+        <Stack.Screen name="player" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="stats" options={{ presentation: 'card', animation: 'slide_from_right' }} />
+        <Stack.Screen name="movie/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="cast/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="collection/[id]" options={{ presentation: 'card' }} />
+      </Stack>
 
-        <AppUpdateModal
-          visible={showUpdateModal}
-          onClose={() => setShowUpdateModal(false)}
-          updateResult={updateResult}
-        />
-      </SafeAreaProvider>
+      <AppUpdateModal
+        visible={showUpdateModal}
+        onClose={() => setShowUpdateModal(false)}
+        updateResult={updateResult}
+      />
+    </SafeAreaProvider>
   );
 }

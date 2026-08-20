@@ -5,7 +5,7 @@ on:
       - master
       - main
   workflow_dispatch:
-    
+
 # Required to allow the workflow to create a GitHub Release
 permissions:
   contents: write
@@ -16,38 +16,41 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
-          
+          distribution: "temurin"
+          java-version: "17"
+
       - name: Setup Expo
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
-          
+
       - name: Install dependencies
         run: npm install
-        
+
       # Automatically injects the GitHub run number into app.json
       - name: Set Dynamic App Version
         run: |
           jq '.expo.version = "3.0.${{ github.run_number }}"' app.json > tmp.json && mv tmp.json app.json
-          
+
       - name: Build APK
         env:
           EAS_LOCAL_BUILD_SKIP_CLEANUP: 1
           _JAVA_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=2048m"
-        run: eas build --platform android --profile development --local --non-interactive
-        
+        # development
+        # run: eas build --platform android --profile development --local --non-interactive
+        # production
+        run: eas build --platform android --profile production --local --non-interactive
+
       # Uploads the built APK and creates a release tag matching the app.json version
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@v2

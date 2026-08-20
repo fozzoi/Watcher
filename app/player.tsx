@@ -13,6 +13,7 @@ const generateHlsHtml = (url: string) => `
   <!DOCTYPE html>
   <html>
     <head>
+    
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
       <style>
         body { margin: 0; background: black; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
@@ -42,7 +43,7 @@ const generateHlsHtml = (url: string) => `
 export default function Player() {
   const router = useRouter();
   const { id: paramId, media_type, trailerUrl: initialTrailerUrl, imdbId, title: paramTitle, season: paramSeason, episode: paramEpisode, poster: paramPoster, episodeName } = useLocalSearchParams();
-  
+
   const tmdbId = Number(paramId);
   const mediaType = media_type as 'movie' | 'tv';
   const title = paramTitle as string;
@@ -74,22 +75,22 @@ export default function Player() {
     const fetchStream = async () => {
       setLoading(true);
       try {
-        const baseUrl = "https://watcher-api-rho.vercel.app"; 
+        const baseUrl = "https://watcher-api-rho.vercel.app";
         const encodedTitle = encodeURIComponent(title);
-        const endpoint = `${baseUrl}/api/get_stream?tmdb_id=${tmdbId}&media_type=${mediaType.toLowerCase()}&title=${encodedTitle}&season=${season || 1}&episode=${episode || 1}`;     
-        
+        const endpoint = `${baseUrl}/api/get_stream?tmdb_id=${tmdbId}&media_type=${mediaType.toLowerCase()}&title=${encodedTitle}&season=${season || 1}&episode=${episode || 1}`;
+
         const response = await fetch(endpoint);
         const data = await response.json();
 
         if (isMounted && data.status === "success") {
-            if (data.is_m3u8) {
-                setActiveProvider("Direct Link (Ad-Free)");
-                setStreamData(generateHlsHtml(data.stream_url));
-            } else {
-                setActiveProvider("Web Player");
-                // 🎯 Pass the raw URL directly instead of building an iframe
-                setStreamData(data.stream_url); 
-            }
+          if (data.is_m3u8) {
+            setActiveProvider("Direct Link (Ad-Free)");
+            setStreamData(generateHlsHtml(data.stream_url));
+          } else {
+            setActiveProvider("Web Player");
+            // 🎯 Pass the raw URL directly instead of building an iframe
+            setStreamData(data.stream_url);
+          }
         }
       } catch (error) {
         console.error("❌ Connection Error:", error);
@@ -131,25 +132,25 @@ export default function Player() {
   return (
     <View style={styles.container}>
       <StatusBar hidden={true} />
-      
+
       {streamData ? (
-          <WebView
-            key={tmdbId}
-            // 🎯 Check if it's a direct URL or HTML code
-            source={streamData.startsWith('http') ? { uri: streamData } : { html: streamData }}
-            style={styles.webview}
-            containerStyle={{ backgroundColor: 'black' }}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            allowsFullscreenVideo={true}
-            mediaPlaybackRequiresUserAction={false}
-            setSupportMultipleWindows={false}
-            onShouldStartLoadWithRequest={(request) => {
-              const url = request.url;
-              // Only allow the main player, data streams, and safe CDNs
-              return url === 'about:blank' || url.startsWith('data:') || url.startsWith('blob:') || url.includes('embed.su') || url.includes('vidsrc');
-            }}
-          />
+        <WebView
+          key={tmdbId}
+          // 🎯 Check if it's a direct URL or HTML code
+          source={streamData.startsWith('http') ? { uri: streamData } : { html: streamData }}
+          style={styles.webview}
+          containerStyle={{ backgroundColor: 'black' }}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          allowsFullscreenVideo={true}
+          mediaPlaybackRequiresUserAction={false}
+          setSupportMultipleWindows={false}
+          onShouldStartLoadWithRequest={(request) => {
+            const url = request.url;
+            // Only allow the main player, data streams, and safe CDNs
+            return url === 'about:blank' || url.startsWith('data:') || url.startsWith('blob:') || url.includes('embed.su') || url.includes('vidsrc');
+          }}
+        />
       ) : null}
 
       {loading && (
@@ -164,7 +165,7 @@ export default function Player() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'black' },
-  webview: { flex: 1, backgroundColor: 'transparent' }, 
+  webview: { flex: 1, backgroundColor: 'transparent' },
   loader: { ...StyleSheet.absoluteFill, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
   loadingText: { color: 'white', marginTop: 15, fontWeight: '600' },
   backButton: { position: 'absolute', top: 20, left: 20, zIndex: 200, backgroundColor: 'rgba(0,0,0,0.5)', padding: 8, borderRadius: 20 }
