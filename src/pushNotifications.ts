@@ -27,7 +27,6 @@ export async function setupPushNotificationChannels(): Promise<void> {
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#FF231F7C',
-      sound: 'default',
     });
 
     await Notifications.setNotificationChannelAsync(CHANNELS.UPDATES, {
@@ -36,7 +35,6 @@ export async function setupPushNotificationChannels(): Promise<void> {
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#007AFF',
-      sound: 'default',
     });
   }
 }
@@ -83,8 +81,17 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     await syncPushTokenAndWatchlist(token);
 
     return token;
-  } catch (error) {
-    console.error('[Push] Failed to get Expo push token:', error);
+  } catch (error: any) {
+    if (
+      error?.message?.includes('FirebaseApp is not initialized') ||
+      error?.message?.includes('googleServicesFile')
+    ) {
+      console.warn(
+        '[Push] Android standalone builds require google-services.json for remote push notifications via FCM. See: https://docs.expo.dev/push-notifications/fcm-credentials/'
+      );
+    } else {
+      console.error('[Push] Failed to get Expo push token:', error);
+    }
     return null;
   }
 }

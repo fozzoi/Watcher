@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "34765007301",
+    "project_id": "device-streaming-d1fbb005",
+    "storage_bucket": "device-streaming-d1fbb005.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:34765007301:android:06d1d275ec1fb21e2483ac",
+        "android_client_info": {
+          "package_name": "com.thewatcher"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDLnfyVirZJ7QzX-tKUyA_WKXwmlg3aVIs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:34765007301:android:7072850bc85188b02483ac",
+        "android_client_info": {
+          "package_name": "com.thewatcher.dev"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDLnfyVirZJ7QzX-tKUyA_WKXwmlg3aVIs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

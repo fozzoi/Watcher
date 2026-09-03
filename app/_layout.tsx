@@ -14,7 +14,7 @@ import { registerForPushNotificationsAsync, syncPushTokenAndWatchlist } from '@/
 import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, setOnWatchlistChangedListener } from '@/src/database';
-import { fetchEmbedding } from '@/src/tmdb';
+import { fetchEmbedding, fetchEmbeddingsBatch } from '@/src/tmdb';
 
 // Disable non-critical warnings
 LogBox.ignoreLogs([
