@@ -47,9 +47,9 @@ jobs:
           EAS_LOCAL_BUILD_SKIP_CLEANUP: 1
           _JAVA_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=2048m"
         # development
-        # run: eas build --platform android --profile development --local --non-interactive
+        run: eas build --platform android --profile development --local --non-interactive
         # production
-        run: eas build --platform android --profile production --local --non-interactive
+        # run: eas build --platform android --profile production --local --non-interactive
 
       # Uploads the built APK and creates a release tag matching the app.json version
       - name: Upload to GitHub Releases
@@ -60,3 +60,17 @@ jobs:
           name: "The Watcher Build #${{ github.run_number }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Broadcast update notification to all devices via Expo Push API
+      - name: Broadcast App Update Push Notification
+        if: success()
+        run: |
+          curl -s -X POST "https://watcher-api-rho.vercel.app/api/notify-update" \
+            -H "Content-Type: application/json" \
+            -H "x-notify-secret: ${{ secrets.NOTIFY_SECRET }}" \
+            -d '{
+              "version": "3.0.${{ github.run_number }}",
+              "releaseName": "The Watcher Build #${{ github.run_number }}",
+              "apkUrl": "https://github.com/${{ github.repository }}/releases/tag/3.0.${{ github.run_number }}"
+            }'
+

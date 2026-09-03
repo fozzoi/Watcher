@@ -16,9 +16,9 @@ import Animated, {
   interpolateColor, SlideInRight, ZoomIn, runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { getSavedItems } from '../../src/database';
+import { getSavedItems, getAllAiEmbeddings } from '../../src/database';
 
-import { getImageUrl, getFullDetails, fetchChatGemini, fetchPersonalisedDiscoveryContent } from '../../src/tmdb';
+import { getImageUrl, getFullDetails, fetchChatGemini, fetchPersonalisedDiscoveryContent, fetchEmbedding } from '../../src/tmdb';
 import { getUserPreferences } from '../../src/userPreferences';
 import {
   Conversation, listConversations, saveConversation, deleteConversation,
@@ -82,6 +82,19 @@ const GLASS_BG = 'rgba(255, 255, 255, 0.04)';
 const GLASS_BORDER = 'rgba(255, 255, 255, 0.08)';
 
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+const cosineSimilarity = (vecA: number[], vecB: number[]) => {
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+};
 
 // ────────────────────────────────────────────────────────────────
 // AI Name Setup (Onboarding)
@@ -483,8 +496,28 @@ const AiChat = () => {
     pushMessage({ id: typingId, role: 'bot', kind: 'typing' });
 
     try {
-      const reply = await fetchChatGemini(text, messages, userMemory, watchedTitles, watchlistTitles, watchlistCollections, userPrefs);
+      let topWatchlistTitles = watchlistTitles;
+      const userEmbedding = await fetchEmbedding(text);
+      
+      if (userEmbedding && watchlistTitles.length > 0) {
+        const allAiEmbeddings = getAllAiEmbeddings();
+        if (allAiEmbeddings.length > 0) {
+          const scored = allAiEmbeddings.map(item => ({
+            mediaId: item.media_id,
+            score: cosineSimilarity(userEmbedding, item.embedding)
+          })).sort((a, b) => b.score - a.score);
+          
+          const topIds = new Set(scored.slice(0, 25).map(s => s.mediaId));
+          const wl = getSavedItems('watchlist');
+          const topMovies = wl.filter((i: any) => topIds.has(i.id));
+          topWatchlistTitles = topMovies.map((i: any) => i.title || i.name || '').filter(Boolean);
+          
+          if (topWatchlistTitles.length === 0) topWatchlistTitles = watchlistTitles;
+        }
+      }
+      const enrichedMemory = `${userMemory}\n\n[System Note: The user has a total of ${watchlistTitles.length} movies/shows saved in their Watchlist, and ${watchedTitles.length} titles in their Watched history.]`;
 
+      const reply = await fetchChatGemini(text, messages, enrichedMemory, watchedTitles, topWatchlistTitles, watchlistCollections, userPrefs);
       setMessages((prev) => {
         const withoutTyping = prev.filter((m) => m.id !== typingId);
         return [...withoutTyping, { id: uid(), ...reply } as ChatMessage];

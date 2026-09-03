@@ -1,0 +1,29 @@
+name: Scheduled Release Checker
+
+on:
+  schedule:
+    # Runs every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allows manual trigger anytime from GitHub Actions tab
+
+jobs:
+  check-releases:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Watcher Release Check
+        run: |
+          echo "Triggering release check on watcher-api..."
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "https://watcher-api-rho.vercel.app/api/cron-check-releases" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          
+          BODY=$(echo "$RESPONSE" | sed -e '$d')
+          STATUS=$(echo "$RESPONSE" | tail -n1 | cut -d: -f2)
+          
+          echo "Response: $BODY"
+          echo "HTTP Status: $STATUS"
+          
+          if [ "$STATUS" -ge 400 ]; then
+            echo "::error::Release check failed with status $STATUS"
+            exit 1
+          fi

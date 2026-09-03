@@ -576,7 +576,7 @@ const fetchFreshDiscoveryContent = async (gId: number | undefined, cacheKey: str
 export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
   try {
     let resolvedMediaType = item.media_type || (item.first_air_date ? "tv" : "movie");
-    const append = "credits,release_dates,content_ratings,external_ids,videos";
+    const append = "credits,release_dates,content_ratings,external_ids,videos,images";
     
     let data: any;
     try {
@@ -652,6 +652,7 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
       seasons: seasonsData,
       external_ids: data.external_ids, 
       videos: data.videos?.results || [],
+      images: data.images?.backdrops || [],
       production_companies: data.production_companies || [],
       belongs_to_collection: data.belongs_to_collection || null,
     };
@@ -1161,5 +1162,31 @@ export const updateUserMemoryWithAi = async (existingMemory: string, userMessage
     return response.data?.memory || existingMemory;
   } catch (e) {
     return existingMemory;
+  }
+};
+
+export const fetchEmbedding = async (text: string): Promise<number[] | null> => {
+  try {
+    const response = await axios.post('https://watcher-api-rho.vercel.app/api/embed', {
+      text,
+      customApiKey: GLOBAL_CONFIG.customApiKey,
+    });
+    return response.data?.embedding || null;
+  } catch (error: any) {
+    console.error('fetchEmbedding error:', error.message, error.response?.data);
+    return null;
+  }
+};
+
+export const fetchEmbeddingsBatch = async (texts: string[]): Promise<number[][] | null> => {
+  try {
+    const response = await axios.post('https://watcher-api-rho.vercel.app/api/embed', {
+      texts,
+      customApiKey: GLOBAL_CONFIG.customApiKey,
+    });
+    return response.data?.embeddings || null;
+  } catch (error: any) {
+    console.error('fetchEmbeddingsBatch error:', error.message, error.response?.data);
+    return null;
   }
 };

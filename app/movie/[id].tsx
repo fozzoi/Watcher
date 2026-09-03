@@ -35,9 +35,10 @@ import {
   GLOBAL_CONFIG,
   getTrailers,
   getCollectionDetails,
+  fetchEmbedding,
 } from '../../src/tmdb';
 import { getProgress } from '../../src/utils/progress';
-import { getSavedItems, addSavedItem, removeSavedItem, hasSavedItem } from '../../src/database';
+import { getSavedItems, addSavedItem, removeSavedItem, hasSavedItem, saveAiEmbedding } from '../../src/database';
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -544,6 +545,18 @@ const DetailPage = () => {
       removeSavedItem(movie.id, 'watchlist');
     } else {
       addSavedItem(movie, 'watchlist');
+      // Generate embedding in background
+      (async () => {
+        try {
+          const textToEmbed = `Title: ${movie.title || movie.name}. Overview: ${movie.overview || ''}`;
+          const embedding = await fetchEmbedding(textToEmbed);
+          if (embedding) {
+            saveAiEmbedding(movie.id, embedding);
+          }
+        } catch (e) {
+          console.error('Failed to save embedding', e);
+        }
+      })();
     }
     setIsInWatchlist(!exists);
     if (Platform.OS === 'android') {
@@ -844,6 +857,22 @@ const DetailPage = () => {
               </Text>
             </View>
           </TouchableOpacity>
+        )}
+        {movie.images && movie.images.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Gallery</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
+              {movie.images.slice(0, 10).map((img: any, idx: number) => (
+                <TouchableOpacity key={idx} activeOpacity={0.9}>
+                  <Image
+                    source={{ uri: getImageUrl(img.file_path, 'w780') }}
+                    style={{ width: width * 0.75, height: (width * 0.75) * (img.aspect_ratio ? 1 / img.aspect_ratio : 9 / 16), borderRadius: 16, backgroundColor: C.surface2 }}
+                    contentFit="cover"
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
         )}
 
         <View style={styles.aiPanel}>

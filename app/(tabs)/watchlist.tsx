@@ -20,8 +20,8 @@ import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image'; // Highly optimized image rendering
 import { enableFreeze } from 'react-native-screens'; // Prevents background screens from eating CPU
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems } from '../../src/database';
-import { getImageUrl, searchTMDB, GLOBAL_CONFIG } from '../../src/tmdb';
+import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, insertAiEmbedding, getAiEmbedding } from '../../src/database';
+import { getImageUrl, searchTMDB, GLOBAL_CONFIG, fetchEmbedding } from '../../src/tmdb';
 import { GENRE_OPTIONS } from '../../src/userPreferences';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -136,13 +136,28 @@ const WatchListPage = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState('');
 
-  const [importSummary, setImportSummary] = useState({
-    visible: false,
-    total: 0,
-    added: 0,
-    existing: 0,
-    missed: [] as string[]
-  });
+  const [importSummary, setImportSummary] = useState<{
+    visible: boolean;
+    total: number;
+    added: number;
+    existing: number;
+    missed: string[];
+  }>({ visible: false, total: 0, added: 0, existing: 0, missed: [] });
+
+  const [aiSearchLoading, setAiSearchLoading] = useState(false);
+  const [semanticSearchVector, setSemanticSearchVector] = useState<number[] | null>(null);
+
+  const cosineSimilarity = (vecA: number[], vecB: number[]) => {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < vecA.length; i++) {
+      dotProduct += vecA[i] * vecB[i];
+      normA += vecA[i] * vecA[i];
+      normB += vecB[i] * vecB[i];
+    }
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  };
 
   const [dialogConfig, setDialogConfig] = useState<{
     visible: boolean;
@@ -425,14 +440,21 @@ const WatchListPage = () => {
           existing: existingCount,
           missed: missedTitles
         });
+        if (addedCount > 0) {
+          runAiEmbeddingSync(true);
+        } else {
+          setSyncing(false);
+          setSyncProgress('');
+        }
       } else {
         showDialog({ title: "No movies found", message: "Could not detect any valid movie titles.", type: "warning" });
+        setSyncing(false);
+        setSyncProgress('');
       }
 
     } catch (e: any) {
       showDialog({ title: "Error Details", message: e.message || "Unknown error occurred while reading the file.", type: "danger" });
       console.error(e);
-    } finally {
       setSyncing(false);
       setSyncProgress('');
     }
@@ -513,10 +535,92 @@ const WatchListPage = () => {
     });
   };
 
+  const runAiEmbeddingSync = async (silentMode: boolean = false) => {
+    setSyncing(true);
+    try {
+      const currentWatchlist = getSavedItems('watchlist');
+      const missingItems = [];
+      
+      for (let i = 0; i < currentWatchlist.length; i++) {
+        if (!getAiEmbedding(currentWatchlist[i].id)) {
+          missingItems.push(currentWatchlist[i]);
+        }
+      }
+
+      let syncedCount = 0;
+      const chunkSize = 100;
+      
+      for (let i = 0; i < missingItems.length; i += chunkSize) {
+        setSyncProgress(`Generating AI Data [${Math.min(i + chunkSize, missingItems.length)}/${missingItems.length}]...`);
+        
+        const chunk = missingItems.slice(i, i + chunkSize);
+        const textsToEmbed = chunk.map((item: any) => {
+          const title = item.title || item.name || '';
+          const type = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+          let text = `Title: ${title}\nType: ${type}`;
+          if (item.overview) text += `\nOverview: ${item.overview}`;
+          return text;
+        });
+
+        const embeddings = await fetchEmbeddingsBatch(textsToEmbed);
+        if (embeddings && embeddings.length === chunk.length) {
+          chunk.forEach((item, index) => {
+            insertAiEmbedding(item.id, embeddings[index]);
+            syncedCount++;
+          });
+        }
+        
+        if (i + chunkSize < missingItems.length) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      if (!silentMode && syncedCount > 0) {
+        showDialog({ title: "Sync Complete", message: `Generated embeddings for ${syncedCount} new titles!`, type: "success" });
+      }
+    } catch (error: any) {
+      if (!silentMode) {
+        showDialog({ title: "Sync Failed", message: error.message, type: "danger" });
+      }
+    } finally {
+      setSyncing(false);
+      setSyncProgress('');
+    }
+  };
+
+  const handleSyncAiEmbeddings = async () => {
+    setIsOptionsMenuOpen(false);
+    showDialog({
+      title: "Sync AI Watchlist",
+      message: "This will generate AI embeddings for all missing movies in your watchlist so the AI can search them. It may take a minute.",
+      type: "info",
+      buttons: [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Start Sync",
+          style: "default",
+          onPress: () => runAiEmbeddingSync(false)
+        }
+      ]
+    });
+  };
+
   const getListForTab = useCallback((tabIndex: number) => {
     let list = tabIndex === 0 ? watchlist : tabIndex === 1 ? artists : watched;
 
-    if (searchQuery.trim()) {
+    if (semanticSearchVector && tabIndex !== 1) {
+      list = [...list]
+        .map((item: any) => {
+          const existing = getAiEmbedding(item.id);
+          if (existing) {
+            const score = cosineSimilarity(semanticSearchVector, existing);
+            return { ...item, _aiScore: score };
+          }
+          return { ...item, _aiScore: -1 };
+        })
+        .filter(item => item._aiScore > 0.3) // Only keep mildly relevant items
+        .sort((a, b) => b._aiScore - a._aiScore);
+    } else if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       list = list.filter((item: any) => {
         const title = (item.title || item.name || '').toLowerCase();
@@ -546,7 +650,7 @@ const WatchListPage = () => {
       });
     }
 
-    if (sortBy === 'default') return list;
+    if (sortBy === 'default') return sortDirection === 'asc' ? [...list].reverse() : list;
 
     return [...list].sort((a, b) => {
       if (sortBy === 'year') {
@@ -568,7 +672,22 @@ const WatchListPage = () => {
       }
       return 0;
     });
-  }, [watchlist, artists, watched, searchQuery, selectedMediaType, selectedGenreIds, sortBy, sortDirection]);
+  }, [watchlist, artists, watched, searchQuery, semanticSearchVector, selectedMediaType, selectedGenreIds, sortBy, sortDirection]);
+
+  const handleAiSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setAiSearchLoading(true);
+    try {
+      const vec = await fetchEmbedding(searchQuery.trim());
+      if (vec) {
+        setSemanticSearchVector(vec);
+      }
+    } catch (e) {
+      console.error("AI Search Failed:", e);
+    } finally {
+      setAiSearchLoading(false);
+    }
+  };
 
   const handleCardPress = useCallback((item: any, tabIndex?: number) => {
     if (tabIndex === 1 || item.profile_path !== undefined || item.known_for_department) {
@@ -811,18 +930,32 @@ const WatchListPage = () => {
             <Ionicons name="search" size={16} color="#777" style={{ marginLeft: 12 }} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Filter saved titles..."
+              placeholder="Search or Ask AI (e.g. 'space thriller')"
               placeholderTextColor="#777"
               value={searchQuery}
-              onChangeText={setSearchQuery}
+              onChangeText={(t) => {
+                setSearchQuery(t);
+                if (semanticSearchVector) setSemanticSearchVector(null);
+              }}
+              onSubmitEditing={handleAiSearch}
+              returnKeyType="search"
               autoFocus
               autoCapitalize="none"
               autoCorrect={false}
             />
             {searchQuery ? (
-              <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 8 }}>
-                <Ionicons name="close-circle" size={18} color="#999" />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {aiSearchLoading ? (
+                  <ActivityIndicator size="small" color="#A855F7" style={{ padding: 8 }} />
+                ) : (
+                  <TouchableOpacity onPress={handleAiSearch} style={{ padding: 8 }}>
+                    <Feather name="cpu" size={18} color={semanticSearchVector ? "#A855F7" : "#999"} />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={() => { setSearchQuery(''); setSemanticSearchVector(null); }} style={{ padding: 8 }}>
+                  <Ionicons name="close-circle" size={18} color="#999" />
+                </TouchableOpacity>
+              </View>
             ) : null}
           </Animated.View>
         )}
@@ -995,6 +1128,22 @@ const WatchListPage = () => {
                 <Text style={styles.sheetItemSub}>Import from Trakt, Letterboxd, or TMDB</Text>
               </View>
               <Feather name="chevron-right" size={18} color="#666" />
+            </TouchableOpacity>
+
+            <View style={styles.sheetDivider} />
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={styles.sheetItem}
+              onPress={handleSyncAiEmbeddings}
+            >
+              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(168,85,247,0.15)' }]}>
+                <Feather name="cpu" size={18} color="#A855F7" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetItemTitle}>Sync AI Data</Text>
+                <Text style={styles.sheetItemSub}>Generate search data for missing titles</Text>
+              </View>
             </TouchableOpacity>
 
             <View style={styles.sheetDivider} />

@@ -14,6 +14,7 @@ import { setGlobalConfig } from '../src/tmdb';
 import { resetOnboarding } from '../src/userPreferences';
 import Constants from 'expo-constants';
 import { isNotificationsEnabled, setNotificationsEnabled, sendTestNotification } from '../src/notifications';
+import { getCachedPushToken, sendTestRemotePushNotification } from '../src/pushNotifications';
 import { checkForAppUpdate, isUpdateNotificationEnabled, setUpdateNotificationEnabled, UpdateCheckResult } from '../src/updater';
 import AppUpdateModal from '../src/components/shared/AppUpdateModal';
 import { ThemedDialog, DialogButton } from '../src/components/shared/ThemedDialog';
@@ -107,12 +108,22 @@ const Settings = () => {
 
   const handleTestNotif = async () => {
     try {
-      await sendTestNotification();
-      showDialog({
-        title: "Success! 🍿",
-        message: "Test notification triggered. Check your notification panel.",
-        type: "success",
-      });
+      const token = await getCachedPushToken();
+      if (token) {
+        await sendTestRemotePushNotification();
+        showDialog({
+          title: "Remote Push Sent! 🍿",
+          message: "Remote notification sent via Expo Push API. It will appear in your notification tray even when the app is closed.",
+          type: "success",
+        });
+      } else {
+        await sendTestNotification();
+        showDialog({
+          title: "Local Notification Triggered 🍿",
+          message: "Local test notification triggered. Run on a physical device with permissions granted to register for remote push.",
+          type: "info",
+        });
+      }
     } catch (e: any) {
       showDialog({
         title: "Notification Error",

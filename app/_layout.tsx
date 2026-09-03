@@ -8,10 +8,13 @@ import * as Brightness from 'expo-brightness';
 
 import { isOnboardingComplete } from '@/src/userPreferences';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { setupNotificationChannel, registerBackgroundFetchAsync, isNotificationsEnabled } from '@/src/notifications';
+import { registerForPushNotificationsAsync, syncPushTokenAndWatchlist } from '@/src/pushNotifications';
 import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
-import { initDb, performMigration } from '@/src/database';
+import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, setOnWatchlistChangedListener } from '@/src/database';
+import { fetchEmbedding } from '@/src/tmdb';
 
 // Disable non-critical warnings
 LogBox.ignoreLogs([
@@ -28,6 +31,48 @@ SplashScreen.preventAutoHideAsync();
 
 // Globally freeze inactive screens across the entire app for massive performance boosts
 enableFreeze(true);
+
+const performAiBackgroundSync = async () => {
+  try {
+    const watchlist = getSavedItems('watchlist');
+    const missingItems = [];
+    
+    // 1. Instantly scan for missing embeddings locally
+    for (let i = 0; i < watchlist.length; i++) {
+      if (!getAiEmbedding(watchlist[i].id)) {
+        missingItems.push(watchlist[i]);
+      }
+    }
+    
+    // 2. Batch process missing items (100 at a time) to dramatically reduce API requests
+    const chunkSize = 100;
+    for (let i = 0; i < missingItems.length; i += chunkSize) {
+      const chunk = missingItems.slice(i, i + chunkSize);
+      
+      const textsToEmbed = chunk.map((item: any) => {
+        const title = item.title || item.name || '';
+        const type = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+        let text = `Title: ${title}\nType: ${type}`;
+        if (item.overview) text += `\nOverview: ${item.overview}`;
+        return text;
+      });
+
+      const embeddings = await fetchEmbeddingsBatch(textsToEmbed);
+      if (embeddings && embeddings.length === chunk.length) {
+        chunk.forEach((item, index) => {
+          insertAiEmbedding(item.id, embeddings[index]);
+        });
+      }
+      
+      if (i + chunkSize < missingItems.length) {
+        await new Promise(res => setTimeout(res, 500));
+      }
+    }
+  } catch (e) {
+    console.log("Background AI Sync failed silently:", e);
+  }
+};
+
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
@@ -45,11 +90,14 @@ export default function RootLayout() {
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 
-  // Initialize Smart Notifications and listener
+  // Initialize Remote Push Notifications and listener
   useEffect(() => {
     (async () => {
       try {
         await setupNotificationChannel();
+        // Register for remote push notifications (Expo Push Token) & initial sync
+        await registerForPushNotificationsAsync();
+
         const enabled = await isNotificationsEnabled();
         if (enabled) {
           await registerBackgroundFetchAsync();
@@ -59,11 +107,29 @@ export default function RootLayout() {
       }
     })();
 
+    // Automatically sync watchlist to remote server whenever changed
+    setOnWatchlistChangedListener(() => {
+      syncPushTokenAndWatchlist().catch((err) =>
+        console.log('Watchlist push sync error:', err)
+      );
+    });
+
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
       const data = response?.notification?.request?.content?.data;
       if (data?.isAppUpdate) {
         if (data?.releaseInfo) {
           setUpdateResult(data.releaseInfo);
+        } else if (data?.version) {
+          setUpdateResult({
+            updateAvailable: true,
+            currentVersion: Constants.expoConfig?.version || '3.0.0',
+            latestVersion: String(data.version),
+            releaseName: data.releaseName || `The Watcher ${data.version}`,
+            releaseNotes: 'Tap Download to install the latest build.',
+            publishedAt: new Date().toISOString(),
+            apkUrl: data.apkUrl || null,
+            apkSize: 0,
+          });
         }
         setShowUpdateModal(true);
       } else if (data?.mediaId) {
@@ -72,7 +138,10 @@ export default function RootLayout() {
       }
     });
 
-    return () => subscription.remove();
+    return () => {
+      subscription.remove();
+      setOnWatchlistChangedListener(null);
+    };
   }, [router]);
 
   // Check for app updates on launch
@@ -115,6 +184,9 @@ export default function RootLayout() {
       try {
         initDb();
         await performMigration();
+        
+        // Fire and forget silent background AI embedding sync for existing users
+        performAiBackgroundSync();
       } catch (e) {
         console.error('Database init failed:', e);
       }

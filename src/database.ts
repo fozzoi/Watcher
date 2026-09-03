@@ -17,6 +17,11 @@ export const initDb = () => {
         created_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_type ON saved_items(type);
+
+      CREATE TABLE IF NOT EXISTS ai_embeddings (
+        media_id INTEGER PRIMARY KEY,
+        embedding TEXT NOT NULL
+      );
     `);
   } catch (error) {
     console.error('Failed to initialize SQLite database:', error);
@@ -106,6 +111,22 @@ export const hasSavedItem = (mediaId: number, type: SavedItemType): boolean => {
   }
 };
 
+let onWatchlistChangedCallback: (() => void) | null = null;
+
+export const setOnWatchlistChangedListener = (callback: (() => void) | null) => {
+  onWatchlistChangedCallback = callback;
+};
+
+const notifyWatchlistChanged = (type: SavedItemType) => {
+  if (type === 'watchlist' && onWatchlistChangedCallback) {
+    try {
+      onWatchlistChangedCallback();
+    } catch (e) {
+      console.error('Error in onWatchlistChangedCallback:', e);
+    }
+  }
+};
+
 /**
  * Add or update an item in a specific list.
  */
@@ -117,6 +138,7 @@ export const addSavedItem = (item: any, type: SavedItemType) => {
       'INSERT OR REPLACE INTO saved_items (id, media_id, type, data, created_at) VALUES (?, ?, ?, ?, ?)',
       [rowId, item.id, type, JSON.stringify(item), Date.now()]
     );
+    notifyWatchlistChanged(type);
   } catch (error) {
     console.error(`Failed to add item to ${type}:`, error);
   }
@@ -129,6 +151,7 @@ export const removeSavedItem = (mediaId: number, type: SavedItemType) => {
   try {
     const rowId = `${type}_${mediaId}`;
     db.runSync('DELETE FROM saved_items WHERE id = ?', [rowId]);
+    notifyWatchlistChanged(type);
   } catch (error) {
     console.error(`Failed to remove item from ${type}:`, error);
   }
@@ -140,7 +163,49 @@ export const removeSavedItem = (mediaId: number, type: SavedItemType) => {
 export const clearSavedItems = (type: SavedItemType) => {
   try {
     db.runSync('DELETE FROM saved_items WHERE type = ?', [type]);
+    notifyWatchlistChanged(type);
   } catch (error) {
     console.error(`Failed to clear ${type}:`, error);
   }
 };
+
+/**
+ * Save an AI embedding for a media item.
+ */
+export const saveAiEmbedding = (mediaId: number, embeddingArray: number[]) => {
+  try {
+    const stmt = db.prepareSync('INSERT OR REPLACE INTO ai_embeddings (media_id, embedding) VALUES (?, ?)');
+    stmt.executeSync([mediaId, JSON.stringify(embeddingArray)]);
+    stmt.finalizeSync();
+  } catch (error) {
+    console.error('Failed to save AI embedding:', error);
+  }
+};
+
+/**
+ * Get all AI embeddings.
+ * Returns an array of objects { media_id: number, embedding: number[] }.
+ */
+export const getAllAiEmbeddings = (): { media_id: number, embedding: number[] }[] => {
+  try {
+    const result = db.getAllSync<{ media_id: number, embedding: string }>('SELECT media_id, embedding FROM ai_embeddings');
+    return result.map(row => ({
+      media_id: row.media_id,
+      embedding: JSON.parse(row.embedding)
+    }));
+  } catch (error) {
+    console.error('Failed to get AI embeddings:', error);
+    return [];
+  }
+};
+
+export const getAiEmbedding = (mediaId: number): number[] | null => {
+  try {
+    const result = db.getFirstSync<{ embedding: string }>('SELECT embedding FROM ai_embeddings WHERE media_id = ?', [mediaId]);
+    return result ? JSON.parse(result.embedding) : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+export const insertAiEmbedding = saveAiEmbedding;
