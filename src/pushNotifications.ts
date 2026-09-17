@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { getSavedItems } from './database';
+import { getUserPreferences } from './userPreferences';
 
 const WATCHER_API_BASE = 'https://watcher-api-rho.vercel.app';
 const STORAGE_KEY_TOKEN = 'expo_push_token';
@@ -13,6 +14,36 @@ export const CHANNELS = {
   RELEASES: 'watcher-releases',
   UPDATES: 'watcher-updates',
 };
+
+export interface PushSubscriptionItem {
+  id: number;
+  media_type: 'movie' | 'tv';
+  title: string;
+  release_date: string | null;
+}
+
+export interface PushSubscriptionPerson {
+  id: number;
+  name: string;
+}
+
+/** Contract for POST /api/push-token (backend release-notifications API). */
+export interface PushTokenPayload {
+  token: string;
+  platform: string;
+  watchlist: PushSubscriptionItem[];
+  history: PushSubscriptionItem[];
+  watched: PushSubscriptionItem[];
+  favouritePeople: PushSubscriptionPerson[];
+  country: string;
+}
+
+const toMediaSubscription = (item: any): PushSubscriptionItem => ({
+  id: Number(item.id),
+  media_type: item.media_type === 'tv' || item.first_air_date ? 'tv' : 'movie',
+  title: item.title || item.name || '',
+  release_date: item.release_date || item.first_air_date || null,
+});
 
 /**
  * Configure dedicated notification channels for Android.
@@ -55,7 +86,9 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
   let finalStatus = existingStatus;
 
   if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
+    const { status } = await Notifications.requestPermissionsAsync({
+      ios: { allowAlert: true, allowBadge: true, allowSound: true },
+    });
     finalStatus = status;
   }
 
@@ -106,27 +139,26 @@ export async function syncPushTokenAndWatchlist(tokenOverride?: string): Promise
       return false;
     }
 
-    let watchlist: any[] = [];
-    try {
-      watchlist = getSavedItems('watchlist');
-    } catch {
-      watchlist = [];
-    }
+    const watchlist = getSavedItems('watchlist').map(toMediaSubscription);
+    const history = getSavedItems('history').map(toMediaSubscription);
+    const preferences = await getUserPreferences();
+    const favouritePeople = preferences.favoriteActors
+      .filter((person) => Number.isFinite(Number(person.id)))
+      .map((person) => ({ id: Number(person.id), name: person.name || '' }));
 
-    const payloadWatchlist = watchlist.map((item) => ({
-      id: item.id,
-      media_type: item.media_type === 'tv' || item.first_air_date ? 'tv' : 'movie',
-      title: item.title || item.name || '',
-      release_date: item.release_date || item.first_air_date || null,
-    }));
+    const payload: PushTokenPayload = {
+      token,
+      platform: Platform.OS,
+      watchlist,
+      history,
+      watched: history,
+      favouritePeople,
+      country: preferences.country,
+    };
 
     await axios.post(
       `${WATCHER_API_BASE}/api/push-token`,
-      {
-        token,
-        platform: Platform.OS,
-        watchlist: payloadWatchlist,
-      },
+      payload,
       { timeout: 8000 }
     );
 
