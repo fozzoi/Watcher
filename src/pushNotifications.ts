@@ -176,13 +176,23 @@ export async function getCachedPushToken(): Promise<string | null> {
   return AsyncStorage.getItem(STORAGE_KEY_TOKEN);
 }
 
+export interface RemotePushTestResult {
+  ticketId: string;
+  token: string;
+}
+
 /**
  * Trigger an instant remote push test via the Expo Push API for this device.
  */
-export async function sendTestRemotePushNotification(): Promise<boolean> {
+export async function sendTestRemotePushNotification(): Promise<RemotePushTestResult> {
   const token = await AsyncStorage.getItem(STORAGE_KEY_TOKEN);
   if (!token) {
     throw new Error('No push token found on this device. Please ensure permissions are granted.');
+  }
+
+  const permission = await Notifications.getPermissionsAsync();
+  if (permission.status !== 'granted') {
+    throw new Error(`Android notification permission is ${permission.status}. Enable notifications for Watcher in system settings.`);
   }
 
   const response = await axios.post(
@@ -204,5 +214,19 @@ export async function sendTestRemotePushNotification(): Promise<boolean> {
     }
   );
 
-  return response.status === 200;
+  const ticket = Array.isArray(response.data?.data)
+    ? response.data.data[0]
+    : response.data?.data;
+
+  if (response.status < 200 || response.status >= 300 || ticket?.status !== 'ok' || !ticket?.id) {
+    const details = ticket?.message || ticket?.details?.error || response.data?.errors?.[0]?.message;
+    throw new Error(`Expo rejected the push ticket${details ? `: ${details}` : ` (HTTP ${response.status})`}`);
+  }
+
+  await AsyncStorage.setItem('last_push_test_ticket', JSON.stringify({
+    ticketId: ticket.id,
+    sentAt: new Date().toISOString(),
+  }));
+
+  return { ticketId: ticket.id, token };
 }

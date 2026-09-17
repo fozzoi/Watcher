@@ -110,10 +110,10 @@ const Settings = () => {
     try {
       const token = await getCachedPushToken();
       if (token) {
-        await sendTestRemotePushNotification();
+        const result = await sendTestRemotePushNotification();
         showDialog({
-          title: "Remote Push Sent! 🍿",
-          message: "Remote notification sent via Expo Push API. It will appear in your notification tray even when the app is closed.",
+          title: "Remote Push Accepted! 🍿",
+          message: `Expo accepted the push ticket (${result.ticketId}). If it does not appear within a minute, check Android notification permission and the Watcher Releases & Episodes channel.`,
           type: "success",
         });
       } else {
