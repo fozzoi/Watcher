@@ -14,7 +14,7 @@ import { checkAndNotifyUpdate } from './updater';
 
 const BACKGROUND_FETCH_TASK = 'background-fetch-releases';
 const NOTIFS_ENABLED_KEY = 'smart_notifications_enabled';
-const CHANNEL_ID = 'watcher-releases';
+const CHANNEL_ID = 'watcher-releases-v2';
 const NOTIFICATION_TASK = 'watcher-notification-handler';
 let notificationCheckPromise: Promise<number> | null = null;
 
@@ -34,6 +34,8 @@ export const setupNotificationChannel = async () => {
       description: 'New episodes and releases for your library',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
+      sound: 'default',
+      enableVibrate: true,
     });
   }
 };

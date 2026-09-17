@@ -112,8 +112,10 @@ const Settings = () => {
       if (token) {
         const result = await sendTestRemotePushNotification();
         showDialog({
-          title: "Remote Push Accepted! 🍿",
-          message: `Expo accepted the push ticket (${result.ticketId}). If it does not appear within a minute, check Android notification permission and the Watcher Releases & Episodes channel.`,
+          title: result.receiptStatus === 'ok' ? "Remote Push Delivered! 🍿" : "Remote Push Queued! 🍿",
+          message: result.receiptStatus === 'ok'
+            ? `Expo and FCM accepted the notification (${result.ticketId}). Check the Android tray now.`
+            : `Expo accepted the push ticket (${result.ticketId}), but the final delivery receipt is still pending. Check the Android tray within one minute.`,
           type: "success",
         });
       } else {

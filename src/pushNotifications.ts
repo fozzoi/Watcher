@@ -11,7 +11,7 @@ const WATCHER_API_BASE = 'https://watcher-api-rho.vercel.app';
 const STORAGE_KEY_TOKEN = 'expo_push_token';
 
 export const CHANNELS = {
-  RELEASES: 'watcher-releases',
+  RELEASES: 'watcher-releases-v2',
   UPDATES: 'watcher-updates',
 };
 
@@ -58,6 +58,8 @@ export async function setupPushNotificationChannels(): Promise<void> {
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#FF231F7C',
+      sound: 'default',
+      enableVibrate: true,
     });
 
     await Notifications.setNotificationChannelAsync(CHANNELS.UPDATES, {
@@ -179,6 +181,25 @@ export async function getCachedPushToken(): Promise<string | null> {
 export interface RemotePushTestResult {
   ticketId: string;
   token: string;
+  receiptStatus: 'ok' | 'error' | 'pending';
+  receiptMessage?: string;
+}
+
+const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function getPushReceipt(ticketId: string): Promise<{ status: 'ok' | 'error' | 'pending'; message?: string }> {
+  const response = await axios.post(
+    'https://exp.host/--/api/v2/push/getReceipts',
+    { ids: [ticketId] },
+    { headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, timeout: 8000 }
+  );
+  const receipt = response.data?.data?.[ticketId];
+  if (!receipt) return { status: 'pending' };
+  if (receipt.status === 'ok') return { status: 'ok' };
+  return {
+    status: 'error',
+    message: receipt.message || receipt.details?.error || 'Expo reported a delivery error.',
+  };
 }
 
 /**
@@ -228,5 +249,11 @@ export async function sendTestRemotePushNotification(): Promise<RemotePushTestRe
     sentAt: new Date().toISOString(),
   }));
 
-  return { ticketId: ticket.id, token };
+  await wait(8000);
+  const receipt = await getPushReceipt(ticket.id);
+  if (receipt.status === 'error') {
+    throw new Error(`Expo accepted the ticket but FCM delivery failed: ${receipt.message}`);
+  }
+
+  return { ticketId: ticket.id, token, receiptStatus: receipt.status, receiptMessage: receipt.message };
 }
