@@ -239,27 +239,33 @@ const executeNotificationCheckInternal = async () => {
       console.error('Failed to save notifiedMediaIds');
     }
 
-    // 3. Weekly Personalised Picks
+    // One daily personalised pick, independently deduplicated from release alerts.
     try {
-      const lastWeeklyStr = await AsyncStorage.getItem('last_weekly_foryou');
-      const lastWeekly = lastWeeklyStr ? dayjs(lastWeeklyStr) : dayjs(0);
+      const lastDailyStr = await AsyncStorage.getItem('last_daily_foryou');
+      const lastDaily = lastDailyStr ? dayjs(lastDailyStr) : dayjs(0);
       
-      if (now.diff(lastWeekly, 'day') >= 7) {
+      if (now.diff(lastDaily, 'day') >= 1) {
         const prefs = await getUserPreferences();
-        const content = await fetchPersonalisedDiscoveryContent(prefs.languages, prefs.genreIds, 0, false);
+        const content = await fetchPersonalisedDiscoveryContent(
+          prefs.languages,
+          prefs.genreIds,
+          0,
+          false,
+          prefs.favoriteActors
+        );
         
         if (content && content.trendingMovies && content.trendingMovies.length > 0) {
           const topPick = content.trendingMovies[0];
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: `Your Weekly Pick 🌟`,
-              body: `Based on your taste, you might love ${topPick.title}!`,
-              data: { mediaId: topPick.id, mediaType: 'movie' },
-              ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-            },
-            trigger: null,
+            title: `A pick for you 🌟`,
+            body: `You might like ${topPick.title} based on your taste.`,
+            data: { mediaId: topPick.id, mediaType: 'movie', notificationType: 'recommendation' },
+            ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+          },
+          trigger: null,
           });
-          await AsyncStorage.setItem('last_weekly_foryou', now.toISOString());
+          await AsyncStorage.setItem('last_daily_foryou', now.toISOString());
           newNotifications++;
         }
       }

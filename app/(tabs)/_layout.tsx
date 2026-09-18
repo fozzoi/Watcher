@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform, Dimensions, View, StyleSheet, TouchableOpacity, DeviceEventEmitter, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
 
@@ -70,6 +71,12 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
                 pointerEvents="none"
             />
             <Animated.View style={[localStyles.pillContainer, { transform: [{ scale: scaleAnim }, { translateY: translateYAnim }] }]}>
+                <BlurView
+                    intensity={55}
+                    tint="dark"
+                    style={StyleSheet.absoluteFill}
+                    blurMethod="dimezisBlurView"
+                />
                 <View style={localStyles.tabBarInner}>
                     {state.routes.map((route, index) => {
                         const { options } = descriptors[route.key];
@@ -143,7 +150,7 @@ const localStyles = StyleSheet.create({
         shadowOpacity: 0.45,
         shadowRadius: 8,
         elevation: 10,
-        backgroundColor: 'rgb(10, 10, 10)',
+        backgroundColor: 'rgba(10, 10, 10, 0.62)',
     },
     tabBarInner: {
         flexDirection: 'row',
