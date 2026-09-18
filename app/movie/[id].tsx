@@ -1131,7 +1131,7 @@ const DetailPage = () => {
 
   if (!initialMovie || !movie) {
     return (
-      <View style={styles.root}>
+      <View style={[styles.root, styles.detailsLoading]}>
         <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
         <ActivityIndicator color={C.white} size="large" />
         {detailsError && (
@@ -1193,6 +1193,11 @@ const DetailPage = () => {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
+  detailsLoading: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
   detailsError: {
     color: C.mutedSoft,
     fontSize: 15,
