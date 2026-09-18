@@ -24,40 +24,45 @@ jobs:
         with:
           node-version: 22
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: "temurin"
-          java-version: "17"
-
       - name: Install EAS CLI
         run: npm install -g eas-cli
 
       - name: Install dependencies
         run: npm install
 
-      # Automatically injects the GitHub run number into app.json
-      - name: Set Dynamic App Version
-        run: |
-          jq '.expo.version = "3.0.${{ github.run_number }}"' app.json > tmp.json && mv tmp.json app.json
+      - name: Read app version
+        id: app
+        shell: bash
+        run: echo "version=$(node -p "require('./app.json').expo.version")" >> "$GITHUB_OUTPUT"
 
-      - name: Build APK
+      - name: Build production APK with EAS
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          EAS_LOCAL_BUILD_SKIP_CLEANUP: 1
-          _JAVA_OPTIONS: "-Xmx4096m -XX:MaxMetaspaceSize=2048m"
-        # development
-        # run: eas build --platform android --profile development --local --non-interactive
-        # production
-        run: eas build --platform android --profile production --local --non-interactive
+        shell: bash
+        run: |
+          eas build --platform android --profile production --non-interactive --wait --json > build.json
+          build_id="$(jq -r 'if type == "array" then .[0].id else .id end' build.json)"
+          test -n "$build_id" && test "$build_id" != "null"
+          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
 
-      # Uploads the built APK and creates a release tag matching the app.json version
+      - name: Download EAS APK
+        id: artifact
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        shell: bash
+        run: |
+          eas build:download --build-id "$(jq -r 'if type == "array" then .[0].id else .id end' build.json)" --non-interactive
+          apk="$(find . -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -n "$apk"
+          mv "$apk" watcher.apk
+
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: "*.apk"
-          tag_name: "3.0.${{ github.run_number }}"
-          name: "The Watcher Build #${{ github.run_number }}"
+          files: watcher.apk
+          tag_name: "v${{ steps.app.outputs.version }}"
+          name: "The Watcher ${{ steps.app.outputs.version }}"
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -65,12 +70,11 @@ jobs:
       - name: Broadcast App Update Push Notification
         if: success()
         run: |
-          curl -s -X POST "https://watcher-api-rho.vercel.app/api/notify-update" \
+          curl --fail-with-body --silent --show-error --retry 3 -X POST "https://watcher-api-rho.vercel.app/api/notify-update" \
             -H "Content-Type: application/json" \
             -H "x-notify-secret: ${{ secrets.NOTIFY_SECRET }}" \
             -d '{
-              "version": "3.0.${{ github.run_number }}",
-              "releaseName": "The Watcher Build #${{ github.run_number }}",
-              "apkUrl": "https://github.com/${{ github.repository }}/releases/tag/3.0.${{ github.run_number }}"
+              "version": "${{ steps.app.outputs.version }}",
+              "releaseName": "The Watcher ${{ steps.app.outputs.version }}",
+              "apkUrl": "https://github.com/${{ github.repository }}/releases/tag/v${{ steps.app.outputs.version }}"
             }'
-
