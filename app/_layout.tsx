@@ -13,7 +13,7 @@ import { setupNotificationChannel, registerBackgroundFetchAsync, isNotifications
 import { registerForPushNotificationsAsync, syncPushTokenAndWatchlist } from '@/src/pushNotifications';
 import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
-import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, setOnWatchlistChangedListener } from '@/src/database';
+import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, setOnSavedItemsChangedListener } from '@/src/database';
 import { fetchEmbedding, fetchEmbeddingsBatch } from '@/src/tmdb';
 
 // Disable non-critical warnings
@@ -84,6 +84,7 @@ export default function RootLayout() {
   });
 
   const [isReady, setIsReady] = useState(false);
+  const [databaseReady, setDatabaseReady] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   // App Update state
@@ -92,6 +93,7 @@ export default function RootLayout() {
 
   // Initialize Remote Push Notifications and listener
   useEffect(() => {
+    if (!isReady || !databaseReady) return;
     (async () => {
       try {
         await setupNotificationChannel();
@@ -108,14 +110,14 @@ export default function RootLayout() {
     })();
 
     // Automatically sync watchlist to remote server whenever changed
-    setOnWatchlistChangedListener(() => {
+    setOnSavedItemsChangedListener(() => {
       syncPushTokenAndWatchlist().catch((err) =>
         console.log('Watchlist push sync error:', err)
       );
     });
 
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response?.notification?.request?.content?.data;
+      const data: any = response?.notification?.request?.content?.data;
       if (data?.isAppUpdate) {
         if (data?.releaseInfo) {
           setUpdateResult(data.releaseInfo);
@@ -135,14 +137,29 @@ export default function RootLayout() {
       } else if (data?.mediaId) {
         const mediaType = data.mediaType || 'movie';
         router.push(`/movie/${data.mediaId}?media_type=${mediaType}`);
+      } else if (typeof data?.url === 'string') {
+        router.push(data.url as any);
       }
     });
 
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (response) {
+          const data: any = response.notification.request.content.data;
+          if (data?.mediaId) {
+            router.push(`/movie/${data.mediaId}?media_type=${data.mediaType || 'movie'}`);
+          } else if (typeof data?.url === 'string') {
+            router.push(data.url as any);
+          }
+        }
+      })
+      .catch((error) => console.warn('Failed to handle initial notification:', error));
+
     return () => {
       subscription.remove();
-      setOnWatchlistChangedListener(null);
+      setOnSavedItemsChangedListener(null);
     };
-  }, [router]);
+  }, [router, isReady, databaseReady]);
 
   // Check for app updates on launch
   useEffect(() => {
@@ -184,6 +201,7 @@ export default function RootLayout() {
       try {
         initDb();
         await performMigration();
+        setDatabaseReady(true);
         
         // Fire and forget silent background AI embedding sync for existing users
         performAiBackgroundSync();

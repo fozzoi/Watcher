@@ -9,6 +9,7 @@ import {
   Platform,
   ToastAndroid,
   Alert,
+  ActivityIndicator,
   useWindowDimensions,
   Linking,
   TextInput,
@@ -50,6 +51,17 @@ import MovieChatSection from '../../src/components/movie/MovieChatSection';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 const IMAGE_SIZES = { THUMBNAIL: 'w154', POSTER_DETAIL: 'w780', STILL: 'w300', ORIGINAL: 'original' };
+
+const scheduleAfterInteractions = (callback: () => void) => {
+  let cancelled = false;
+  const task = InteractionManager.runAfterInteractions(() => {
+    if (!cancelled) callback();
+  });
+  return () => {
+    cancelled = true;
+    task.cancel();
+  };
+};
 
 const C = {
   bg: '#0A0A0B',
@@ -241,23 +253,22 @@ const DetailPage = () => {
 
   const [initialMovie, setInitialMovie] = useState<any>(null);
   const [movie, setMovie] = useState<any>(null);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
     const fetchMetadata = async () => {
       try {
+        setDetailsError(null);
         const full = await getFullDetails({ id: Number(id), media_type: (media_type as string) || 'movie' } as any);
         setInitialMovie(full);
         setMovie(full);
       } catch (e) {
         console.error(e);
+        setDetailsError('Unable to load this title. Check your connection and try again.');
       }
     };
-    // Defer heavy fetching until the JS thread is idle (post-navigation)
-    const task = requestIdleCallback(() => {
-      fetchMetadata();
-    });
-    return () => cancelIdleCallback(task);
+    return scheduleAfterInteractions(fetchMetadata);
   }, [id, media_type]);
   const [externalIds, setExternalIds] = useState<any>({});
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
@@ -384,8 +395,7 @@ const DetailPage = () => {
   }, [movie?.id, lastWatched, prefetchSources]);
 
   useEffect(() => {
-    const task = requestIdleCallback(() => loadDeepDetails());
-    return () => cancelIdleCallback(task);
+    return scheduleAfterInteractions(loadDeepDetails);
   }, [initialMovie?.id]);
 
   useFocusEffect(
@@ -406,10 +416,10 @@ const DetailPage = () => {
           });
         }
       };
-      const task = requestIdleCallback(() => checkProgress());
+      const cancelScheduledCheck = scheduleAfterInteractions(checkProgress);
       return () => {
         isActive = false;
-        cancelIdleCallback(task);
+        cancelScheduledCheck();
       };
     }, [movie?.id]),
   );
@@ -1120,8 +1130,15 @@ const DetailPage = () => {
   }, [lastWatched, episodeThumbWidth, handlePlay]);
 
   if (!initialMovie || !movie) {
-    // Returning a simple blank view instead of a heavy skeleton prevents UI flashing for cached movies
-    return <View style={styles.root} />;
+    return (
+      <View style={[styles.root, styles.detailsLoading]}>
+        <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+        <ActivityIndicator color={C.white} size="large" />
+        {detailsError && (
+          <Text style={styles.detailsError}>{detailsError}</Text>
+        )}
+      </View>
+    );
   }
 
   return (
@@ -1176,6 +1193,18 @@ const DetailPage = () => {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
+  detailsLoading: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  detailsError: {
+    color: C.mutedSoft,
+    fontSize: 15,
+    marginHorizontal: 32,
+    marginTop: 18,
+    textAlign: 'center',
+  },
 
   topBar: {
     position: 'absolute',

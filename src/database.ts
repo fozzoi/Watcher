@@ -25,6 +25,7 @@ export const initDb = () => {
     `);
   } catch (error) {
     console.error('Failed to initialize SQLite database:', error);
+    throw error;
   }
 };
 
@@ -111,20 +112,27 @@ export const hasSavedItem = (mediaId: number, type: SavedItemType): boolean => {
   }
 };
 
-let onWatchlistChangedCallback: (() => void) | null = null;
+let onSavedItemsChangedCallback: (() => void) | null = null;
 
-export const setOnWatchlistChangedListener = (callback: (() => void) | null) => {
-  onWatchlistChangedCallback = callback;
+export const setOnSavedItemsChangedListener = (callback: (() => void) | null) => {
+  onSavedItemsChangedCallback = callback;
+};
+
+// Kept for callers using the old name. Library changes now include history and artists.
+export const setOnWatchlistChangedListener = setOnSavedItemsChangedListener;
+
+const notifySavedItemsChanged = () => {
+  if (onSavedItemsChangedCallback) {
+    try {
+      onSavedItemsChangedCallback();
+    } catch (e) {
+      console.error('Error in onSavedItemsChangedCallback:', e);
+    }
+  }
 };
 
 const notifyWatchlistChanged = (type: SavedItemType) => {
-  if (type === 'watchlist' && onWatchlistChangedCallback) {
-    try {
-      onWatchlistChangedCallback();
-    } catch (e) {
-      console.error('Error in onWatchlistChangedCallback:', e);
-    }
-  }
+  notifySavedItemsChanged();
 };
 
 /**

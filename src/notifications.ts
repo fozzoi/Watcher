@@ -14,7 +14,9 @@ import { checkAndNotifyUpdate } from './updater';
 
 const BACKGROUND_FETCH_TASK = 'background-fetch-releases';
 const NOTIFS_ENABLED_KEY = 'smart_notifications_enabled';
-const CHANNEL_ID = 'watcher-releases';
+const CHANNEL_ID = 'watcher-releases-v2';
+const NOTIFICATION_TASK = 'watcher-notification-handler';
+let notificationCheckPromise: Promise<number> | null = null;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -29,7 +31,11 @@ export const setupNotificationChannel = async () => {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: 'Releases & Recommendations',
-      importance: Notifications.AndroidImportance.LOW,
+      description: 'New episodes and releases for your library',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      sound: 'default',
+      enableVibrate: true,
     });
   }
 };
@@ -52,7 +58,7 @@ export const setNotificationsEnabled = async (enabled: boolean): Promise<void> =
   }
 };
 
-export const executeNotificationCheck = async () => {
+const executeNotificationCheckInternal = async () => {
   try {
     // Check for App Updates in background
     try {
@@ -233,27 +239,33 @@ export const executeNotificationCheck = async () => {
       console.error('Failed to save notifiedMediaIds');
     }
 
-    // 3. Weekly Personalised Picks
+    // One daily personalised pick, independently deduplicated from release alerts.
     try {
-      const lastWeeklyStr = await AsyncStorage.getItem('last_weekly_foryou');
-      const lastWeekly = lastWeeklyStr ? dayjs(lastWeeklyStr) : dayjs(0);
+      const lastDailyStr = await AsyncStorage.getItem('last_daily_foryou');
+      const lastDaily = lastDailyStr ? dayjs(lastDailyStr) : dayjs(0);
       
-      if (now.diff(lastWeekly, 'day') >= 7) {
+      if (now.diff(lastDaily, 'day') >= 1) {
         const prefs = await getUserPreferences();
-        const content = await fetchPersonalisedDiscoveryContent(prefs.languages, prefs.genreIds, 0, false);
+        const content = await fetchPersonalisedDiscoveryContent(
+          prefs.languages,
+          prefs.genreIds,
+          0,
+          false,
+          prefs.favoriteActors
+        );
         
         if (content && content.trendingMovies && content.trendingMovies.length > 0) {
           const topPick = content.trendingMovies[0];
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: `Your Weekly Pick 🌟`,
-              body: `Based on your taste, you might love ${topPick.title}!`,
-              data: { mediaId: topPick.id, mediaType: 'movie' },
-              ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-            },
-            trigger: null,
+            title: `A pick for you 🌟`,
+            body: `You might like ${topPick.title} based on your taste.`,
+            data: { mediaId: topPick.id, mediaType: 'movie', notificationType: 'recommendation' },
+            ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+          },
+          trigger: null,
           });
-          await AsyncStorage.setItem('last_weekly_foryou', now.toISOString());
+          await AsyncStorage.setItem('last_daily_foryou', now.toISOString());
           newNotifications++;
         }
       }
@@ -268,6 +280,16 @@ export const executeNotificationCheck = async () => {
   }
 };
 
+// Prevent overlapping foreground/background runs from scheduling the same alert twice.
+export const executeNotificationCheck = async () => {
+  if (!notificationCheckPromise) {
+    notificationCheckPromise = executeNotificationCheckInternal().finally(() => {
+      notificationCheckPromise = null;
+    });
+  }
+  return notificationCheckPromise;
+};
+
 // Define Background Task
 try {
   TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
@@ -280,6 +302,17 @@ try {
   });
 } catch (e) {
   console.log('TaskManager task definition error:', e);
+}
+
+try {
+  TaskManager.defineTask(NOTIFICATION_TASK, async ({ data }) => {
+    // Remote notifications are displayed by the OS. This task is intentionally
+    // side-effect free so a delivery callback cannot create a duplicate alert.
+    if (!data) return;
+    return;
+  });
+} catch (e) {
+  console.log('Notification task definition error:', e);
 }
 
 export async function registerBackgroundFetchAsync() {
@@ -298,6 +331,10 @@ export async function registerBackgroundFetchAsync() {
         startOnBoot: true,
       });
     }
+    const notificationTaskRegistered = await TaskManager.isTaskRegisteredAsync(NOTIFICATION_TASK);
+    if (!notificationTaskRegistered) {
+      await Notifications.registerTaskAsync(NOTIFICATION_TASK);
+    }
   } catch (e) {
     console.error('Error registering background fetch task:', e);
   }
@@ -308,6 +345,10 @@ export async function unregisterBackgroundFetchAsync() {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_FETCH_TASK);
     if (isRegistered) {
       await BackgroundFetch.unregisterTaskAsync(BACKGROUND_FETCH_TASK);
+    }
+    const notificationTaskRegistered = await TaskManager.isTaskRegisteredAsync(NOTIFICATION_TASK);
+    if (notificationTaskRegistered) {
+      await Notifications.unregisterTaskAsync(NOTIFICATION_TASK);
     }
   } catch (e) {
     console.error('Failed to unregister background fetch task', e);

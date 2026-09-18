@@ -110,10 +110,12 @@ const Settings = () => {
     try {
       const token = await getCachedPushToken();
       if (token) {
-        await sendTestRemotePushNotification();
+        const result = await sendTestRemotePushNotification();
         showDialog({
-          title: "Remote Push Sent! 🍿",
-          message: "Remote notification sent via Expo Push API. It will appear in your notification tray even when the app is closed.",
+          title: result.receiptStatus === 'ok' ? "Remote Push Delivered! 🍿" : "Remote Push Queued! 🍿",
+          message: result.receiptStatus === 'ok'
+            ? `Expo and FCM accepted the notification (${result.ticketId}). Check the Android tray now.`
+            : `Expo accepted the push ticket (${result.ticketId}), but the final delivery receipt is still pending. Check the Android tray within one minute.`,
           type: "success",
         });
       } else {
