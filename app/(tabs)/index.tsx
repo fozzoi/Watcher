@@ -463,7 +463,7 @@ export default ExplorePage;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#141414', overflow: 'hidden' },
-  scrollContent: { paddingTop: (StatusBar.currentHeight || 0) + 128, paddingBottom: 110 },
+  scrollContent: { paddingTop: (StatusBar.currentHeight || 0) + 70, paddingBottom: 110 },
   searchBarContainer: { paddingHorizontal: HORIZONTAL_MARGIN, paddingTop: (StatusBar.currentHeight || 0) + 4, paddingBottom: 12, backgroundColor: 'transparent', borderBottomWidth: 0 },
   searchInputContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 24, height: 48, borderWidth: 0, backgroundColor: 'transparent' },
   searchInput: { flex: 1, backgroundColor: 'transparent', height: 48, fontSize: 16, color: '#FFFFFF', paddingLeft: 4, fontFamily: 'GoogleSansFlex-Medium' },
