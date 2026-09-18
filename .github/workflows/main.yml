@@ -51,9 +51,10 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         shell: bash
         run: |
-          eas build:download --build-id "$(jq -r 'if type == "array" then .[0].id else .id end' build.json)" --non-interactive
-          apk="$(find . -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          eas build:download --build-id "$(jq -r 'if type == "array" then .[0].id else .id end' build.json)" --non-interactive 2>&1 | tee download.log
+          apk="$(sed -n 's/^Build downloaded to //p' download.log | tail -n 1)"
           test -n "$apk"
+          test -f "$apk"
           mv "$apk" watcher.apk
 
       - name: Upload to GitHub Releases
