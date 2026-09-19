@@ -7,7 +7,20 @@ const getProgressKey = (
   mediaType: WatchProgress['mediaType'],
   season?: number,
   episode?: number,
+  sourceKey?: string,
+) => {
+  const identity = `${mediaType}:${tmdbId}:${mediaType === 'tv' ? `${season || 1}:${episode || 1}` : 'movie'}`;
+  return sourceKey ? `${identity}:${sourceKey}` : identity;
+};
+
+const getIdentityPrefix = (
+  tmdbId: number,
+  mediaType: WatchProgress['mediaType'],
+  season?: number,
+  episode?: number,
 ) => `${mediaType}:${tmdbId}:${mediaType === 'tv' ? `${season || 1}:${episode || 1}` : 'movie'}`;
+
+let writeQueue = Promise.resolve();
 
 export interface WatchProgress {
   tmdbId: number;
@@ -23,25 +36,35 @@ export interface WatchProgress {
 }
 
 // Save progress
-export const saveProgress = async (progress: WatchProgress) => {
-  try {
-    const stored = await AsyncStorage.getItem(PROGRESS_KEY);
-    const history = stored ? JSON.parse(stored) : {};
-    
-    const previous = history[progress.tmdbId];
-    const nextProgress = progress.duration > 0
-      ? Math.max(0, Math.min(1, progress.position / progress.duration))
-      : previous?.progress ?? 0;
-    history[getProgressKey(progress.tmdbId, progress.mediaType, progress.lastSeason, progress.lastEpisode)] = {
-      ...previous,
-      ...progress,
-      progress: nextProgress,
-    };
-    
-    await AsyncStorage.setItem(PROGRESS_KEY, JSON.stringify(history));
-  } catch (e) {
-    console.error("Failed to save progress", e);
-  }
+export const saveProgress = async (progress: WatchProgress & { sourceKey?: string }) => {
+  const operation = writeQueue.then(async () => {
+    try {
+      const stored = await AsyncStorage.getItem(PROGRESS_KEY);
+      const history = stored ? JSON.parse(stored) : {};
+      const key = getProgressKey(
+        progress.tmdbId,
+        progress.mediaType,
+        progress.lastSeason,
+        progress.lastEpisode,
+        progress.sourceKey,
+      );
+      const previous = history[key] || history[getProgressKey(
+        progress.tmdbId,
+        progress.mediaType,
+        progress.lastSeason,
+        progress.lastEpisode,
+      )];
+      const nextProgress = progress.duration > 0
+        ? Math.max(0, Math.min(1, progress.position / progress.duration))
+        : previous?.progress ?? 0;
+      history[key] = { ...previous, ...progress, progress: nextProgress };
+      await AsyncStorage.setItem(PROGRESS_KEY, JSON.stringify(history));
+    } catch (e) {
+      console.error("Failed to save progress", e);
+    }
+  });
+  writeQueue = operation.catch(() => undefined);
+  return operation;
 };
 
 // Get progress for a specific item
@@ -50,12 +73,23 @@ export const getProgress = async (
   mediaType?: WatchProgress['mediaType'],
   season?: number,
   episode?: number,
+  sourceKey?: string,
 ): Promise<WatchProgress | null> => {
   try {
     const stored = await AsyncStorage.getItem(PROGRESS_KEY);
     const history = stored ? JSON.parse(stored) : {};
-    const progress = mediaType && season && episode
-      ? history[getProgressKey(tmdbId, mediaType, season, episode)]
+    const identity = mediaType && season && episode
+      ? getIdentityPrefix(tmdbId, mediaType, season, episode)
+      : null;
+    const progress = identity
+      ? (sourceKey && history[`${identity}:${sourceKey}`]) ||
+        Object.values(history)
+          .filter((item: any) => item?.tmdbId === tmdbId &&
+            item?.mediaType === mediaType &&
+            item?.lastSeason === season &&
+            item?.lastEpisode === episode)
+          .sort((a: any, b: any) => b.updatedAt - a.updatedAt)[0] ||
+        history[getProgressKey(tmdbId, mediaType!, season, episode)]
       : Object.values(history)
         .filter((item: any) => item?.tmdbId === tmdbId)
         .sort((a: any, b: any) => b.updatedAt - a.updatedAt)[0] || history[tmdbId];

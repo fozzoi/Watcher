@@ -9,6 +9,9 @@ import * as NavigationBar from 'expo-navigation-bar';
 import { getProgress, saveProgress, WatchProgress } from '../src/utils/progress';
 import { getPlayerPreferences, PlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
 
+const CREDIT_SKIP_WINDOW_SECONDS = 90;
+const CREDIT_MIN_PROGRESS = 0.8;
+
 const generateHlsHtml = (url: string, initialPosition: number, preferences: PlayerPreferences) => `
   <!DOCTYPE html>
   <html>
@@ -58,9 +61,11 @@ const generateHlsHtml = (url: string, initialPosition: number, preferences: Play
           }
         }
         setInterval(function() {
+          var remaining = (video.duration || 0) - (video.currentTime || 0);
           window.ReactNativeWebView.postMessage(JSON.stringify({
             position: video.currentTime || 0,
-            duration: video.duration || 0
+            duration: video.duration || 0,
+            nearCredits: video.duration > 0 && video.currentTime / video.duration >= ${CREDIT_MIN_PROGRESS} && remaining <= ${CREDIT_SKIP_WINDOW_SECONDS}
           }));
         }, 5000);
         video.addEventListener('volumechange', function() {
@@ -77,7 +82,7 @@ const generateHlsHtml = (url: string, initialPosition: number, preferences: Play
 
 export default function Player() {
   const router = useRouter();
-  const { id: paramId, media_type, trailerUrl: initialTrailerUrl, imdbId, title: paramTitle, season: paramSeason, episode: paramEpisode, poster: paramPoster, episodeName } = useLocalSearchParams();
+  const { id: paramId, media_type, trailerUrl: initialTrailerUrl, imdbId, title: paramTitle, season: paramSeason, episode: paramEpisode, poster: paramPoster, episodeName, nextSeason: paramNextSeason, nextEpisode: paramNextEpisode } = useLocalSearchParams();
 
   const tmdbId = Number(paramId);
   const mediaType = media_type as 'movie' | 'tv';
@@ -85,28 +90,49 @@ export default function Player() {
   const season = paramSeason ? Number(paramSeason) : undefined;
   const episode = paramEpisode ? Number(paramEpisode) : undefined;
   const poster = paramPoster as string;
+  const nextSeason = paramNextSeason ? Number(paramNextSeason) : undefined;
+  const nextEpisode = paramNextEpisode ? Number(paramNextEpisode) : undefined;
 
   const [streamData, setStreamData] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeProvider, setActiveProvider] = useState("Watcher Engine");
+  const [showNextEpisode, setShowNextEpisode] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(true);
   const appState = useRef(AppState.currentState);
   const progressRef = useRef<WatchProgress | null>(null);
   const playerPreferencesRef = useRef<PlayerPreferences | null>(null);
   const transitionRef = useRef(0);
-  const sourceKey = `${mediaType}:${tmdbId}`;
+  const [sourceKey, setSourceKey] = useState(`${mediaType}:${tmdbId}:unknown`);
+  const latestPositionRef = useRef({ position: 0, duration: 0 });
+  const isLeavingRef = useRef(false);
 
   useEffect(() => {
     const transition = ++transitionRef.current;
     enterFullScreen(transition);
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      exitFullScreen().then(() => router.back());
+      isLeavingRef.current = true;
+      flushProgress().then(() => exitFullScreen()).then(() => router.back());
       return true;
     });
+    const orientationSubscription = ScreenOrientation.addOrientationChangeListener(({ orientationInfo }) => {
+      const landscape = orientationInfo.orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+        orientationInfo.orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
+      if (landscape && !isLeavingRef.current) {
+        setStatusBarHidden(true, 'none');
+        if (Platform.OS === 'android') void NavigationBar.setVisibilityAsync('hidden');
+      } else if (!landscape && isLeavingRef.current) {
+        setStatusBarHidden(false, 'none');
+        if (Platform.OS === 'android') void NavigationBar.setVisibilityAsync('visible');
+      }
+    });
     return () => {
-      exitFullScreen(++transitionRef.current);
+      isLeavingRef.current = true;
+      void flushProgress();
+      void exitFullScreen(++transitionRef.current);
       subscription.remove();
       backHandler.remove();
+      ScreenOrientation.removeOrientationChangeListener(orientationSubscription);
     };
   }, []);
 
@@ -116,7 +142,7 @@ export default function Player() {
       setLoading(true);
       try {
         const saved = await getProgress(tmdbId, mediaType, season || 1, episode || 1);
-        const preferences = await getPlayerPreferences(sourceKey);
+        const preferences = await getPlayerPreferences();
         progressRef.current = saved;
         playerPreferencesRef.current = preferences;
         const baseUrl = "https://watcher-api-rho.vercel.app";
@@ -127,9 +153,15 @@ export default function Player() {
         const data = await response.json();
 
         if (isMounted && data.status === "success") {
+          const resolvedSourceKey = `${mediaType}:${tmdbId}:${data.is_m3u8 ? 'direct' : 'web'}`;
+          setSourceKey(resolvedSourceKey);
+          const sourcePreferences = await getPlayerPreferences(resolvedSourceKey);
+          const sourceSaved = await getProgress(tmdbId, mediaType, season || 1, episode || 1, resolvedSourceKey);
+          progressRef.current = sourceSaved || saved;
+          playerPreferencesRef.current = sourcePreferences;
           if (data.is_m3u8) {
             setActiveProvider("Direct Link (Ad-Free)");
-            setStreamData(generateHlsHtml(data.stream_url, saved?.position ?? 0, preferences));
+            setStreamData(generateHlsHtml(data.stream_url, sourceSaved?.position ?? saved?.position ?? 0, sourcePreferences));
           } else {
             setActiveProvider("Web Player");
             // 🎯 Pass the raw URL directly instead of building an iframe
@@ -150,9 +182,10 @@ export default function Player() {
   const enterFullScreen = async (transition: number) => {
     await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
     if (transition !== transitionRef.current) return;
+    setIsFullscreen(true);
     setStatusBarHidden(true, 'none');
     if (Platform.OS === 'android') await NavigationBar.setVisibilityAsync("hidden");
-    const saved = await getProgress(tmdbId, mediaType, season || 1, episode || 1);
+    const saved = await getProgress(tmdbId, mediaType, season || 1, episode || 1, sourceKey);
     progressRef.current = saved;
     await handleSaveProgress(saved?.position ?? 0, saved?.duration ?? 0);
   };
@@ -161,11 +194,15 @@ export default function Player() {
     if (transition !== transitionRef.current) return;
     await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     if (transition !== transitionRef.current) return;
+    setIsFullscreen(false);
     setStatusBarHidden(false, 'none');
     if (Platform.OS === 'android') await NavigationBar.setVisibilityAsync("visible");
   };
 
   const handleAppStateChange = (nextAppState: any) => {
+    if (nextAppState.match(/inactive|background/)) {
+      void flushProgress();
+    }
     if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
       if (Platform.OS === 'android') NavigationBar.setVisibilityAsync("hidden");
       setStatusBarHidden(true, 'none');
@@ -173,17 +210,32 @@ export default function Player() {
     appState.current = nextAppState;
   };
 
+  const flushProgress = async () => {
+    const { position, duration } = latestPositionRef.current;
+    const saved = progressRef.current;
+    if (!saved && position <= 0) return;
+    await handleSaveProgress(position || saved?.position || 0, duration || saved?.duration || 0);
+  };
+
   const handleSaveProgress = async (position = 0, duration = 0) => {
     await saveProgress({
       tmdbId, mediaType, title, poster,
       lastSeason: season || 1, lastEpisode: episode || 1,
-      position, duration, updatedAt: Date.now()
+      position, duration, updatedAt: Date.now(), sourceKey,
     });
+  };
+
+  const goToNextEpisode = async () => {
+    if (!nextSeason || !nextEpisode || isLeavingRef.current) return;
+    await flushProgress();
+    isLeavingRef.current = true;
+    await exitFullScreen();
+    router.replace(`/player?id=${tmdbId}&media_type=${mediaType}&title=${encodeURIComponent(title)}&season=${nextSeason}&episode=${nextEpisode}&poster=${encodeURIComponent(poster || '')}&episodeName=Episode%20${nextEpisode}`);
   };
 
   return (
     <View style={styles.container}>
-      <StatusBar hidden />
+      <StatusBar hidden={isFullscreen} />
 
       {streamData ? (
         <WebView
@@ -212,6 +264,7 @@ export default function Player() {
           onMessage={(event) => {
             try {
               const progress = JSON.parse(event.nativeEvent.data);
+              if (progress.nearCredits && nextEpisode) setShowNextEpisode(true);
               if (progress.type === 'playerSettings') {
                 const { type, ...changes } = progress;
                 savePlayerPreferences(sourceKey, changes).then((next) => {
@@ -225,6 +278,7 @@ export default function Player() {
                   lastSeason: season || 1, lastEpisode: episode || 1,
                   position: progress.position, duration: progress.duration, updatedAt: Date.now(),
                 };
+                latestPositionRef.current = { position: progress.position, duration: progress.duration };
                 handleSaveProgress(progress.position, progress.duration);
               }
             } catch {
@@ -238,6 +292,12 @@ export default function Player() {
           }}
         />
       ) : null}
+
+      {showNextEpisode && nextEpisode && (
+        <TouchableOpacity style={styles.nextEpisodeButton} onPress={goToNextEpisode}>
+          <Text style={styles.nextEpisodeText}>Next Episode</Text>
+        </TouchableOpacity>
+      )}
 
       {loading && (
         <View style={styles.loader}>
@@ -255,4 +315,6 @@ const styles = StyleSheet.create({
   loader: { ...StyleSheet.absoluteFill, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
   loadingText: { color: 'white', marginTop: 15, fontWeight: '600' },
   backButton: { position: 'absolute', top: 20, left: 20, zIndex: 200, backgroundColor: 'rgba(0,0,0,0.5)', padding: 8, borderRadius: 20 }
+  ,nextEpisodeButton: { position: 'absolute', right: 20, bottom: 32, zIndex: 200, backgroundColor: '#E50914', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 24 }
+  ,nextEpisodeText: { color: '#fff', fontWeight: '700' }
 });

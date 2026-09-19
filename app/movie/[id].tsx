@@ -490,8 +490,8 @@ const DetailPage = () => {
         let seasonToLoad = 1;
         if (storedProgress) seasonToLoad = storedProgress.lastSeason;
         else {
-          const valid = fullDetails.seasons.filter((s: any) => s.season_number > 0);
-          seasonToLoad = valid.length > 0 ? valid[0].season_number : fullDetails.seasons[0].season_number;
+          const valid = detailData.seasons.filter((s: any) => s.season_number > 0);
+          seasonToLoad = valid.length > 0 ? valid[0].season_number : detailData.seasons[0].season_number;
         }
         setSelectedSeason(seasonToLoad);
         fetchEpisodes(seasonToLoad);
@@ -539,7 +539,29 @@ const DetailPage = () => {
       targetSeason = episodes[0].season_number;
       targetEpisode = episodes[0].episode_number;
     }
-    router.push(`/player?id=${movie.id}&media_type=${movie.media_type}&trailerUrl=${encodeURIComponent(trailerKey || '')}&imdbId=${externalIds.imdb_id}&title=${encodeURIComponent(movie.title || movie.name)}&season=${targetSeason}&episode=${targetEpisode}&poster=${encodeURIComponent(movie.poster_path)}&episodeName=${encodeURIComponent(episode ? episode.name : `Episode ${targetEpisode}`)}`);
+    let nextSeason: number | undefined;
+    let nextEpisode: number | undefined;
+    if (movie.media_type === 'tv') {
+      const seasonEpisodes = episodes
+        .filter((item) => item.season_number === targetSeason)
+        .sort((a, b) => a.episode_number - b.episode_number);
+      const currentIndex = seasonEpisodes.findIndex((item) => item.episode_number === targetEpisode);
+      const followingEpisode = seasonEpisodes[currentIndex + 1];
+      if (followingEpisode) {
+        nextSeason = followingEpisode.season_number;
+        nextEpisode = followingEpisode.episode_number;
+      } else {
+        const nextSeasonInfo = (movie.seasons || [])
+          .filter((item: any) => item.season_number > targetSeason && item.season_number > 0)
+          .sort((a: any, b: any) => a.season_number - b.season_number)[0];
+        if (nextSeasonInfo) {
+          nextSeason = nextSeasonInfo.season_number;
+          nextEpisode = 1;
+        }
+      }
+    }
+    const nextParams = nextSeason && nextEpisode ? `&nextSeason=${nextSeason}&nextEpisode=${nextEpisode}` : '';
+    router.push(`/player?id=${movie.id}&media_type=${movie.media_type}&trailerUrl=${encodeURIComponent(trailerKey || '')}&imdbId=${externalIds.imdb_id}&title=${encodeURIComponent(movie.title || movie.name)}&season=${targetSeason}&episode=${targetEpisode}&poster=${encodeURIComponent(movie.poster_path)}&episodeName=${encodeURIComponent(episode ? episode.name : `Episode ${targetEpisode}`)}${nextParams}`);
   }, [sourceStatus, movie, externalIds, lastWatched, episodes, router, trailerKey]);
 
   const checkIfInWatchlist = () => {
