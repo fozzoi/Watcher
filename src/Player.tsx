@@ -1,7 +1,7 @@
 // app/Player.tsx
 import React, { useEffect, useState, useRef } from 'react';
 import { View, StyleSheet, ActivityIndicator, Text, Platform, AppState, BackHandler, TouchableOpacity } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
+import { StatusBar, setStatusBarHidden } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 import { useRoute, useNavigation } from "@react-navigation/native";
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -48,16 +48,18 @@ export default function Player() {
   const [loading, setLoading] = useState(true);
   const [activeProvider, setActiveProvider] = useState("Watcher Engine");
   const appState = useRef(AppState.currentState);
+  const transitionRef = useRef(0);
 
   useEffect(() => {
-    enterFullScreen();
+    const transition = ++transitionRef.current;
+    enterFullScreen(transition);
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
       exitFullScreen().then(() => navigation.goBack());
       return true;
     });
     return () => {
-      exitFullScreen();
+      exitFullScreen(++transitionRef.current);
       subscription.remove();
       backHandler.remove();
     };
@@ -68,7 +70,7 @@ export default function Player() {
     const fetchStream = async () => {
       setLoading(true);
       try {
-        const baseUrl = "https://watcher-api-rho.vercel.app"; 
+        const baseUrl = "https://watcher-api-rho.vercel.app";
         const encodedTitle = encodeURIComponent(title);
         const endpoint = `${baseUrl}/api/get_stream?tmdb_id=${tmdbId}&media_type=${mediaType.toLowerCase()}&title=${encodedTitle}&season=${season || 1}&episode=${episode || 1}`;     
         
@@ -96,20 +98,26 @@ export default function Player() {
     return () => { isMounted = false; };
   }, [tmdbId, mediaType, season, episode]);
 
-  const enterFullScreen = async () => {
+  const enterFullScreen = async (transition: number) => {
     await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    if (transition !== transitionRef.current) return;
+    setStatusBarHidden(true, 'none');
     if (Platform.OS === 'android') await NavigationBar.setVisibilityAsync("hidden");
     handleSaveProgress();
   };
 
-  const exitFullScreen = async () => {
+  const exitFullScreen = async (transition = ++transitionRef.current) => {
+    if (transition !== transitionRef.current) return;
     await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    if (transition !== transitionRef.current) return;
+    setStatusBarHidden(false, 'none');
     if (Platform.OS === 'android') await NavigationBar.setVisibilityAsync("visible");
   };
 
   const handleAppStateChange = (nextAppState: any) => {
     if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
       if (Platform.OS === 'android') NavigationBar.setVisibilityAsync("hidden");
+      setStatusBarHidden(true, 'none');
     }
     appState.current = nextAppState;
   };

@@ -15,8 +15,10 @@ export let GLOBAL_CONFIG = {
   customApiKey: ""        
 };
 
-export const setGlobalConfig = (key: keyof typeof GLOBAL_CONFIG, value: any) => {
-  // @ts-ignore
+export const setGlobalConfig = <K extends keyof typeof GLOBAL_CONFIG>(
+  key: K,
+  value: (typeof GLOBAL_CONFIG)[K],
+) => {
   GLOBAL_CONFIG[key] = value;
   
   if (key === 'nsfwFilterEnabled' || key === 'hiRes') {
@@ -24,6 +26,24 @@ export const setGlobalConfig = (key: keyof typeof GLOBAL_CONFIG, value: any) => 
   }
   if (key === 'customApiKey') {
       console.log("Global Config: Custom API Key Updated");
+  }
+};
+
+export const loadGlobalConfig = async (): Promise<void> => {
+  try {
+    const [savedHiRes, savedNsfw] = await Promise.all([
+      AsyncStorage.getItem('settings_hires'),
+      AsyncStorage.getItem('settings_nsfw'),
+    ]);
+
+    if (savedHiRes !== null) {
+      GLOBAL_CONFIG.hiRes = JSON.parse(savedHiRes) === true;
+    }
+    if (savedNsfw !== null) {
+      GLOBAL_CONFIG.nsfwFilterEnabled = JSON.parse(savedNsfw) === true;
+    }
+  } catch (error) {
+    console.warn('Failed to load persisted app settings:', error);
   }
 };
 
@@ -229,6 +249,7 @@ const createCacheKey = (endpoint: string, params: Record<string, any> = {}) => {
 };
 
 const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}) => {
+  params = { ...params };
   if (GLOBAL_CONFIG.nsfwFilterEnabled) {
     params.include_adult = false;
     if (endpoint.includes('discover')) {

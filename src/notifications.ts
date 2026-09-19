@@ -11,6 +11,7 @@ dayjs.extend(isSameOrBefore);
 import { getMediaDetails, fetchPersonalisedDiscoveryContent } from './tmdb';
 import { getUserPreferences } from './userPreferences';
 import { checkAndNotifyUpdate } from './updater';
+import { isAdultContent, containsAdultContent } from './contentSafety';
 
 const BACKGROUND_FETCH_TASK = 'background-fetch-releases';
 const NOTIFS_ENABLED_KEY = 'smart_notifications_enabled';
@@ -19,12 +20,22 @@ const NOTIFICATION_TASK = 'watcher-notification-handler';
 let notificationCheckPromise: Promise<number> | null = null;
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
+  handleNotification: async (notification) => {
+    const content = notification.request.content;
+    const data = content.data as Record<string, unknown> | undefined;
+    const blocked = data?.adult === true || isAdultContent({
+      adult: data?.adult,
+      title: content.title,
+      name: content.body,
+      overview: data?.title,
+    }) || containsAdultContent(data?.title);
+    return {
+    shouldShowBanner: !blocked,
+    shouldShowList: !blocked,
     shouldPlaySound: true,
     shouldSetBadge: true,
-  }),
+    };
+  },
 });
 
 export const setupNotificationChannel = async () => {
@@ -122,6 +133,7 @@ const executeNotificationCheckInternal = async () => {
         try {
           const mType = item.media_type === 'tv' || item.first_air_date ? 'tv' : 'movie';
           const details = await getMediaDetails(item.id, mType);
+          if (isAdultContent(details)) return;
           
           if (mType === 'tv') {
             const lastAirDateStr = (details as any).last_air_date;
@@ -214,6 +226,7 @@ const executeNotificationCheckInternal = async () => {
           const notifyKey = `collection_part_${part.id}`;
 
           if (partReleaseDate && isRecentRelease(partReleaseDate) && !notifiedMediaIds.includes(notifyKey)) {
+            if (isAdultContent(part)) continue;
             await Notifications.scheduleNotificationAsync({
               content: {
                 title: `New in ${item.name}! 🌟`,
@@ -256,6 +269,10 @@ const executeNotificationCheckInternal = async () => {
         
         if (content && content.trendingMovies && content.trendingMovies.length > 0) {
           const topPick = content.trendingMovies[0];
+          if (isAdultContent(topPick)) {
+            await AsyncStorage.setItem('last_daily_foryou', now.toISOString());
+            return newNotifications;
+          }
           await Notifications.scheduleNotificationAsync({
             content: {
             title: `A pick for you 🌟`,

@@ -19,6 +19,7 @@ import { checkForAppUpdate, isUpdateNotificationEnabled, setUpdateNotificationEn
 import AppUpdateModal from '../src/components/shared/AppUpdateModal';
 import { ThemedDialog, DialogButton } from '../src/components/shared/ThemedDialog';
 import { ActivityIndicator } from 'react-native';
+import { DEFAULT_PLAYER_PREFERENCES, getPlayerPreferences, PlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
 
 interface DialogConfig {
   visible: boolean;
@@ -38,6 +39,7 @@ const Settings = () => {
   const [isNsfwFilter, setIsNsfwFilter] = useState(true);
   const [isSmartNotifs, setIsSmartNotifs] = useState(true);
   const [isUpdateNotifs, setIsUpdateNotifs] = useState(true);
+  const [playerPreferences, setPlayerPreferences] = useState<PlayerPreferences>(DEFAULT_PLAYER_PREFERENCES);
   
   // App Update States
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -67,9 +69,11 @@ const Settings = () => {
       const savedNsfw = await AsyncStorage.getItem('settings_nsfw');
       const notifsEnabled = await isNotificationsEnabled();
       const updateNotifsEnabled = await isUpdateNotificationEnabled();
+      const savedPlayerPreferences = await getPlayerPreferences();
       
       setIsSmartNotifs(notifsEnabled);
       setIsUpdateNotifs(updateNotifsEnabled);
+      setPlayerPreferences(savedPlayerPreferences);
       
       if (savedHiRes !== null) {
         const val = JSON.parse(savedHiRes);
@@ -104,6 +108,32 @@ const Settings = () => {
   const toggleUpdateNotifs = async (value: boolean) => {
     setIsUpdateNotifs(value);
     await setUpdateNotificationEnabled(value);
+  };
+
+  const updatePlayerPreference = async (changes: Partial<PlayerPreferences>) => {
+    const next = await savePlayerPreferences(undefined, changes);
+    setPlayerPreferences(next);
+  };
+
+  const choosePlayerPreference = (
+    title: string,
+    current: string,
+    options: Array<{ label: string; value: string }>,
+    key: 'audioTrack' | 'subtitleTrack' | 'quality',
+  ) => {
+    showDialog({
+      title,
+      message: `Current: ${current || 'Default'}`,
+      type: 'info',
+      buttons: [
+        ...options.map((option) => ({
+          text: option.label,
+          style: option.value === current ? 'primary' as const : 'default' as const,
+          onPress: () => updatePlayerPreference({ [key]: option.value } as Partial<PlayerPreferences>),
+        })),
+        { text: 'Cancel', style: 'cancel' as const },
+      ],
+    });
   };
 
   const handleTestNotif = async () => {
@@ -384,6 +414,46 @@ const Settings = () => {
             title="Change Content Preferences" 
             subtitle="Update your languages, genres and favorite actors" 
             onPress={() => router.push('/onboarding')} 
+          />
+        </View>
+
+        {/* ── Player ── */}
+        <Text style={styles.sectionLabel}>PLAYER</Text>
+        <View style={styles.card}>
+          <ToggleRow
+            title="Mute Player"
+            subtitle="Remember the sound setting across playback sources"
+            value={playerPreferences.muted}
+            onValueChange={(value: boolean) => updatePlayerPreference({ muted: value })}
+          />
+          <View style={styles.separator} />
+          <ActionRow
+            title="Audio Track"
+            subtitle={playerPreferences.audioTrack || "Default audio"}
+            onPress={() => choosePlayerPreference("Audio Track", playerPreferences.audioTrack || "", [
+              { label: "Default", value: "" },
+              { label: "Original", value: "original" },
+            ], "audioTrack")}
+          />
+          <View style={styles.separator} />
+          <ActionRow
+            title="Subtitle Track"
+            subtitle={playerPreferences.subtitleTrack || "Subtitles off"}
+            onPress={() => choosePlayerPreference("Subtitle Track", playerPreferences.subtitleTrack || "", [
+              { label: "Off", value: "" },
+              { label: "English", value: "en" },
+            ], "subtitleTrack")}
+          />
+          <View style={styles.separator} />
+          <ActionRow
+            title="Video Quality"
+            subtitle={playerPreferences.quality.toUpperCase()}
+            onPress={() => choosePlayerPreference("Video Quality", playerPreferences.quality, [
+              { label: "Auto", value: "auto" },
+              { label: "1080p", value: "1080p" },
+              { label: "720p", value: "720p" },
+              { label: "480p", value: "480p" },
+            ], "quality")}
           />
         </View>
 
