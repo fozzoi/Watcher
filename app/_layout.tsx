@@ -14,7 +14,7 @@ import { registerForPushNotificationsAsync, syncPushTokenAndWatchlist } from '@/
 import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, setOnSavedItemsChangedListener } from '@/src/database';
-import { fetchEmbedding, fetchEmbeddingsBatch } from '@/src/tmdb';
+import { fetchEmbedding, fetchEmbeddingsBatch, loadGlobalConfig } from '@/src/tmdb';
 
 // Disable non-critical warnings
 LogBox.ignoreLogs([
@@ -201,6 +201,7 @@ export default function RootLayout() {
       try {
         initDb();
         await performMigration();
+        await loadGlobalConfig();
         setDatabaseReady(true);
         
         // Fire and forget silent background AI embedding sync for existing users

@@ -1,17 +1,9 @@
 // src/Scraper.ts
 import axios from 'axios';
 import { GLOBAL_CONFIG } from './tmdb';
+import { containsAdultContent } from './contentSafety';
 
 const BASE_URL = 'https://watcher-api-rho.vercel.app';
-const BLOCKED_WORDS = [
-  'porn', 'sex', 'xxx', 'x-x-x', 'brazzers', 'xart', 'x-art', 'nympho', 'adult', 
-  'cum', 'creampie', 'squirting', 'gangbang', 'onlyfans', 'ass', 'asses', 'boobs', 
-  'tits', 'pornographic', 'sexually', 'rape', 'hentai', 'naughty', 'nude', 
-  'naughtyamerica', 'milf', 'uncensored', 'jav', 'sukebei', 'erotica', 'incest', 
-  'teens', 'pussy', 'dick', 'cock', 'blowjob', 'naked', '.xxx.', 'stepsister', 
-  'stepmom', 'stepbrother', 'stepdaughter', 'stepdad', 'vixen', 'fetish', 
-  'blacked', 'bbc', 'anal', 'squirt'
-];
 const TRACKERS = '&tr=udp://tracker.opentrackr.org:1337/announce&tr=udp://open.stealth.si:80/announce&tr=udp://tracker.torrent.eu.org:451/announce&tr=udp://tracker.bittor.pw:1337/announce&tr=udp://public.popcorn-tracker.org:6969/announce';
 
 export interface TorrentResult {
@@ -38,7 +30,7 @@ export const searchTorrents = async (query: string): Promise<TorrentResult[]> =>
 
   // 🚨 PRE-SEARCH NSFW CHECK (Query Level)
   if (GLOBAL_CONFIG.nsfwFilterEnabled) {
-    const isNSFWQuery = BLOCKED_WORDS.some(word => query.toLowerCase().includes(word) || cleaned.toLowerCase().includes(word));
+    const isNSFWQuery = containsAdultContent(query, cleaned);
     if (isNSFWQuery) {
       console.log('🚨 Search blocked by NSFW filter');
       throw new Error("NSFW Filter is ON. This search query contains restricted words and was not forwarded.");
@@ -85,9 +77,7 @@ export const searchTorrents = async (query: string): Promise<TorrentResult[]> =>
   // 0. NSFW Filter
   if (GLOBAL_CONFIG.nsfwFilterEnabled) {
     aggregatedResults = aggregatedResults.filter(t => {
-      const normalizedTitle = t.name.toLowerCase();
-      // Drop the torrent if it contains any of the blocked words
-      return !BLOCKED_WORDS.some(word => normalizedTitle.includes(word));
+      return !containsAdultContent(t.name);
     });
   }
 

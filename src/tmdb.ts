@@ -15,8 +15,10 @@ export let GLOBAL_CONFIG = {
   customApiKey: ""        
 };
 
-export const setGlobalConfig = (key: keyof typeof GLOBAL_CONFIG, value: any) => {
-  // @ts-ignore
+export const setGlobalConfig = <K extends keyof typeof GLOBAL_CONFIG>(
+  key: K,
+  value: (typeof GLOBAL_CONFIG)[K],
+) => {
   GLOBAL_CONFIG[key] = value;
   
   if (key === 'nsfwFilterEnabled' || key === 'hiRes') {
@@ -24,6 +26,24 @@ export const setGlobalConfig = (key: keyof typeof GLOBAL_CONFIG, value: any) => 
   }
   if (key === 'customApiKey') {
       console.log("Global Config: Custom API Key Updated");
+  }
+};
+
+export const loadGlobalConfig = async (): Promise<void> => {
+  try {
+    const [savedHiRes, savedNsfw] = await Promise.all([
+      AsyncStorage.getItem('settings_hires'),
+      AsyncStorage.getItem('settings_nsfw'),
+    ]);
+
+    if (savedHiRes !== null) {
+      GLOBAL_CONFIG.hiRes = JSON.parse(savedHiRes) === true;
+    }
+    if (savedNsfw !== null) {
+      GLOBAL_CONFIG.nsfwFilterEnabled = JSON.parse(savedNsfw) === true;
+    }
+  } catch (error) {
+    console.warn('Failed to load persisted app settings:', error);
   }
 };
 
@@ -125,6 +145,7 @@ export interface TMDBCollectionDetails {
   overview: string;
   poster_path: string | null;
   backdrop_path: string | null;
+  media_type: "collection";
   parts: TMDBResult[];
 }
 
@@ -148,6 +169,9 @@ export interface TMDBResult {
   tagline?: string; 
   genre_ids?: number[];
   original_language?: string;
+  genres?: { id: number; name: string }[];
+  vote_count?: number;
+  popularity?: number;
    
   cast?: TMDBCastMember[]; 
   director?: TMDBCrewMember;
@@ -156,6 +180,7 @@ export interface TMDBResult {
   seasons?: TMDBSeason[];
   external_ids?: TMDBExternalIds; 
   videos?: TMDBVideo[]; 
+  images?: TMDBImage[];
    
   production_companies?: TMDBProductionCompany[];
   belongs_to_collection?: TMDBCollection | null;
@@ -229,6 +254,7 @@ const createCacheKey = (endpoint: string, params: Record<string, any> = {}) => {
 };
 
 const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}) => {
+  params = { ...params };
   if (GLOBAL_CONFIG.nsfwFilterEnabled) {
     params.include_adult = false;
     if (endpoint.includes('discover')) {
@@ -867,7 +893,7 @@ const fetchFreshPersonalisedContent = async (
       actorSlice.map(async (actor: any) => {
         try {
           const credits = await getPersonCombinedCredits(actor.id);
-          const topItems = (credits.cast || [])
+          const topItems = credits
             .filter((item: any) => item.poster_path && (item.vote_count || 0) > 10)
             .sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0))
             .slice(0, 15);
@@ -971,7 +997,7 @@ export const fetchMoreContentByType = async (type: string, page: number = 1): Pr
     const actorId = parseInt(type.replace('actor-', ''));
     try {
       const credits = await getPersonCombinedCredits(actorId);
-      return (credits.cast || []).filter((item: any) => item.poster_path);
+      return credits.filter((item: any) => item.poster_path);
     } catch { return []; }
   }
 
