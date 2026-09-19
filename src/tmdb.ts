@@ -145,6 +145,7 @@ export interface TMDBCollectionDetails {
   overview: string;
   poster_path: string | null;
   backdrop_path: string | null;
+  media_type: "collection";
   parts: TMDBResult[];
 }
 
@@ -168,6 +169,9 @@ export interface TMDBResult {
   tagline?: string; 
   genre_ids?: number[];
   original_language?: string;
+  genres?: { id: number; name: string }[];
+  vote_count?: number;
+  popularity?: number;
    
   cast?: TMDBCastMember[]; 
   director?: TMDBCrewMember;
@@ -176,6 +180,7 @@ export interface TMDBResult {
   seasons?: TMDBSeason[];
   external_ids?: TMDBExternalIds; 
   videos?: TMDBVideo[]; 
+  images?: TMDBImage[];
    
   production_companies?: TMDBProductionCompany[];
   belongs_to_collection?: TMDBCollection | null;
@@ -888,7 +893,7 @@ const fetchFreshPersonalisedContent = async (
       actorSlice.map(async (actor: any) => {
         try {
           const credits = await getPersonCombinedCredits(actor.id);
-          const topItems = (credits.cast || [])
+          const topItems = credits
             .filter((item: any) => item.poster_path && (item.vote_count || 0) > 10)
             .sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0))
             .slice(0, 15);
@@ -992,7 +997,7 @@ export const fetchMoreContentByType = async (type: string, page: number = 1): Pr
     const actorId = parseInt(type.replace('actor-', ''));
     try {
       const credits = await getPersonCombinedCredits(actorId);
-      return (credits.cast || []).filter((item: any) => item.poster_path);
+      return credits.filter((item: any) => item.poster_path);
     } catch { return []; }
   }
 
