@@ -1,8 +1,9 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+// src/components/aichat/AiStructuredList.tsx
+import React, { memo, useMemo } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import FormattedMarkdownText from './FormattedMarkdownText';
+import { ai } from './aiTheme';
 
 export type ListItem = {
   title?: string;
@@ -15,241 +16,134 @@ interface AiStructuredListProps {
   title?: string;
   text?: string;
   items: Array<ListItem | string>;
+  /** Numbers only when the order actually means something (rankings, steps). */
   ordered?: boolean;
 }
 
-export const AiStructuredList: React.FC<AiStructuredListProps> = ({
-  title,
-  text,
-  items = [],
-  ordered = true,
-}) => {
-  if (!items || items.length === 0) return null;
+export const AiStructuredList = memo(({ title, text, items = [], ordered = true }: AiStructuredListProps) => {
+  const rows = useMemo<ListItem[]>(
+    () =>
+      (items ?? [])
+        .map((it) => (it && typeof it === 'object' ? it : { title: String(it ?? '') }))
+        .filter((it) => it.title || it.subtitle),
+    [items]
+  );
+
+  if (!rows.length) return null;
 
   return (
     <View style={styles.container}>
-      {/* Optional intro commentary */}
       {!!text && (
         <View style={styles.textBubble}>
-          <FormattedMarkdownText text={text} style={styles.introText} />
+          <FormattedMarkdownText text={text} style={styles.introText} selectable />
         </View>
       )}
 
-      <View style={styles.listCard}>
-        {/* List Header */}
-        <LinearGradient
-          colors={['rgba(255,59,59,0.12)', 'rgba(255,255,255,0.02)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.cardHeader}
-        >
-          <View style={styles.headerIconContainer}>
-            <Ionicons name="list-circle-outline" size={18} color="#FF4D4D" />
+      <View style={styles.card}>
+        {!!title && (
+          <View style={styles.titleRow}>
+            <Ionicons name="list-outline" size={16} color={ai.accent} />
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {title}
+            </Text>
           </View>
-          <Text style={styles.cardTitle} numberOfLines={1}>
-            {title || 'Key Takeaways & Ranked Points'}
-          </Text>
-        </LinearGradient>
+        )}
 
-        {/* List Items */}
-        <View style={styles.itemsContainer}>
-          {items.map((item, index) => {
-            const isObj = typeof item === 'object' && item !== null;
-            const itemTitle = isObj ? item.title : String(item);
-            const itemSubtitle = isObj ? item.subtitle : undefined;
-            const itemValue = isObj ? item.value : undefined;
-            const itemTag = isObj ? item.tag : undefined;
-
-            return (
-              <View
-                key={index}
-                style={[
-                  styles.itemRow,
-                  index === items.length - 1 && styles.lastItemRow,
-                ]}
-              >
-                {/* Index / Bullet Indicator */}
-                <View style={styles.indexBadge}>
-                  {ordered ? (
-                    <Text style={styles.indexText}>{index + 1}</Text>
-                  ) : (
-                    <Ionicons name="sparkles" size={12} color="#FF6B6B" />
-                  )}
-                </View>
-
-                {/* Content */}
-                <View style={styles.itemContent}>
-                  <View style={styles.titleRow}>
-                    {!!itemTitle && (
-                      <FormattedMarkdownText
-                        text={itemTitle}
-                        style={styles.itemTitle}
-                        baseColor="#FFFFFF"
-                        boldColor="#FFF"
-                      />
-                    )}
-                    {!!itemTag && (
-                      <View style={styles.tagBadge}>
-                        <Text style={styles.tagText}>{itemTag}</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {!!itemSubtitle && (
-                    <FormattedMarkdownText
-                      text={itemSubtitle}
-                      style={styles.itemSubtitle}
-                      baseColor="#AAA"
-                    />
-                  )}
-
-                  {!!itemValue && (
-                    <View style={styles.valueRow}>
-                      <Ionicons name="analytics-outline" size={12} color="#4ADE80" />
-                      <Text style={styles.valueText}>{itemValue}</Text>
-                    </View>
-                  )}
-                </View>
+        {rows.map((item, i) => {
+          const headline = item.title || item.subtitle || '';
+          const detail = item.title ? item.subtitle : undefined;
+          return (
+            <View key={i} style={[styles.row, i === rows.length - 1 && styles.rowLast]}>
+              <View style={styles.lead}>
+                {ordered ? <Text style={styles.index}>{i + 1}</Text> : <View style={styles.dot} />}
               </View>
-            );
-          })}
-        </View>
+
+              <View style={styles.body}>
+                <FormattedMarkdownText text={headline} style={styles.itemTitle} baseColor="#FFFFFF" />
+                {!!detail && (
+                  <FormattedMarkdownText text={detail} style={styles.itemSubtitle} baseColor={ai.textDim} />
+                )}
+                {!!item.tag && (
+                  <View style={styles.tag}>
+                    <Text style={styles.tagText}>{item.tag}</Text>
+                  </View>
+                )}
+              </View>
+
+              {!!item.value && (
+                <Text style={styles.value} numberOfLines={2}>
+                  {item.value}
+                </Text>
+              )}
+            </View>
+          );
+        })}
       </View>
     </View>
   );
-};
+});
 
+AiStructuredList.displayName = 'AiStructuredList';
 export default AiStructuredList;
 
 const styles = StyleSheet.create({
-  container: {
-    marginVertical: 6,
-    paddingHorizontal: 12,
-  },
+  container: { marginVertical: 6, paddingHorizontal: 12 },
   textBubble: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: 14,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: ai.border,
   },
-  introText: {
-    color: '#DDD',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  listCard: {
-    backgroundColor: '#121216',
-    borderRadius: 16,
+  introText: { color: '#DDD', fontSize: 14, lineHeight: 20 },
+  card: {
+    backgroundColor: ai.card,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: ai.border,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-    gap: 8,
-  },
-  headerIconContainer: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: 'rgba(255, 59, 59, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  itemsContainer: {
-    paddingVertical: 4,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.04)',
-    gap: 12,
-  },
-  lastItemRow: {
-    borderBottomWidth: 0,
-  },
-  indexBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 59, 59, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 59, 59, 0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  indexText: {
-    color: '#FF6B6B',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  itemContent: {
-    flex: 1,
-    gap: 4,
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 8,
-    flexWrap: 'wrap',
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 6,
   },
-  itemTitle: {
-    color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '700',
-    lineHeight: 18,
-    flex: 1,
+  cardTitle: { flex: 1, color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.10)',
   },
-  tagBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 7,
+  rowLast: { borderBottomWidth: 0 },
+  lead: { width: 20, alignItems: 'center', paddingTop: 2 },
+  index: { color: ai.accent, fontSize: 13, fontWeight: '700', lineHeight: 18 },
+  dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: ai.accent, marginTop: 7 },
+  body: { flex: 1, gap: 3 },
+  itemTitle: { fontSize: 14, fontWeight: '600', lineHeight: 19 },
+  itemSubtitle: { fontSize: 13, lineHeight: 18 },
+  tag: {
+    alignSelf: 'flex-start',
+    marginTop: 3,
+    paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: ai.accentSoft,
   },
-  tagText: {
-    color: '#DDD',
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  itemSubtitle: {
-    color: '#AAA',
+  tagText: { color: '#FF8A8A', fontSize: 11, fontWeight: '600' },
+  value: {
+    maxWidth: 96,
+    textAlign: 'right',
+    color: ai.accentText,
     fontSize: 12.5,
-    lineHeight: 17,
-  },
-  valueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  valueText: {
-    color: '#4ADE80',
-    fontSize: 11.5,
     fontWeight: '700',
+    lineHeight: 18,
   },
 });
