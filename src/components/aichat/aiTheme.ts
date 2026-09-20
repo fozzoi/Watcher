@@ -7,9 +7,9 @@ export const ai = {
   text: '#F2F2F5',
   textDim: '#B4B4BE',
   textMute: '#7C7C88',
-  accent: '#FF4D4D',
-  accentSoft: 'rgba(255,77,77,0.14)',
-  accentLine: 'rgba(255,77,77,0.35)',
+  accent: '#FF3B3B',
+  accentSoft: 'rgba(255,59,59,0.14)',
+  accentLine: 'rgba(255,59,59,0.35)',
   accentText: '#FF6B6B',
   link: '#FF8A8A',
 };

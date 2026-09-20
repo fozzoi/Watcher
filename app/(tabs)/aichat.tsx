@@ -1,36 +1,34 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { memo, useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   Image, ActivityIndicator, StyleSheet, StatusBar, Keyboard,
-  KeyboardAvoidingView, Platform, Dimensions, Modal, Pressable,
-  PanResponder,
+  KeyboardAvoidingView, Platform, PanResponder,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
-  FadeInUp, FadeIn, FadeInDown, FadeOut,
+  FadeInUp, FadeIn, ZoomIn,
   useSharedValue, useAnimatedStyle, withRepeat, withTiming,
-  withSpring, withSequence, withDelay, Easing,
-  interpolateColor, SlideInRight, ZoomIn, runOnJS,
+  withSequence, withDelay, Easing, interpolateColor,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { getSavedItems, getAllAiEmbeddings } from '../../src/database';
 
-import { getImageUrl, getFullDetails, fetchChatGemini, fetchPersonalisedDiscoveryContent, fetchEmbedding } from '../../src/tmdb';
+import { getImageUrl, getFullDetails, fetchChatGemini, fetchEmbedding } from '../../src/tmdb';
 import { getUserPreferences } from '../../src/userPreferences';
 import {
   Conversation, listConversations, saveConversation, deleteConversation,
-  titleFromFirstMessage, getUserMemory, setUserMemory,
+  titleFromFirstMessage, getUserMemory,
   getAiName, setAiName as persistAiName,
 } from '../../src/chatStorage';
 import ChatHistorySidebar from '../../src/components/aichat/ChatHistorySidebar';
 import FormattedMarkdownText from '../../src/components/aichat/FormattedMarkdownText';
 import AiComparisonTable from '../../src/components/aichat/AiComparisonTable';
 import AiStructuredList from '../../src/components/aichat/AiStructuredList';
-
-const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { parseAiReply } from '../../src/components/aichat/parseAiReply';
+import { ai } from '../../src/components/aichat/aiTheme';
 
 // ────────────────────────────────────────────────────────────────
 // Types
@@ -63,37 +61,50 @@ type ChatMessage =
   | { id: string; role: 'bot'; kind: 'movie_detail'; text?: string; movie: Movie }
   | { id: string; role: 'bot'; kind: 'table'; title?: string; text?: string; headers: string[]; rows: (string | number)[][] }
   | { id: string; role: 'bot'; kind: 'list'; title?: string; text?: string; items: any[]; ordered?: boolean }
-  | { id: string; role: 'bot'; kind: 'error'; text: string };
+  | { id: string; role: 'bot'; kind: 'error'; text: string; retryText?: string };
 
 const STARTER_PROMPTS = [
-  { emoji: '⚖️', label: 'Compare Oppenheimer vs Interstellar' },
-  { emoji: '📊', label: 'Top 5 highest grossing movies of all time' },
-  { emoji: '🤯', label: 'Mind-bending thriller' },
-  { emoji: '🚀', label: 'Stunning sci-fi' },
-  { emoji: '🎭', label: 'Emotional drama' },
-  { emoji: '🎲', label: 'Surprise me' },
+  'Compare Oppenheimer vs Interstellar',
+  'Top 5 highest grossing movies of all time',
+  'A mind-bending thriller',
+  'Stunning sci-fi',
+  'An emotional drama',
+  'Surprise me',
 ];
 
 const AI_NAME_SUGGESTIONS = ['Cine', 'Nova', 'Reel', 'Scout', 'Pixel', 'Movi'];
 
-const ACCENT = '#FF3B3B';
-const ACCENT_GLOW = 'rgba(255, 59, 59, 0.35)';
-const GLASS_BG = 'rgba(255, 255, 255, 0.04)';
-const GLASS_BORDER = 'rgba(255, 255, 255, 0.08)';
+const ACCENT = ai.accent;
 
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 
-const cosineSimilarity = (vecA: number[], vecB: number[]) => {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    normA += vecA[i] * vecA[i];
-    normB += vecB[i] * vecB[i];
+const cosineSimilarity = (a: number[], b: number[]) => {
+  if (!a?.length || a.length !== b?.length) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
   }
-  if (normA === 0 || normB === 0) return 0;
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+};
+
+/** Never show raw JSON / escape sequences, even for old saved conversations. */
+const displayText = (raw?: string) => {
+  const t = (raw ?? '').trim();
+  if (t.startsWith('{') || t.startsWith('```')) return parseAiReply(t).text;
+  return t;
+};
+
+/** Turns whatever the API layer returned into a safe ChatMessage. */
+const normalizeBotReply = (reply: any): ChatMessage => {
+  const msg: any = { id: uid(), role: 'bot', ...reply };
+  if (!msg.kind || msg.kind === 'text') {
+    msg.kind = 'text';
+    msg.text = displayText(msg.text);
+  }
+  return msg as ChatMessage;
 };
 
 // ────────────────────────────────────────────────────────────────
@@ -145,12 +156,10 @@ const AiNameSetup = ({ onComplete }: { onComplete: (name: string) => void }) => 
       <StatusBar barStyle="light-content" backgroundColor="#000" />
       <LinearGradient colors={['#0A0A0F', '#0D0512', '#050208']} style={StyleSheet.absoluteFill} />
 
-      {/* Floating orbs */}
       <Animated.View style={[setupStyles.orb, setupStyles.orb1, orb1Style]} />
       <Animated.View style={[setupStyles.orb, setupStyles.orb2, orb2Style]} />
 
       <View style={setupStyles.content}>
-        {/* Glowing icon */}
         <Animated.View style={[setupStyles.iconContainer, glowStyle]}>
           <LinearGradient
             colors={['rgba(255,59,59,0.25)', 'rgba(255,59,59,0.05)']}
@@ -168,7 +177,6 @@ const AiNameSetup = ({ onComplete }: { onComplete: (name: string) => void }) => 
           Give me a name and I'll be your personal movie guide
         </Animated.Text>
 
-        {/* Name input */}
         <Animated.View entering={FadeInUp.delay(700).springify()} style={setupStyles.inputContainer}>
           <LinearGradient
             colors={['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.02)']}
@@ -188,10 +196,10 @@ const AiNameSetup = ({ onComplete }: { onComplete: (name: string) => void }) => 
           </LinearGradient>
         </Animated.View>
 
-        {/* Suggestions */}
         <Animated.View entering={FadeInUp.delay(900).springify()} style={setupStyles.suggestionsRow}>
-          {AI_NAME_SUGGESTIONS.map((sug, i) => (
-            <TouchableOpacity activeOpacity={0.95}
+          {AI_NAME_SUGGESTIONS.map((sug) => (
+            <TouchableOpacity
+              activeOpacity={0.9}
               key={sug}
               style={[setupStyles.suggestionChip, name === sug && setupStyles.suggestionChipActive]}
               onPress={() => { Haptics.selectionAsync(); setName(sug); }}
@@ -201,13 +209,8 @@ const AiNameSetup = ({ onComplete }: { onComplete: (name: string) => void }) => 
           ))}
         </Animated.View>
 
-        {/* Continue button */}
         <Animated.View entering={FadeInUp.delay(1100).springify()}>
-          <TouchableOpacity
-            style={[setupStyles.continueBtn, !name.trim() && { opacity: 0.5 }]}
-            onPress={handleSubmit}
-            activeOpacity={0.95}
-          >
+          <TouchableOpacity style={setupStyles.continueBtn} onPress={handleSubmit} activeOpacity={0.9}>
             <LinearGradient
               colors={[ACCENT, '#CC2020']}
               start={{ x: 0, y: 0 }}
@@ -225,91 +228,102 @@ const AiNameSetup = ({ onComplete }: { onComplete: (name: string) => void }) => 
 };
 
 // ────────────────────────────────────────────────────────────────
-// Animated Typing Indicator
+// Small building blocks
 // ────────────────────────────────────────────────────────────────
 
-const GlowingTypingDots = () => {
-  const dot1 = useSharedValue(0);
-  const dot2 = useSharedValue(0);
-  const dot3 = useSharedValue(0);
-  const haloGlow = useSharedValue(0);
-
+const Dot = ({ delay }: { delay: number }) => {
+  const v = useSharedValue(0);
   useEffect(() => {
-    dot1.value = withRepeat(withSequence(
-      withTiming(1, { duration: 400 }), withTiming(0, { duration: 400 })
-    ), -1);
-    dot2.value = withDelay(150, withRepeat(withSequence(
-      withTiming(1, { duration: 400 }), withTiming(0, { duration: 400 })
-    ), -1));
-    dot3.value = withDelay(300, withRepeat(withSequence(
-      withTiming(1, { duration: 400 }), withTiming(0, { duration: 400 })
-    ), -1));
-    haloGlow.value = withRepeat(withTiming(1, { duration: 1200 }), -1, true);
+    v.value = withDelay(
+      delay,
+      withRepeat(withSequence(withTiming(1, { duration: 380 }), withTiming(0, { duration: 380 })), -1)
+    );
   }, []);
-
-  const dot1Style = useAnimatedStyle(() => ({
-    transform: [{ translateY: -dot1.value * 6 }, { scale: 0.9 + dot1.value * 0.3 }],
-    backgroundColor: interpolateColor(dot1.value, [0, 1], ['#555', ACCENT]),
-    shadowColor: ACCENT,
-    shadowOpacity: dot1.value * 0.8,
-    shadowRadius: 6,
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateY: -v.value * 5 }],
+    backgroundColor: interpolateColor(v.value, [0, 1], ['#555', ACCENT]),
   }));
-
-  const dot2Style = useAnimatedStyle(() => ({
-    transform: [{ translateY: -dot2.value * 6 }, { scale: 0.9 + dot2.value * 0.3 }],
-    backgroundColor: interpolateColor(dot2.value, [0, 1], ['#555', ACCENT]),
-    shadowColor: ACCENT,
-    shadowOpacity: dot2.value * 0.8,
-    shadowRadius: 6,
-  }));
-
-  const dot3Style = useAnimatedStyle(() => ({
-    transform: [{ translateY: -dot3.value * 6 }, { scale: 0.9 + dot3.value * 0.3 }],
-    backgroundColor: interpolateColor(dot3.value, [0, 1], ['#555', ACCENT]),
-    shadowColor: ACCENT,
-    shadowOpacity: dot3.value * 0.8,
-    shadowRadius: 6,
-  }));
-
-  const haloStyle = useAnimatedStyle(() => ({
-    opacity: 0.1 + haloGlow.value * 0.15,
-    transform: [{ scale: 1 + haloGlow.value * 0.1 }],
-  }));
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 }}>
-      <Animated.View style={[styles.typingDot, dot1Style]} />
-      <Animated.View style={[styles.typingDot, dot2Style]} />
-      <Animated.View style={[styles.typingDot, dot3Style]} />
-    </View>
-  );
+  return <Animated.View style={[styles.typingDot, style]} />;
 };
 
-// ────────────────────────────────────────────────────────────────
-// Pulsing header glow
-// ────────────────────────────────────────────────────────────────
+const TypingDots = () => (
+  <View style={styles.typingRow}>
+    <Dot delay={0} />
+    <Dot delay={150} />
+    <Dot delay={300} />
+  </View>
+);
 
-const HeaderGlowBar = () => {
-  const glow = useSharedValue(0);
-  useEffect(() => {
-    glow.value = withRepeat(withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.ease) }), -1, true);
-  }, []);
+const IconBtn = ({
+  name, onPress, label, disabled, color = 'white',
+}: {
+  name: React.ComponentProps<typeof Ionicons>['name'];
+  onPress: () => void;
+  label: string;
+  disabled?: boolean;
+  color?: string;
+}) => (
+  <TouchableOpacity
+    activeOpacity={0.7}
+    onPress={onPress}
+    disabled={disabled}
+    accessibilityRole="button"
+    accessibilityLabel={label}
+    style={[styles.iconBtn, disabled && { opacity: 0.35 }]}
+  >
+    <Ionicons name={name} size={21} color={color} />
+  </TouchableOpacity>
+);
 
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: 0.3 + glow.value * 0.5,
-  }));
+const MovieCard = memo(({
+  movie, watched, onPress, lines = 2,
+}: { movie: Movie; watched: boolean; onPress: () => void; lines?: number }) => {
+  const title = movie.title || movie.name || 'Untitled';
+  const year = (movie.release_date || movie.first_air_date)?.split('-')[0];
+  const rating = Number(movie.vote_average) > 0 ? Number(movie.vote_average).toFixed(1) : null;
 
   return (
-    <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1 }, glowStyle]}>
-      <LinearGradient
-        colors={['transparent', ACCENT_GLOW, ACCENT, ACCENT_GLOW, 'transparent']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={{ flex: 1 }}
-      />
-    </Animated.View>
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={styles.movieCard}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${title}`}
+    >
+      {movie.poster_path ? (
+        <Image source={{ uri: getImageUrl(movie.poster_path, 'w185') }} style={styles.poster} resizeMode="cover" />
+      ) : (
+        <View style={[styles.poster, styles.posterEmpty]}>
+          <Ionicons name="film-outline" size={22} color={ai.textMute} />
+        </View>
+      )}
+
+      <View style={styles.movieBody}>
+        <Text style={styles.movieTitle} numberOfLines={2}>{title}</Text>
+        <View style={styles.metaRow}>
+          {rating && (
+            <>
+              <Ionicons name="star" size={11} color="#FFD700" />
+              <Text style={styles.metaText}>{rating}</Text>
+            </>
+          )}
+          {!!year && <Text style={styles.metaMuted}>{rating ? '·  ' : ''}{year}</Text>}
+          {watched && (
+            <View style={styles.watchedPill}>
+              <Ionicons name="checkmark" size={10} color={ai.textDim} />
+              <Text style={styles.watchedText}>Watched</Text>
+            </View>
+          )}
+        </View>
+        {!!movie.overview && (
+          <Text style={styles.movieOverview} numberOfLines={lines}>{movie.overview}</Text>
+        )}
+      </View>
+
+      <Ionicons name="chevron-forward" size={16} color={ai.textMute} />
+    </TouchableOpacity>
   );
-};
+});
 
 // ────────────────────────────────────────────────────────────────
 // Main Chat Screen
@@ -318,9 +332,8 @@ const HeaderGlowBar = () => {
 const AiChat = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const listRef = useRef<FlatList>(null);
+  const listRef = useRef<FlatList<ChatMessage>>(null);
 
-  // State
   const [aiName, setAiNameState] = useState<string | null>(null); // null = loading, '' = needs setup
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -335,24 +348,23 @@ const AiChat = () => {
   const [watchlistCollections, setWatchlistCollections] = useState<string[]>([]);
   const [userPrefs, setUserPrefs] = useState<any>(null);
   const [inputFocused, setInputFocused] = useState(false);
+  const [showJump, setShowJump] = useState(false);
 
-  // Animations
-  const inputGlow = useSharedValue(0);
-  const sendBtnScale = useSharedValue(1);
+  // scroll bookkeeping
+  const messagesRef = useRef<ChatMessage[]>([]);
+  messagesRef.current = messages;
+  const listHeight = useRef(0);
+  const nearBottom = useRef(true);
+  const pendingReplyId = useRef<string | null>(null);
+  const openingRef = useRef(false);
 
   const edgePanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (evt, gestureState) => {
-        return (
-          !sidebarOpen &&
-          evt.nativeEvent.pageX < 45 &&
-          gestureState.dx > 20 &&
-          Math.abs(gestureState.dx) > Math.abs(gestureState.dy)
-        );
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx > 35) {
+      onMoveShouldSetPanResponder: (evt, g) =>
+        evt.nativeEvent.pageX < 45 && g.dx > 20 && Math.abs(g.dx) > Math.abs(g.dy),
+      onPanResponderRelease: (_, g) => {
+        if (g.dx > 35) {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setSidebarOpen(true);
         }
@@ -360,29 +372,32 @@ const AiChat = () => {
     })
   ).current;
 
-  const inputGlowStyle = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(inputGlow.value, [0, 1], ['rgba(255,255,255,0.08)', 'rgba(255,59,59,0.4)']),
-    shadowOpacity: inputGlow.value * 0.3,
-    shadowColor: ACCENT,
-    shadowRadius: 12,
-  }));
+  // ── Scrolling ───────────────────────────────────────────────
+  const scrollToEnd = useCallback((animated = true) => {
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated }));
+  }, []);
 
-  const sendBtnAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: sendBtnScale.value }],
-  }));
+  // Long answers: land on the START of the reply. Short ones: stick to the bottom.
+  const onItemLayout = useCallback((id: string, h: number) => {
+    if (pendingReplyId.current !== id) return;
+    pendingReplyId.current = null;
+    const index = messagesRef.current.findIndex((m) => m.id === id);
+    if (index >= 0 && h > listHeight.current * 0.65) {
+      requestAnimationFrame(() =>
+        listRef.current?.scrollToIndex({ index, viewPosition: 0, animated: true })
+      );
+    } else {
+      scrollToEnd();
+    }
+  }, [scrollToEnd]);
 
   useEffect(() => {
-    inputGlow.value = withTiming(inputFocused ? 1 : 0, { duration: 300 });
-  }, [inputFocused]);
-
-  const makeGreeting = (name: string, memory: string): ChatMessage => ({
-    id: uid(),
-    role: 'bot',
-    kind: 'text',
-    text: memory
-      ? `Lights, camera, action. I'm ${name} 🎬 Last time I noticed you're into ${memory.slice(0, 60)}... Ready to find your next obsession?`
-      : `Lights, camera, action. I'm ${name} 🎬\n\nThrow me a vibe, a genre, an actor, or just say "surprise me" — I'll find something worth watching.`,
-  });
+    const evt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const sub = Keyboard.addListener(evt, () => {
+      if (nearBottom.current) scrollToEnd();
+    });
+    return () => sub.remove();
+  }, [scrollToEnd]);
 
   // ── Load everything on mount ────────────────────────────────
   useEffect(() => {
@@ -398,14 +413,12 @@ const AiChat = () => {
       setConversations(convos);
       setUserPrefs(prefs);
 
-      // Load watched history
       try {
         const watched = getSavedItems('history');
         setWatchedIds(new Set(watched.map((i: any) => i.id)));
         setWatchedTitles(watched.map((i: any) => i.title || i.name || '').filter(Boolean));
       } catch {}
 
-      // Load watchlist (saved movies/TV and collections the user wants to watch)
       try {
         const wl = getSavedItems('watchlist');
         const collections = wl.filter((i: any) => i.media_type === 'collection');
@@ -414,18 +427,13 @@ const AiChat = () => {
         setWatchlistCollections(collections.map((i: any) => i.name || i.title || '').filter(Boolean));
       } catch {}
 
-      if (name) {
-        setAiNameState(name);
-        setMessages([makeGreeting(name, mem)]);
-      } else {
-        setAiNameState(''); // trigger setup screen
-      }
+      setAiNameState(name || ''); // '' triggers the setup screen
     })();
   }, []);
 
-  // ── Persist conversations ───────────────────────────────────
+  // ── Persist conversations (never while typing / never empty) ─
   useEffect(() => {
-    if (messages.length <= 1) return;
+    if (messages.length === 0 || messages.some((m) => m.kind === 'typing')) return;
     const convo: Conversation = {
       id: conversationId,
       title: titleFromFirstMessage(
@@ -434,7 +442,9 @@ const AiChat = () => {
       messages: messages as any,
       updatedAt: Date.now(),
     };
-    saveConversation(convo).then(() => listConversations().then(setConversations));
+    saveConversation(convo)
+      .then(() => listConversations().then(setConversations))
+      .catch(() => {});
   }, [messages]);
 
   // ── Actions ─────────────────────────────────────────────────
@@ -443,12 +453,12 @@ const AiChat = () => {
     await persistAiName(name);
     setAiNameState(name);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setMessages([makeGreeting(name, userMemory)]);
+    setMessages([]);
   };
 
   const startNewChat = () => {
     setConversationId(uid());
-    setMessages([makeGreeting(aiName || 'Cine', userMemory)]);
+    setMessages([]);
     setSidebarOpen(false);
   };
 
@@ -456,95 +466,93 @@ const AiChat = () => {
     const convo = conversations.find((c) => c.id === id);
     if (!convo) return;
     setConversationId(convo.id);
-    setMessages(convo.messages as ChatMessage[]);
+    setMessages((convo.messages as ChatMessage[]).filter((m) => m.kind !== 'typing'));
     setSidebarOpen(false);
+    setTimeout(() => scrollToEnd(false), 50);
   };
 
   const removeConversation = async (id: string) => {
     await deleteConversation(id);
-    const updated = await listConversations();
-    setConversations(updated);
+    setConversations(await listConversations());
     if (id === conversationId) startNewChat();
   };
 
-  const scrollToEnd = () => {
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
-  };
-
-  const pushMessage = (m: ChatMessage) => {
+  const pushMessage = useCallback((m: ChatMessage) => {
     setMessages((prev) => [...prev, m]);
+    nearBottom.current = true;
     scrollToEnd();
-  };
+  }, [scrollToEnd]);
 
-  const handleSend = useCallback(async (override?: string) => {
+  const handleSend = useCallback(async (override?: string, isRetry = false) => {
     const text = (override ?? input).trim();
     if (!text || sending) return;
 
     Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setInput('');
+    if (override === undefined) setInput('');
     setSending(true);
 
-    // Send button bounce
-    sendBtnScale.value = withSequence(
-      withSpring(0.85, { damping: 4 }),
-      withSpring(1, { damping: 6 })
-    );
+    // history for the API: no typing/error rows, and on retry no duplicate of the failed question
+    let history = messages.filter((m) => m.kind !== 'typing' && m.kind !== 'error');
+    if (isRetry) {
+      const last = history[history.length - 1];
+      if (last && last.role === 'user' && (last as any).text === text) history = history.slice(0, -1);
+    } else {
+      pushMessage({ id: uid(), role: 'user', kind: 'text', text });
+    }
 
-    pushMessage({ id: uid(), role: 'user', kind: 'text', text });
     const typingId = uid();
     pushMessage({ id: typingId, role: 'bot', kind: 'typing' });
 
     try {
+      // Rank the watchlist by similarity to this question. Optional: failures must never block the reply.
       let topWatchlistTitles = watchlistTitles;
-      const userEmbedding = await fetchEmbedding(text);
-      
-      if (userEmbedding && watchlistTitles.length > 0) {
-        const allAiEmbeddings = getAllAiEmbeddings();
-        if (allAiEmbeddings.length > 0) {
-          const scored = allAiEmbeddings.map(item => ({
-            mediaId: item.media_id,
-            score: cosineSimilarity(userEmbedding, item.embedding)
-          })).sort((a, b) => b.score - a.score);
-          
-          const topIds = new Set(scored.slice(0, 25).map(s => s.mediaId));
-          const wl = getSavedItems('watchlist');
-          const topMovies = wl.filter((i: any) => topIds.has(i.id));
-          topWatchlistTitles = topMovies.map((i: any) => i.title || i.name || '').filter(Boolean);
-          
-          if (topWatchlistTitles.length === 0) topWatchlistTitles = watchlistTitles;
+      if (watchlistTitles.length > 0) {
+        try {
+          const userEmbedding = await fetchEmbedding(text);
+          const all = userEmbedding ? getAllAiEmbeddings() : [];
+          if (all.length > 0) {
+            const topIds = new Set(
+              all
+                .map((item: any) => ({ mediaId: item.media_id, score: cosineSimilarity(userEmbedding, item.embedding) }))
+                .sort((a: any, b: any) => b.score - a.score)
+                .slice(0, 25)
+                .map((s: any) => s.mediaId)
+            );
+            const picked = getSavedItems('watchlist')
+              .filter((i: any) => topIds.has(i.id))
+              .map((i: any) => i.title || i.name || '')
+              .filter(Boolean);
+            if (picked.length > 0) topWatchlistTitles = picked;
+          }
+        } catch (e) {
+          console.warn('Watchlist ranking skipped:', e);
         }
       }
+
       const enrichedMemory = `${userMemory}\n\n[System Note: The user has a total of ${watchlistTitles.length} movies/shows saved in their Watchlist, and ${watchedTitles.length} titles in their Watched history.]`;
 
-      const reply = await fetchChatGemini(text, messages, enrichedMemory, watchedTitles, topWatchlistTitles, watchlistCollections, userPrefs);
-      setMessages((prev) => {
-        const withoutTyping = prev.filter((m) => m.id !== typingId);
-        return [...withoutTyping, { id: uid(), ...reply } as ChatMessage];
-      });
-      scrollToEnd();
+      const reply = await fetchChatGemini(
+        text, history, enrichedMemory, watchedTitles, topWatchlistTitles, watchlistCollections, userPrefs
+      );
 
-      // Assuming updateUserMemory is imported elsewhere as per requirements
+      const bot = normalizeBotReply(reply);
+      pendingReplyId.current = bot.id;
+      setMessages((prev) => [...prev.filter((m) => m.id !== typingId), bot]);
+
       // updateUserMemory(userMemory, text).then((updated) => { ... });
     } catch (e) {
-      console.error('getGeminiChatReply failed:', e);
-      setMessages((prev) => {
-        const withoutTyping = prev.filter((m) => m.id !== typingId);
-        return [
-          ...withoutTyping,
-          { id: uid(), role: 'bot', kind: 'error', text: "Couldn't reach the AI — try again?" },
-        ];
-      });
+      console.error('fetchChatGemini failed:', e);
+      pendingReplyId.current = null;
+      setMessages((prev) => [
+        ...prev.filter((m) => m.id !== typingId),
+        { id: uid(), role: 'bot', kind: 'error', text: "Couldn't reach the AI.", retryText: text },
+      ]);
+      scrollToEnd();
     } finally {
       setSending(false);
     }
-  }, [input, sending, messages, userMemory, watchedTitles]);
-
-  const openMovie = async (item: Movie) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const full = await getFullDetails(item);
-    navigateToDetails(full);
-  };
+  }, [input, sending, messages, userMemory, watchedTitles, watchlistTitles, watchlistCollections, userPrefs, pushMessage, scrollToEnd]);
 
   const navigateToDetails = (full: any) => {
     Keyboard.dismiss();
@@ -552,272 +560,160 @@ const AiChat = () => {
     router.push(`/movie/${full.id}?media_type=${mType}`);
   };
 
-  const navigateToCastDetails = (actor: any) => {
+  const openMovie = async (item: Movie) => {
+    if (openingRef.current) return;
+    openingRef.current = true;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      navigateToDetails((await getFullDetails(item)) || item);
+    } catch {
+      navigateToDetails(item); // still open the page if enrichment fails
+    } finally {
+      openingRef.current = false;
+    }
+  };
+
+  const navigateToCastDetails = (actor: Actor) => {
     Keyboard.dismiss();
     router.push(`/cast/${actor.id}`);
   };
 
-  const isMovieWatched = (item?: Movie | null) => {
-    if (!item?.id) return false;
-    return watchedIds.has(Number(item.id));
-  };
+  const isMovieWatched = (item?: Movie | null) => !!item?.id && watchedIds.has(Number(item.id));
 
   // ── Renderers ───────────────────────────────────────────────
 
-  const renderTextBubble = (m: Extract<ChatMessage, { kind: 'text' }>, index: number) => (
-    <View>
-      {m.role === 'user' ? (
-        <LinearGradient
-          colors={[ACCENT, '#CC2020']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.bubble, styles.bubbleUser]}
-        >
-          <FormattedMarkdownText
-            text={m.text}
-            style={styles.bubbleUserText}
-            baseColor="#FFFFFF"
-            boldColor="#FFFFFF"
-          />
-        </LinearGradient>
-      ) : (
-        <View style={[styles.bubble, styles.bubbleBot]}>
-          <FormattedMarkdownText
-            text={m.text}
-            style={styles.bubbleBotText}
-            baseColor="#E0E0E0"
-            boldColor="#FFFFFF"
-          />
-        </View>
-      )}
-    </View>
-  );
-
-  const renderError = (m: Extract<ChatMessage, { kind: 'error' }>) => (
-    <View>
-      <View style={[styles.bubble, styles.bubbleError]}>
-        <Ionicons name="alert-circle-outline" size={16} color="#FF6B6B" />
-        <Text style={styles.bubbleErrorText}>{m.text}</Text>
-      </View>
-    </View>
-  );
-
-  const renderTyping = () => (
-    <View>
-      <View style={[styles.bubble, styles.bubbleBot, { flexDirection: 'row', gap: 4, paddingVertical: 14 }]}>
-        <GlowingTypingDots />
-      </View>
-    </View>
-  );
-
-  const renderMovieList = (m: Extract<ChatMessage, { kind: 'movies' }>) => {
-    const validMovies = (m.movies || []).filter((item): item is Movie => !!item && !!item.id);
+  // plain function (not a component) so it doesn't remount on every render
+  const botText = (text?: string) => {
+    const t = displayText(text);
+    if (!t) return null;
     return (
-      <View style={{ marginBottom: 4 }}>
-        {!!m.text && (
-          <View style={[styles.bubble, styles.bubbleBot]}>
-            <FormattedMarkdownText
-              text={m.text}
-              style={styles.bubbleBotText}
-              baseColor="#E0E0E0"
-              boldColor="#FFFFFF"
-            />
-          </View>
-        )}
-        {validMovies.length > 0 && (
-          <View style={{ paddingHorizontal: 16, gap: 12, paddingVertical: 8 }}>
-            {validMovies.map((item) => {
-              const watched = isMovieWatched(item);
-              return (
-                <TouchableOpacity key={String(item.id)} activeOpacity={0.95} style={styles.detailCard} onPress={() => openMovie(item)}>
-                  <Image
-                    source={{ uri: getImageUrl(item.poster_path, 'w92') }}
-                    style={styles.detailGlow}
-                    blurRadius={30}
-                  />
-                  <LinearGradient
-                    colors={['rgba(20,20,20,0.85)', 'rgba(20,20,20,0.95)']}
-                    style={styles.detailInner}
-                  >
-                    <Image source={{ uri: getImageUrl(item.poster_path, 'w185') }} style={styles.detailPoster} />
-                    <View style={styles.detailContent}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 24 }}>
-                        <Text style={styles.detailTitle} numberOfLines={2}>{item.title || item.name}</Text>
-                        {watched && (
-                          <View style={[styles.watchedBadge, { position: 'relative', top: 0, right: 0 }]}>
-                            <Ionicons name="checkmark-circle" size={11} color="#4ADE80" />
-                            <Text style={styles.watchedBadgeText}>Watched</Text>
-                          </View>
-                        )}
-                      </View>
-                      <View style={styles.tagsRow}>
-                        <View style={styles.tag}>
-                          <Ionicons name="star" color="#FFD700" size={10} />
-                          <Text style={styles.tagText}>{item.vote_average?.toFixed(1) ?? '–'}</Text>
-                        </View>
-                        <View style={[styles.tag, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
-                          <Text style={[styles.tagText, { color: '#AAA' }]}>
-                            {(item.release_date || item.first_air_date)?.split('-')[0] || 'N/A'}
-                          </Text>
-                        </View>
-                      </View>
-                      <Text style={styles.detailOverview} numberOfLines={3}>{item.overview}</Text>
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
+      <View style={styles.botRow}>
+        <FormattedMarkdownText text={t} style={styles.botText} baseColor="#E8E8E8" boldColor="#FFFFFF" selectable />
       </View>
     );
   };
 
-  const renderActorList = (m: Extract<ChatMessage, { kind: 'actors' }>) => {
-    const validActors = (m.actors || []).filter((item): item is Actor => !!item && !!item.id);
-    return (
-      <View style={{ marginBottom: 4 }}>
-        {!!m.text && (
-          <View style={[styles.bubble, styles.bubbleBot]}>
-            <FormattedMarkdownText
-              text={m.text}
-              style={styles.bubbleBotText}
-              baseColor="#E0E0E0"
-              boldColor="#FFFFFF"
-            />
-          </View>
-        )}
-        {validActors.length > 0 && (
-          <FlatList
-            horizontal
-            data={validActors}
-            keyExtractor={(item) => String(item.id)}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16, gap: 16, paddingVertical: 8 }}
-            renderItem={({ item, index }) => (
-              <Animated.View entering={FadeInUp.delay(index * 80).springify()}>
-                <TouchableOpacity activeOpacity={0.95} style={styles.actorCard} onPress={() => navigateToCastDetails(item)}>
-                  <View style={styles.actorAvatarContainer}>
-                    <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.actorAvatar} />
-                    <LinearGradient
-                      colors={['transparent', 'rgba(255,59,59,0.15)']}
-                      style={styles.actorAvatarGlow}
-                    />
-                  </View>
-                  <Text numberOfLines={1} style={styles.actorName}>{item.name}</Text>
-                  {!!item.known_for && <Text numberOfLines={1} style={styles.actorKnownFor}>{item.known_for}</Text>}
-                </TouchableOpacity>
-              </Animated.View>
+  const renderBody = (m: ChatMessage) => {
+    switch (m.kind) {
+      case 'text':
+        if (m.role === 'user') {
+          return (
+            <View style={styles.userBubble}>
+              <FormattedMarkdownText text={m.text} style={styles.userText} baseColor="#FFFFFF" boldColor="#FFFFFF" selectable />
+            </View>
+          );
+        }
+        return botText(m.text);
+
+      case 'typing':
+        return <View style={styles.botRow}><TypingDots /></View>;
+
+      case 'movies': {
+        const movies = (m.movies || []).filter((x): x is Movie => !!x && !!x.id);
+        return (
+          <View>
+            {botText(m.text)}
+            {movies.length > 0 && (
+              <View style={styles.cardStack}>
+                {movies.map((item) => (
+                  <MovieCard key={String(item.id)} movie={item} watched={isMovieWatched(item)} onPress={() => openMovie(item)} />
+                ))}
+              </View>
             )}
-          />
-        )}
-      </View>
-    );
-  };
-
-  const renderMovieDetail = (m: Extract<ChatMessage, { kind: 'movie_detail' }>) => {
-    if (!m.movie || !m.movie.id) {
-      return (
-        <View style={{ marginBottom: 4 }}>
-          {!!m.text && (
-            <View style={[styles.bubble, styles.bubbleBot]}>
-              <FormattedMarkdownText
-                text={m.text}
-                style={styles.bubbleBotText}
-                baseColor="#E0E0E0"
-                boldColor="#FFFFFF"
-              />
-            </View>
-          )}
-        </View>
-      );
-    }
-    const watched = isMovieWatched(m.movie);
-    return (
-      <View style={{ marginBottom: 4 }}>
-        {!!m.text && (
-          <View style={[styles.bubble, styles.bubbleBot]}>
-            <FormattedMarkdownText
-              text={m.text}
-              style={styles.bubbleBotText}
-              baseColor="#E0E0E0"
-              boldColor="#FFFFFF"
-            />
           </View>
-        )}
-        <TouchableOpacity activeOpacity={0.95} style={styles.detailCard} onPress={() => openMovie(m.movie)}>
-          <Image
-            source={{ uri: getImageUrl(m.movie.poster_path, 'w92') }}
-            style={styles.detailGlow}
-            blurRadius={30}
-          />
-          <LinearGradient
-            colors={['rgba(20,20,20,0.85)', 'rgba(20,20,20,0.95)']}
-            style={styles.detailInner}
-          >
-            <Image source={{ uri: getImageUrl(m.movie.poster_path, 'w185') }} style={styles.detailPoster} />
-            <View style={styles.detailContent}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={styles.detailTitle} numberOfLines={2}>{m.movie.title || m.movie.name}</Text>
-                {watched && (
-                  <View style={[styles.watchedBadge, { position: 'relative', top: 0, right: 0 }]}>
-                    <Ionicons name="checkmark-circle" size={11} color="#4ADE80" />
-                    <Text style={styles.watchedBadgeText}>Watched</Text>
-                  </View>
+        );
+      }
+
+      case 'movie_detail':
+        return (
+          <View>
+            {botText(m.text)}
+            {!!m.movie?.id && (
+              <View style={styles.cardStack}>
+                <MovieCard movie={m.movie} watched={isMovieWatched(m.movie)} onPress={() => openMovie(m.movie)} lines={4} />
+              </View>
+            )}
+          </View>
+        );
+
+      case 'actors': {
+        const actors = (m.actors || []).filter((x): x is Actor => !!x && !!x.id);
+        return (
+          <View>
+            {botText(m.text)}
+            {actors.length > 0 && (
+              <FlatList
+                horizontal
+                nestedScrollEnabled
+                data={actors}
+                keyExtractor={(a) => String(a.id)}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.actorRow}
+                renderItem={({ item, index }) => (
+                  <Animated.View entering={FadeInUp.delay(index * 70).springify()}>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      style={styles.actorCard}
+                      onPress={() => navigateToCastDetails(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.name}
+                    >
+                      {item.profile_path ? (
+                        <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.actorAvatar} />
+                      ) : (
+                        <View style={[styles.actorAvatar, styles.posterEmpty]}>
+                          <Ionicons name="person-outline" size={24} color={ai.textMute} />
+                        </View>
+                      )}
+                      <Text numberOfLines={1} style={styles.actorName}>{item.name}</Text>
+                      {!!item.known_for && <Text numberOfLines={1} style={styles.actorKnownFor}>{item.known_for}</Text>}
+                    </TouchableOpacity>
+                  </Animated.View>
                 )}
-              </View>
-              <View style={styles.tagsRow}>
-                <View style={styles.tag}>
-                  <Ionicons name="star" color="#FFD700" size={10} />
-                  <Text style={styles.tagText}>{m.movie.vote_average?.toFixed(1) ?? '–'}</Text>
-                </View>
-                <View style={[styles.tag, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
-                  <Text style={[styles.tagText, { color: '#AAA' }]}>
-                    {(m.movie.release_date || m.movie.first_air_date)?.split('-')[0] || 'N/A'}
-                  </Text>
-                </View>
-              </View>
-              <Text style={styles.detailOverview} numberOfLines={4}>{m.movie.overview}</Text>
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
-    );
-  };
+              />
+            )}
+          </View>
+        );
+      }
 
-  const renderTable = (m: Extract<ChatMessage, { kind: 'table' }>) => (
-    <AiComparisonTable
-      title={m.title}
-      text={m.text}
-      headers={m.headers}
-      rows={m.rows}
-    />
-  );
+      case 'table':
+        return <AiComparisonTable title={m.title} text={m.text} headers={m.headers} rows={m.rows} />;
 
-  const renderList = (m: Extract<ChatMessage, { kind: 'list' }>) => (
-    <AiStructuredList
-      title={m.title}
-      text={m.text}
-      items={m.items}
-      ordered={m.ordered ?? true}
-    />
-  );
+      case 'list':
+        return <AiStructuredList title={m.title} text={m.text} items={m.items} ordered={m.ordered ?? true} />;
 
-  const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
-    switch (item.kind) {
-      case 'text': return renderTextBubble(item, index);
-      case 'typing': return renderTyping();
-      case 'movies': return renderMovieList(item);
-      case 'actors': return renderActorList(item);
-      case 'movie_detail': return renderMovieDetail(item);
-      case 'table': return renderTable(item);
-      case 'list': return renderList(item);
-      case 'error': return renderError(item);
-      default: return null;
+      case 'error':
+        return (
+          <View style={styles.errorRow}>
+            <Ionicons name="alert-circle-outline" size={16} color={ai.accentText} />
+            <Text style={styles.errorText}>{m.text}</Text>
+            {!!m.retryText && (
+              <TouchableOpacity
+                activeOpacity={0.7}
+                hitSlop={10}
+                onPress={() => {
+                  setMessages((prev) => prev.filter((x) => x.id !== m.id));
+                  handleSend(m.retryText, true);
+                }}
+              >
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        );
+
+      default:
+        return null;
     }
   };
 
-  // ── Loading state ───────────────────────────────────────────
+  const renderMessage = ({ item }: { item: ChatMessage }) => (
+    <View onLayout={(e) => onItemLayout(item.id, e.nativeEvent.layout.height)}>
+      {renderBody(item)}
+    </View>
+  );
+
+  // ── Loading / setup ─────────────────────────────────────────
   if (aiName === null) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -827,15 +723,37 @@ const AiChat = () => {
     );
   }
 
-  // ── Name setup screen ───────────────────────────────────────
   if (aiName === '') {
     return <AiNameSetup onComplete={handleNameSetup} />;
   }
 
-
-
   // ── Main chat ───────────────────────────────────────────────
-  const showStarterChips = messages.length === 1;
+  const isEmpty = messages.length === 0;
+  const canSend = !!input.trim() && !sending;
+
+  const hero = (
+    <Animated.View entering={FadeIn.duration(350)} style={styles.hero}>
+      <View style={styles.heroIcon}>
+        <MaterialCommunityIcons name="movie-open-outline" size={26} color={ACCENT} />
+      </View>
+      <Text style={styles.heroTitle}>What do you want to watch?</Text>
+      <Text style={styles.heroSub}>
+        Ask {aiName} for picks, comparisons, or facts about any movie or show.
+      </Text>
+      <View style={styles.chips}>
+        {STARTER_PROMPTS.map((label) => (
+          <TouchableOpacity
+            key={label}
+            activeOpacity={0.8}
+            style={styles.chip}
+            onPress={() => { Haptics.selectionAsync(); handleSend(label); }}
+          >
+            <Text style={styles.chipText}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </Animated.View>
+  );
 
   return (
     <KeyboardAvoidingView
@@ -848,45 +766,34 @@ const AiChat = () => {
       <LinearGradient colors={['#0A0A0F', '#050208', '#000']} style={StyleSheet.absoluteFill} />
 
       {/* ── Header ── */}
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity activeOpacity={0.95} onPress={() => { Haptics.selectionAsync(); setSidebarOpen(true); }} hitSlop={10}>
-          <Ionicons name="menu" size={22} color="white" />
-        </TouchableOpacity>
+      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+        <IconBtn name="menu" label="Chat history" onPress={() => { Haptics.selectionAsync(); setSidebarOpen(true); }} />
 
-        <View style={styles.headerCenter}>
+        <View style={styles.headerTitleWrap}>
           <View style={styles.headerDot} />
-          <Text style={styles.headerTitle}>{aiName}</Text>
+          <Text style={styles.headerTitle} numberOfLines={1}>{aiName}</Text>
         </View>
 
         <View style={{ flex: 1 }} />
 
-        <TouchableOpacity
-          activeOpacity={0.95}
+        <IconBtn
+          name="create-outline"
+          label="New chat"
+          disabled={isEmpty}
+          onPress={() => { Haptics.selectionAsync(); startNewChat(); }}
+        />
+        <IconBtn
+          name="close"
+          label="Close"
+          color="rgba(255,255,255,0.6)"
           onPress={() => {
             Haptics.selectionAsync();
-            if (router.canGoBack()) {
-              router.back();
-            } else {
-              router.push('/(tabs)');
-            }
+            if (router.canGoBack()) router.back();
+            else router.push('/(tabs)');
           }}
-          hitSlop={10}
-        >
-          <Ionicons name="close" size={22} color="rgba(255,255,255,0.6)" />
-        </TouchableOpacity>
-
-        <TouchableOpacity activeOpacity={0.95}
-          onPress={() => { Haptics.selectionAsync(); startNewChat(); }}
-          hitSlop={10}
-          style={{ marginLeft: 14 }}
-        >
-          <Ionicons name="create-outline" size={20} color="white" />
-        </TouchableOpacity>
-
-        <HeaderGlowBar />
+        />
       </View>
 
-      {/* ── Sidebar ── */}
       <ChatHistorySidebar
         visible={sidebarOpen}
         conversations={conversations}
@@ -898,70 +805,71 @@ const AiChat = () => {
       />
 
       {/* ── Messages ── */}
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={(m) => m.id}
-        renderItem={renderMessage}
-        contentContainerStyle={{ paddingVertical: 12, paddingBottom: showStarterChips ? 8 : 24 }}
-        onContentSizeChange={scrollToEnd}
-        showsVerticalScrollIndicator={false}
-      />
+      <View style={{ flex: 1 }}>
+        <FlatList
+          ref={listRef}
+          data={messages}
+          keyExtractor={(m) => m.id}
+          renderItem={renderMessage}
+          ListEmptyComponent={hero}
+          contentContainerStyle={isEmpty ? { flexGrow: 1, justifyContent: 'center' } : { paddingVertical: 12, paddingBottom: 24 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          onLayout={(e) => { listHeight.current = e.nativeEvent.layout.height; }}
+          onScrollToIndexFailed={() => scrollToEnd()}
+          scrollEventThrottle={64}
+          onScroll={(e) => {
+            const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+            const dist = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+            nearBottom.current = dist < 120;
+            setShowJump(dist > 320);
+          }}
+        />
 
-      {/* ── Starter Chips ── */}
-      {showStarterChips && (
-        <Animated.View entering={FadeIn.delay(300)} style={styles.chipsContainer}>
-          {STARTER_PROMPTS.map((p, i) => (
-            <Animated.View key={p.label} entering={FadeInUp.delay(400 + i * 80).springify()}>
-              <TouchableOpacity activeOpacity={0.95}
-                style={styles.chip}
-                onPress={() => { Haptics.selectionAsync(); handleSend(`${p.emoji} ${p.label}`); }}
-                activeOpacity={0.95}
-              >
-                <Text style={styles.chipEmoji}>{p.emoji}</Text>
-                <Text style={styles.chipText}>{p.label}</Text>
-              </TouchableOpacity>
-            </Animated.View>
-          ))}
-        </Animated.View>
-      )}
+        {showJump && (
+          <View style={styles.jumpWrap} pointerEvents="box-none">
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.jumpBtn}
+              onPress={() => { nearBottom.current = true; scrollToEnd(); }}
+              accessibilityRole="button"
+              accessibilityLabel="Scroll to latest message"
+            >
+              <Ionicons name="chevron-down" size={18} color="white" />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
 
       {/* ── Input Bar ── */}
-      <Animated.View style={[styles.inputBar, { paddingBottom: insets.bottom + 12 }]}>
-        <Animated.View style={[styles.inputWrapper, inputGlowStyle]}>
+      <View style={[styles.inputBar, { paddingBottom: insets.bottom + 10 }]}>
+        <View style={[styles.inputWrap, inputFocused && styles.inputWrapFocused]}>
           <TextInput
             style={styles.input}
             placeholder={`Ask ${aiName} anything...`}
-            placeholderTextColor="#555"
+            placeholderTextColor="#5A5A64"
             value={input}
             onChangeText={setInput}
             onFocus={() => setInputFocused(true)}
             onBlur={() => setInputFocused(false)}
-            onSubmitEditing={() => handleSend()}
-            returnKeyType="send"
-            editable={!sending}
-            multiline={false}
+            multiline
+            maxLength={2000}
           />
-        </Animated.View>
+        </View>
 
-        <Animated.View style={sendBtnAnimStyle}>
-          <TouchableOpacity activeOpacity={0.95}
-            style={[styles.sendBtn, (!input.trim() || sending) && { opacity: 0.35 }]}
-            onPress={() => handleSend()}
-            disabled={!input.trim() || sending}
-            activeOpacity={0.95}
-          >
-            <LinearGradient
-              colors={[ACCENT, '#CC2020']}
-              style={styles.sendBtnGradient}
-            >
-              {sending
-                ? <ActivityIndicator size="small" color="white" />
-                : <Ionicons name="arrow-up" size={20} color="white" />}
-            </LinearGradient>
-          </TouchableOpacity>
-        </Animated.View>
-      </Animated.View>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={[styles.sendBtn, canSend ? styles.sendBtnOn : styles.sendBtnOff]}
+          onPress={() => handleSend()}
+          disabled={!canSend}
+          accessibilityRole="button"
+          accessibilityLabel="Send"
+        >
+          {sending
+            ? <ActivityIndicator size="small" color="white" />
+            : <Ionicons name="arrow-up" size={20} color={canSend ? 'white' : ai.textMute} />}
+        </TouchableOpacity>
+      </View>
     </KeyboardAvoidingView>
   );
 };
@@ -976,14 +884,8 @@ const setupStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   content: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
   orb: { position: 'absolute', borderRadius: 200 },
-  orb1: {
-    width: 260, height: 260, backgroundColor: 'rgba(255, 59, 59, 0.12)',
-    top: '20%', left: '10%',
-  },
-  orb2: {
-    width: 200, height: 200, backgroundColor: 'rgba(120, 40, 200, 0.1)',
-    bottom: '25%', right: '5%',
-  },
+  orb1: { width: 260, height: 260, backgroundColor: 'rgba(255, 59, 59, 0.12)', top: '20%', left: '10%' },
+  orb2: { width: 200, height: 200, backgroundColor: 'rgba(120, 40, 200, 0.1)', bottom: '25%', right: '5%' },
   iconContainer: { position: 'absolute', width: 120, height: 120, borderRadius: 60 },
   iconGlow: { width: '100%', height: '100%', borderRadius: 60 },
   iconInner: {
@@ -993,43 +895,22 @@ const setupStyles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     marginBottom: 32,
   },
-  title: {
-    color: 'white', fontSize: 30, fontWeight: '800', textAlign: 'center',
-    lineHeight: 38, marginBottom: 10,
-  },
-  subtitle: {
-    color: 'rgba(255,255,255,0.45)', fontSize: 15, textAlign: 'center',
-    lineHeight: 22, marginBottom: 36,
-  },
+  title: { color: 'white', fontSize: 30, fontWeight: '800', textAlign: 'center', lineHeight: 38, marginBottom: 10 },
+  subtitle: { color: 'rgba(255,255,255,0.45)', fontSize: 15, textAlign: 'center', lineHeight: 22, marginBottom: 36 },
   inputContainer: { width: '100%', marginBottom: 20 },
-  inputGradient: {
-    borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-    overflow: 'hidden',
-  },
-  input: {
-    color: 'white', fontSize: 18, fontWeight: '600',
-    paddingHorizontal: 20, paddingVertical: 16, textAlign: 'center',
-  },
-  suggestionsRow: {
-    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center',
-    gap: 10, marginBottom: 40,
-  },
+  inputGradient: { borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' },
+  input: { color: 'white', fontSize: 18, fontWeight: '600', paddingHorizontal: 20, paddingVertical: 16, textAlign: 'center' },
+  suggestionsRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, marginBottom: 40 },
   suggestionChip: {
-    paddingHorizontal: 18, paddingVertical: 9,
-    borderRadius: 20, borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    paddingHorizontal: 18, paddingVertical: 9, borderRadius: 20, borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.04)',
   },
-  suggestionChipActive: {
-    borderColor: ACCENT,
-    backgroundColor: 'rgba(255,59,59,0.12)',
-  },
+  suggestionChipActive: { borderColor: ACCENT, backgroundColor: 'rgba(255,59,59,0.12)' },
   suggestionText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '500' },
   continueBtn: { minWidth: 180 },
   continueBtnGradient: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 15, paddingHorizontal: 32,
-    borderRadius: 25,
+    gap: 8, paddingVertical: 15, paddingHorizontal: 32, borderRadius: 25,
   },
   continueBtnText: { color: 'white', fontSize: 16, fontWeight: '700' },
 });
@@ -1038,137 +919,117 @@ const setupStyles = StyleSheet.create({
 // Chat Styles
 // ────────────────────────────────────────────────────────────────
 
+const GUTTER = 16;
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
 
   // Header
   header: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.10)',
+  },
+  iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 4, flexShrink: 1 },
+  headerDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: ACCENT },
+  headerTitle: { color: 'white', fontSize: 17, fontWeight: '700' },
+
+  // Messages
+  userBubble: {
+    alignSelf: 'flex-end', maxWidth: '84%',
+    marginHorizontal: GUTTER, marginVertical: 6,
+    backgroundColor: ACCENT,
+    borderRadius: 18, borderBottomRightRadius: 6,
+    paddingHorizontal: 14, paddingVertical: 10,
+  },
+  userText: { color: 'white', fontSize: 15, lineHeight: 21, fontWeight: '500' },
+  botRow: { marginHorizontal: GUTTER, marginVertical: 6 },
+  botText: { color: '#E8E8E8', fontSize: 15, lineHeight: 22 },
+
+  typingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10 },
+  typingDot: { width: 7, height: 7, borderRadius: 3.5 },
+
+  errorRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: GUTTER, marginVertical: 6,
+    paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12,
+    backgroundColor: ai.accentSoft, borderWidth: 1, borderColor: ai.accentLine,
+    alignSelf: 'flex-start',
+  },
+  errorText: { color: '#FF9B9B', fontSize: 13 },
+  retryText: { color: 'white', fontSize: 13, fontWeight: '700', marginLeft: 4 },
+
+  // Movie cards
+  cardStack: { gap: 10, marginTop: 6, marginBottom: 4 },
+  movieCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingBottom: 14,
+    marginHorizontal: GUTTER, padding: 10, borderRadius: 14,
+    backgroundColor: ai.card, borderWidth: 1, borderColor: ai.border,
   },
-  headerCenter: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
+  poster: { width: 64, height: 96, borderRadius: 8, backgroundColor: '#1A1A20' },
+  posterEmpty: { alignItems: 'center', justifyContent: 'center' },
+  movieBody: { flex: 1, gap: 4 },
+  movieTitle: { color: 'white', fontSize: 15, fontWeight: '700', lineHeight: 20 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
+  metaText: { color: '#DDD', fontSize: 12, fontWeight: '700' },
+  metaMuted: { color: ai.textMute, fontSize: 12 },
+  watchedPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 6,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
-  headerDot: {
-    width: 8, height: 8, borderRadius: 4, backgroundColor: ACCENT,
-    shadowColor: ACCENT, shadowOpacity: 0.8, shadowRadius: 6, elevation: 4,
-  },
-  headerTitle: {
-    color: 'white', fontSize: 17, fontWeight: '700', letterSpacing: 0.3,
-  },
+  watchedText: { color: ai.textDim, fontSize: 10, fontWeight: '600' },
+  movieOverview: { color: ai.textMute, fontSize: 12.5, lineHeight: 17 },
 
-  // Bubbles
-  bubble: {
-    maxWidth: width * 0.82, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 12,
-    marginHorizontal: 16, marginVertical: 3,
-  },
-  bubbleUser: {
-    alignSelf: 'flex-end', borderBottomRightRadius: 6,
-    shadowColor: ACCENT, shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-  },
-  bubbleBot: {
-    alignSelf: 'flex-start', borderBottomLeftRadius: 6,
-    backgroundColor: GLASS_BG,
-    borderWidth: 1, borderColor: GLASS_BORDER,
-  },
-  bubbleUserText: { color: 'white', fontSize: 15, lineHeight: 21, fontWeight: '500' },
-  bubbleBotText: { color: '#E8E8E8', fontSize: 15, lineHeight: 22 },
-  bubbleError: {
-    backgroundColor: 'rgba(255,59,59,0.08)', alignSelf: 'flex-start',
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: 'rgba(255,59,59,0.15)',
-  },
-  bubbleErrorText: { color: '#FF9B9B', fontSize: 13 },
-
-  typingDot: {
-    width: 7, height: 7, borderRadius: 3.5,
-  },
-
-  // Movie carousel
-  movieCard: { width: 125, position: 'relative' },
-  moviePosterGlow: {
-    position: 'absolute', top: 4, left: 4, right: 4, bottom: 40,
-    borderRadius: 12, overflow: 'hidden', opacity: 0.5,
-  },
-  moviePoster: {
-    width: 125, height: 178, borderRadius: 12, backgroundColor: '#111',
-  },
-  watchedBadge: {
-    position: 'absolute', top: 8, right: 6,
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(0,0,0,0.75)', paddingHorizontal: 6, paddingVertical: 3,
-    borderRadius: 8, borderWidth: 1, borderColor: 'rgba(74,222,128,0.3)',
-  },
-  watchedBadgeText: { color: '#4ADE80', fontSize: 9, fontWeight: '700' },
-  movieMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 8 },
-  movieRating: { color: '#DDD', fontSize: 11, fontWeight: '700' },
-  movieTitle: { color: 'white', fontSize: 13, fontWeight: '600', marginTop: 3 },
-  movieYear: { color: '#666', fontSize: 11, marginTop: 2 },
-
-  // Actor carousel
-  actorCard: { width: 90, alignItems: 'center' },
-  actorAvatarContainer: { position: 'relative', marginBottom: 6 },
+  // Actors
+  actorRow: { paddingHorizontal: GUTTER, gap: 16, paddingVertical: 8 },
+  actorCard: { width: 84, alignItems: 'center' },
   actorAvatar: {
-    width: 76, height: 76, borderRadius: 38, backgroundColor: '#111',
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.08)',
-  },
-  actorAvatarGlow: {
-    position: 'absolute', bottom: -4, left: -4, right: -4, height: 40,
-    borderRadius: 38,
+    width: 68, height: 68, borderRadius: 34, backgroundColor: '#1A1A20',
+    borderWidth: 1, borderColor: ai.border, marginBottom: 6,
   },
   actorName: { color: 'white', fontSize: 12, fontWeight: '600', textAlign: 'center' },
-  actorKnownFor: { color: '#666', fontSize: 10, textAlign: 'center', marginTop: 2 },
+  actorKnownFor: { color: ai.textMute, fontSize: 10.5, textAlign: 'center', marginTop: 2 },
 
-  // Detail card
-  detailCard: {
-    height: 150, borderRadius: 14, backgroundColor: '#111',
-    overflow: 'hidden', marginHorizontal: 16,
-    borderWidth: 1, borderColor: GLASS_BORDER,
+  // Empty state
+  hero: { alignItems: 'center', paddingHorizontal: 24, paddingBottom: 24 },
+  heroIcon: {
+    width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: ai.accentSoft, borderWidth: 1, borderColor: ai.accentLine, marginBottom: 18,
   },
-  detailGlow: { position: 'absolute', width: '100%', height: '100%', opacity: 0.25 },
-  detailInner: { flexDirection: 'row', flex: 1 },
-  detailPoster: { width: 100, height: '100%' },
-  detailContent: { flex: 1, padding: 12, justifyContent: 'center' },
-  detailTitle: { color: 'white', fontSize: 16, fontWeight: 'bold', marginBottom: 6, flex: 1 },
-  tagsRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  tag: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6,
-  },
-  tagText: { color: '#DDD', fontSize: 11, fontWeight: '700' },
-  detailOverview: { color: '#777', fontSize: 12, lineHeight: 17 },
-
-  // Starter chips
-  chipsContainer: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 8,
-    paddingHorizontal: 16, paddingBottom: 12,
-    justifyContent: 'center',
-  },
+  heroTitle: { color: 'white', fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  heroSub: { color: ai.textMute, fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 8, maxWidth: 300 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 24 },
   chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: GLASS_BG,
-    paddingHorizontal: 14, paddingVertical: 10,
-    borderRadius: 22, borderWidth: 1, borderColor: GLASS_BORDER,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: ai.border,
   },
-  chipEmoji: { fontSize: 15 },
-  chipText: { color: 'rgba(255,255,255,0.6)', fontSize: 12.5, fontWeight: '500' },
+  chipText: { color: ai.textDim, fontSize: 13, fontWeight: '500' },
+
+  // Jump to latest
+  jumpWrap: { position: 'absolute', left: 0, right: 0, bottom: 10, alignItems: 'center' },
+  jumpBtn: {
+    width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#1C1C22', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
+  },
 
   // Input bar
   inputBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexDirection: 'row', alignItems: 'flex-end', gap: 10,
     paddingHorizontal: 14, paddingTop: 10,
   },
-  inputWrapper: {
-    flex: 1, backgroundColor: 'rgba(255,255,255,0.04)',
-    height: 48, borderRadius: 24,
-    borderWidth: 1, justifyContent: 'center',
+  inputWrap: {
+    flex: 1, minHeight: 46, maxHeight: 128, borderRadius: 23, justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: ai.border,
   },
-  input: { color: 'white', paddingHorizontal: 18, fontSize: 15 },
-  sendBtn: {},
-  sendBtnGradient: {
-    width: 42, height: 42, borderRadius: 21,
-    alignItems: 'center', justifyContent: 'center',
+  inputWrapFocused: { borderColor: ai.accentLine },
+  input: {
+    color: 'white', fontSize: 15, maxHeight: 120,
+    paddingHorizontal: 18, paddingTop: Platform.OS === 'ios' ? 13 : 9, paddingBottom: Platform.OS === 'ios' ? 13 : 9,
+    textAlignVertical: 'center',
   },
+  sendBtn: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  sendBtnOn: { backgroundColor: ACCENT },
+  sendBtnOff: { backgroundColor: 'rgba(255,255,255,0.08)' },
 });

@@ -21,7 +21,7 @@ interface AiComparisonTableProps {
   rows: (string | number)[][];
 }
 
-const OUTER_PAD = 12; // container paddingHorizontal
+const OUTER_PAD = 16; // container paddingHorizontal (matches chat gutter)
 const CHAR_PX = 6.6;
 const strip = (s: string) => s.replace(/[*_`~]/g, '');
 const isWin = (s: string) => /^(yes|winner|✓|✔)$/i.test(s.trim()) || s.trim().startsWith('🏆');
@@ -144,15 +144,8 @@ export default AiComparisonTable;
 
 const styles = StyleSheet.create({
   container: { marginVertical: 6, paddingHorizontal: OUTER_PAD },
-  textBubble: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: ai.border,
-  },
-  introText: { color: '#DDD', fontSize: 14, lineHeight: 20 },
+  textBubble: { marginBottom: 10 },
+  introText: { color: '#E8E8E8', fontSize: 15, lineHeight: 22 },
   card: {
     backgroundColor: ai.card,
     borderRadius: 14,
