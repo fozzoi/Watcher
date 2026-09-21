@@ -30,23 +30,23 @@
   --bg-color: #f5f5f7;
   --bg-gradient-start: #f0f0f4;
   --bg-gradient-end: #e8e8ee;
-  --card-bg: rgba(255, 255, 255, 0.85);
+  --card-bg: rgba(255, 255, 255, 0.94);
   --card-border: rgba(0, 0, 0, 0.08);
   --card-hover-border: rgba(229, 9, 20, 0.35);
   --foreground: #1a1a2e;
-  --foreground-muted: rgba(26, 26, 46, 0.55);
+  --foreground-muted: rgba(26, 26, 46, 0.62);
   --primary: #d40812;
   --primary-glow: rgba(212, 8, 18, 0.2);
   --primary-gradient: linear-gradient(135deg, #e51c28 0%, #c41920 100%);
   --accent: #e83545;
-  --sidebar-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(245, 245, 250, 0.95) 100%);
+  --sidebar-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(245, 245, 250, 0.98) 100%);
   --sidebar-hover: rgba(0, 0, 0, 0.05);
   --input-bg: #ffffff;
-  --input-border: rgba(0, 0, 0, 0.15);
-  --input-focus-bg: rgba(0, 0, 0, 0.06);
+  --input-border: rgba(0, 0, 0, 0.12);
+  --input-focus-bg: #ffffff;
   --scrollbar-thumb: rgba(0, 0, 0, 0.15);
   --shadow-color: rgba(0, 0, 0, 0.08);
-  --badge-bg: rgba(0, 0, 0, 0.04);
+  --badge-bg: rgba(0, 0, 0, 0.05);
   --badge-border: rgba(0, 0, 0, 0.08);
   color-scheme: light;
 }
@@ -90,20 +90,22 @@ body {
                     radial-gradient(circle at 0% 100%, rgba(200, 200, 230, 0.15) 0%, transparent 40%);
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* Hide Scrollbar Everywhere while preserving full smooth scrolling */
+html,
+body,
+* {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE and Edge */
 }
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--primary);
+
+::-webkit-scrollbar,
+*::-webkit-scrollbar,
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none !important; /* Chrome, Safari, Edge, Opera */
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
 }
 
 /* Base Link styling */
@@ -248,3 +250,59 @@ a {
 .animate-fade-in-up {
   animation: fadeInUp 0.5s ease forwards;
 }
+
+/* ===== Universal Theme Overrides & Helpers ===== */
+/* Native and styled select dropdown theming */
+select,
+option {
+  font-family: inherit;
+}
+
+[data-theme="light"] select option {
+  background-color: #ffffff !important;
+  color: #1a1a2e !important;
+}
+
+[data-theme="dark"] select option {
+  background-color: #141419 !important;
+  color: #f5f5f7 !important;
+}
+
+/* Light mode navigation arrows and floating buttons */
+[data-theme="light"] .nav-btn,
+[data-theme="light"] .nav-arrow-btn,
+[data-theme="light"] .genre-nav-btn,
+[data-theme="light"] .header-arrow-btn {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
+  color: var(--foreground) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08) !important;
+}
+
+[data-theme="light"] .nav-btn:hover,
+[data-theme="light"] .nav-arrow-btn:hover,
+[data-theme="light"] .genre-nav-btn:hover,
+[data-theme="light"] .header-arrow-btn:hover {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  color: #ffffff !important;
+}
+
+/* Light mode skeleton shimmers */
+[data-theme="light"] .skeleton-hero,
+[data-theme="light"] .skeleton-chip,
+[data-theme="light"] .skeleton-title,
+[data-theme="light"] .skeleton-card,
+[data-theme="light"] .shimmer-bar,
+[data-theme="light"] .vibe-skeleton-card {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.04) 25%, rgba(0, 0, 0, 0.08) 50%, rgba(0, 0, 0, 0.04) 75%) !important;
+  background-size: 200% 100% !important;
+}
+
+/* Light mode modals */
+[data-theme="light"] .modal-overlay,
+[data-theme="light"] .modal-backdrop {
+  background: rgba(15, 15, 20, 0.45) !important;
+  backdrop-filter: blur(6px) !important;
+}
+

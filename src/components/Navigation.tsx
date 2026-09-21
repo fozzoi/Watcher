@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { 
   Compass, Search, Bookmark, History, Sparkles, Settings, Film, 
-  ChevronLeft, ChevronRight, Sun, Moon, Monitor 
+  ChevronLeft, ChevronRight, Sun, Moon, Monitor, BarChart3 
 } from 'lucide-react';
 
 interface NavItem {
@@ -28,7 +28,8 @@ export default function Navigation() {
     { name: 'Search', href: '/search', icon: Search },
     { name: 'Watchlist', href: '/watchlist', icon: Bookmark },
     { name: 'History', href: '/history', icon: History },
-    { name: 'AI Recs', href: '/ai-search', icon: Sparkles },
+    { name: 'AI Companion', href: '/ai-search', icon: Sparkles },
+    { name: 'Stats', href: '/stats', icon: BarChart3 },
     { name: 'Settings', href: '/settings', icon: Settings },
   ];
 

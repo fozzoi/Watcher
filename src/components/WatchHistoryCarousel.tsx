@@ -48,7 +48,17 @@ export default function WatchHistoryCarousel({ history, onRemove }: WatchHistory
           <div className="accent-bar" />
           <h2 className="section-title">Continue Watching</h2>
         </div>
-        <span className="count-label">{history.length} titles</span>
+        <div className="header-actions">
+          <div className="header-nav-arrows">
+            <button className="header-arrow-btn" onClick={() => scroll('left')} aria-label="Scroll left">
+              <ChevronLeft size={16} />
+            </button>
+            <button className="header-arrow-btn" onClick={() => scroll('right')} aria-label="Scroll right">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+          <span className="count-label">{history.length} titles</span>
+        </div>
       </div>
 
       <div className="carousel-wrapper">
@@ -154,6 +164,39 @@ export default function WatchHistoryCarousel({ history, onRemove }: WatchHistory
           font-size: 20px;
           font-weight: 700;
           letter-spacing: 0.5px;
+        }
+
+        .header-actions {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+
+        .header-nav-arrows {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .header-arrow-btn {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid var(--card-border);
+          color: var(--foreground-muted);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: var(--transition-fast);
+        }
+
+        .header-arrow-btn:hover {
+          background: var(--primary);
+          border-color: var(--primary);
+          color: #fff;
+          transform: scale(1.05);
         }
 
         .count-label {
@@ -375,17 +418,18 @@ export default function WatchHistoryCarousel({ history, onRemove }: WatchHistory
           width: 40px;
           height: 40px;
           border-radius: 50%;
-          background: rgba(10, 10, 15, 0.8);
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
+          background: var(--card-bg);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
           border: 1px solid var(--card-border);
           color: var(--foreground);
           display: flex;
           align-items: center;
           justify-content: center;
           cursor: pointer;
-          opacity: 0;
-          transition: var(--transition-smooth);
+          opacity: 0.85;
+          box-shadow: 0 4px 18px var(--shadow-color);
+          transition: all 0.2s ease-in-out;
           z-index: 10;
         }
 
@@ -394,14 +438,15 @@ export default function WatchHistoryCarousel({ history, onRemove }: WatchHistory
         }
 
         .nav-btn:hover {
-          background: var(--primary-gradient);
-          border-color: transparent;
-          box-shadow: 0 0 10px var(--primary-glow);
-          scale: 1.1;
+          background: var(--primary);
+          border-color: var(--primary);
+          color: #ffffff;
+          box-shadow: 0 0 15px rgba(229, 9, 20, 0.6);
+          transform: translateY(-50%) scale(1.1);
         }
 
-        .prev-btn { left: 15px; }
-        .next-btn { right: 15px; }
+        .prev-btn { left: 12px; }
+        .next-btn { right: 12px; }
 
         @media (max-width: 768px) {
           .nav-btn { display: none; }

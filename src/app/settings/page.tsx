@@ -1,47 +1,106 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { 
   Settings as SettingsIcon, 
   HelpCircle, 
   Trash2, 
-  Download, 
   Upload, 
-  Lock, 
   Check, 
-  ChevronRight, 
   Key,
   Shield,
-  Eye,
   FileJson,
-  FileText
+  FileText,
+  Bot,
+  PlaySquare,
+  Sparkles,
+  RotateCcw,
+  Volume2,
+  Tv,
+  Bell,
+  Palette,
+  ExternalLink,
+  ChevronRight,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { AsyncStorage } from '@/utils/storage';
 import { setGlobalConfig } from '@/utils/tmdb';
 import { useTheme } from 'next-themes';
+import { 
+  getUserPreferences, 
+  setUserPreferences, 
+  resetOnboarding, 
+  UserPreferences,
+  DEFAULT_PREFERENCES,
+  LANGUAGE_OPTIONS,
+  GENRE_OPTIONS
+} from '@/utils/userPreferences';
+import { 
+  getAiName, 
+  setAiName, 
+  getUserMemory, 
+  setUserMemory, 
+  clearUserMemory 
+} from '@/utils/chatStorage';
+import { 
+  getPlayerPreferences, 
+  savePlayerPreferences, 
+  PlayerPreferences,
+  PlayerQuality
+} from '@/utils/playerPreferences';
 
 export default function SettingsPage() {
-  const [isHiRes, setIsHiRes] = useState(false);
-  const [isNsfwFilter, setIsNsfwFilter] = useState(true);
-  const [isAutoAi, setIsAutoAi] = useState(true);
-  const [customApiKey, setCustomApiKey] = useState('');
-  const [apiKeySaved, setApiKeySaved] = useState(false);
+  const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   
+  // Gemini API Key & Toggles
+  const [customApiKey, setCustomApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [apiKeySaved, setApiKeySaved] = useState(false);
+  const [isHiRes, setIsHiRes] = useState(false);
+  const [isNsfwFilter, setIsNsfwFilter] = useState(true);
+  const [isAutoAi, setIsAutoAi] = useState(true);
+  const [isNotifications, setIsNotifications] = useState(true);
+
+  // AI Companion Persona
+  const [aiAssistantName, setAiAssistantName] = useState('Cine');
+  const [aiNameSaved, setAiNameSaved] = useState(false);
+  const [aiMemory, setAiMemory] = useState('');
+  const [aiMemorySaved, setAiMemorySaved] = useState(false);
+
+  // User Discovery Preferences
+  const [userPrefs, setUserPrefs] = useState<UserPreferences>(DEFAULT_PREFERENCES);
+
+  // Player Preferences
+  const [playerPrefs, setPlayerPrefs] = useState<PlayerPreferences>({
+    volume: 1,
+    muted: false,
+    audioTrack: null,
+    subtitleTrack: null,
+    quality: 'auto'
+  });
+  const [autoSkipCredits, setAutoSkipCredits] = useState(true);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadSettings();
+    loadAllSettings();
     setMounted(true);
   }, []);
 
-  const loadSettings = async () => {
+  const loadAllSettings = async () => {
     try {
+      // General toggles
       const savedHiRes = await AsyncStorage.getItem('settings_hires');
       const savedNsfw = await AsyncStorage.getItem('settings_nsfw');
       const savedAutoAi = await AsyncStorage.getItem('settings_auto_ai');
       const savedKey = await AsyncStorage.getItem('settings_custom_key');
+      const savedNotifs = await AsyncStorage.getItem('settings_notifications');
+      const savedAutoSkip = await AsyncStorage.getItem('settings_auto_skip');
       
       if (savedHiRes !== null) {
         const val = JSON.parse(savedHiRes);
@@ -60,6 +119,26 @@ export default function SettingsPage() {
         setCustomApiKey(savedKey);
         setGlobalConfig('customApiKey', savedKey);
       }
+      if (savedNotifs !== null) {
+        setIsNotifications(JSON.parse(savedNotifs));
+      }
+      if (savedAutoSkip !== null) {
+        setAutoSkipCredits(JSON.parse(savedAutoSkip));
+      }
+
+      // AI Persona
+      const name = await getAiName();
+      setAiAssistantName(name);
+      const memory = await getUserMemory();
+      setAiMemory(memory);
+
+      // User Preferences
+      const prefs = await getUserPreferences();
+      setUserPrefs(prefs);
+
+      // Player Preferences
+      const pPrefs = await getPlayerPreferences();
+      setPlayerPrefs(pPrefs);
     } catch (e) {
       console.error("Failed to load settings:", e);
     }
@@ -82,6 +161,16 @@ export default function SettingsPage() {
     await AsyncStorage.setItem('settings_auto_ai', JSON.stringify(value));
   };
 
+  const handleToggleNotifications = async (value: boolean) => {
+    setIsNotifications(value);
+    await AsyncStorage.setItem('settings_notifications', JSON.stringify(value));
+  };
+
+  const handleToggleAutoSkip = async (value: boolean) => {
+    setAutoSkipCredits(value);
+    await AsyncStorage.setItem('settings_auto_skip', JSON.stringify(value));
+  };
+
   const handleSaveApiKey = async () => {
     setGlobalConfig('customApiKey', customApiKey);
     await AsyncStorage.setItem('settings_custom_key', customApiKey);
@@ -89,16 +178,63 @@ export default function SettingsPage() {
     setTimeout(() => setApiKeySaved(false), 2000);
   };
 
+  const handleSaveAiName = async () => {
+    const trimmed = aiAssistantName.trim() || 'Cine';
+    await setAiName(trimmed);
+    setAiAssistantName(trimmed);
+    setAiNameSaved(true);
+    setTimeout(() => setAiNameSaved(false), 2000);
+  };
+
+  const handleSaveAiMemory = async () => {
+    await setUserMemory(aiMemory);
+    setAiMemorySaved(true);
+    setTimeout(() => setAiMemorySaved(false), 2000);
+  };
+
+  const handleClearAiMemory = async () => {
+    const ok = window.confirm("Are you sure you want to erase all AI memory of your movie preferences?");
+    if (!ok) return;
+    await clearUserMemory();
+    setAiMemory('');
+  };
+
+  const handleResetOnboarding = async () => {
+    const ok = window.confirm("Reset setup preferences? This will launch the onboarding wizard to pick your cinema industries, genres, and favorite stars again.");
+    if (!ok) return;
+    await resetOnboarding();
+    router.push('/onboarding');
+  };
+
+  const handleUpdateQuality = async (q: PlayerQuality) => {
+    const updated = await savePlayerPreferences(undefined, { quality: q });
+    setPlayerPrefs(updated);
+  };
+
+  const handleUpdateVolume = async (vol: number) => {
+    const updated = await savePlayerPreferences(undefined, { volume: vol, muted: vol === 0 });
+    setPlayerPrefs(updated);
+  };
+
+  const handleToggleMute = async (muted: boolean) => {
+    const updated = await savePlayerPreferences(undefined, { muted });
+    setPlayerPrefs(updated);
+  };
+
   const handleWipeLibrary = async () => {
-    const confirm = window.confirm("Are you absolutely sure you want to WIPE all your Watchlist, History, and Search History? This cannot be undone.");
+    const confirm = window.confirm("Are you absolutely sure you want to WIPE all your Watchlist, History, Franchises, Preferences, and Saved Data? This cannot be undone.");
     if (!confirm) return;
 
     try {
       await AsyncStorage.removeItem('watchlist');
       await AsyncStorage.removeItem('favoriteArtists');
       await AsyncStorage.removeItem('history');
+      await AsyncStorage.removeItem('savedCollections');
       await AsyncStorage.removeItem('searchHistory');
       await AsyncStorage.removeItem('@watch_progress');
+      await AsyncStorage.removeItem('user_preferences');
+      await AsyncStorage.removeItem('watcher.chat.conversations.v1');
+      await AsyncStorage.removeItem('watcher.chat.userMemory.v1');
       
       alert("All library data has been wiped successfully.");
       window.location.reload();
@@ -112,10 +248,14 @@ export default function SettingsPage() {
       const mStr = await AsyncStorage.getItem('watchlist');
       const aStr = await AsyncStorage.getItem('favoriteArtists');
       const hStr = await AsyncStorage.getItem('history');
+      const cStr = await AsyncStorage.getItem('savedCollections');
+      const pStr = await AsyncStorage.getItem('user_preferences');
 
       const rawWatchlist = mStr ? JSON.parse(mStr) : [];
       const rawArtists = aStr ? JSON.parse(aStr) : [];
       const rawHistory = hStr ? JSON.parse(hStr) : [];
+      const rawCollections = cStr ? JSON.parse(cStr) : [];
+      const rawPrefs = pStr ? JSON.parse(pStr) : null;
 
       let fileContent = "";
       const dateString = new Date().toISOString().split('T')[0];
@@ -125,30 +265,38 @@ export default function SettingsPage() {
         fileContent = JSON.stringify({ 
           watchlist: rawWatchlist, 
           artists: rawArtists, 
-          history: rawHistory 
+          history: rawHistory,
+          collections: rawCollections,
+          preferences: rawPrefs,
+          exportedAt: new Date().toISOString()
         }, null, 2);
       } else {
-        fileContent += "movies\n";
+        fileContent += "# WATCHER LIBRARY BACKUP\n\n";
+        fileContent += "## Watchlist\n";
         rawWatchlist.forEach((i: any, index: number) => {
           const year = i.release_date || i.first_air_date ? String(i.release_date || i.first_air_date).substring(0, 4) : '';
-          const yearText = year ? ` ${year}` : '';
-          fileContent += `${index + 1} ${i.title || i.name}${yearText}\n`;
+          const yearText = year ? ` (${year})` : '';
+          fileContent += `${index + 1}. ${i.title || i.name}${yearText} [${i.media_type || 'movie'}]\n`;
         });
 
-        fileContent += "\nartists\n";
+        fileContent += "\n## Favorite Artists\n";
         rawArtists.forEach((i: any, index: number) => {
-          fileContent += `${index + 1} ${i.name}\n`;
+          fileContent += `${index + 1}. ${i.name} [${i.known_for_department || 'Artist'}]\n`;
         });
 
-        fileContent += "\nhistory\n";
+        fileContent += "\n## Saved Franchises\n";
+        rawCollections.forEach((i: any, index: number) => {
+          fileContent += `${index + 1}. ${i.name} (${i.parts_count || 0} movies)\n`;
+        });
+
+        fileContent += "\n## Watch History\n";
         rawHistory.forEach((i: any, index: number) => {
           const year = i.release_date || i.first_air_date ? String(i.release_date || i.first_air_date).substring(0, 4) : '';
-          const yearText = year ? ` ${year}` : '';
-          fileContent += `${index + 1} ${i.title || i.name}${yearText}\n`;
+          const yearText = year ? ` (${year})` : '';
+          fileContent += `${index + 1}. ${i.title || i.name}${yearText}\n`;
         });
       }
 
-      // Web download utility
       const blob = new Blob([fileContent], { type: format === 'json' ? 'application/json' : 'text/plain' });
       const downloadLink = document.createElement("a");
       downloadLink.href = URL.createObjectURL(blob);
@@ -169,10 +317,12 @@ export default function SettingsPage() {
       const text = await file.text();
       const backup = JSON.parse(text);
 
-      if (backup.watchlist || backup.artists || backup.history) {
+      if (backup.watchlist || backup.artists || backup.history || backup.collections) {
         if (backup.watchlist) await AsyncStorage.setItem('watchlist', JSON.stringify(backup.watchlist));
         if (backup.artists) await AsyncStorage.setItem('favoriteArtists', JSON.stringify(backup.artists));
         if (backup.history) await AsyncStorage.setItem('history', JSON.stringify(backup.history));
+        if (backup.collections) await AsyncStorage.setItem('savedCollections', JSON.stringify(backup.collections));
+        if (backup.preferences) await AsyncStorage.setItem('user_preferences', JSON.stringify(backup.preferences));
         
         alert("Backup imported successfully. Reloading library data...");
         window.location.reload();
@@ -183,6 +333,21 @@ export default function SettingsPage() {
       alert(`Import failed: ${err.message}`);
     }
   };
+
+  const selectedLanguageLabels = (userPrefs.languages || []).map(code => {
+    const match = LANGUAGE_OPTIONS.find(l => l.code === code);
+    return match ? `${match.flag} ${match.label}` : code.toUpperCase();
+  });
+
+  const selectedGenreLabels = (userPrefs.genreIds || []).map(id => {
+    const match = GENRE_OPTIONS.find(g => g.id === id);
+    return match ? `${genreEmoji(match.id)} ${match.label}` : String(id);
+  });
+
+  function genreEmoji(id: number): string {
+    const match = GENRE_OPTIONS.find(g => g.id === id);
+    return match?.emoji || '🎬';
+  }
 
   return (
     <div className="settings-container">
@@ -195,24 +360,170 @@ export default function SettingsPage() {
       </div>
 
       <div className="settings-sections animate-fade-in-up">
-        {/* API key section */}
+        {/* User Discovery Preferences & Onboarding */}
         <section className="settings-section glass">
           <div className="section-header">
-            <Key className="sec-icon" size={18} />
-            <h2>Gemini AI Integration</h2>
+            <Sparkles className="sec-icon" size={18} />
+            <h2>Discovery & Cinema Profile</h2>
           </div>
           <div className="section-body">
             <p className="description">
-              Watcher uses Google Gemini Flash model to analyze RSS Feeds, extracts movies list from screenshots, and suggests intelligent media recommendations. Input your custom API key below (entirely free).
+              Customize the film industries, regional languages, and genres used to tailor your Explore feed and smart recommendations.
+            </p>
+
+            <div className="profile-summary-box">
+              <div className="profile-row">
+                <span className="profile-label">Selected Cinema:</span>
+                <div className="profile-chips">
+                  {selectedLanguageLabels.length > 0 ? (
+                    selectedLanguageLabels.map((lbl, idx) => (
+                      <span key={idx} className="summary-chip">{lbl}</span>
+                    ))
+                  ) : (
+                    <span className="summary-muted">None selected (default: All)</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="profile-row">
+                <span className="profile-label">Favorite Genres:</span>
+                <div className="profile-chips">
+                  {selectedGenreLabels.length > 0 ? (
+                    selectedGenreLabels.map((lbl, idx) => (
+                      <span key={idx} className="summary-chip">{lbl}</span>
+                    ))
+                  ) : (
+                    <span className="summary-muted">All Genres</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="profile-row">
+                <span className="profile-label">Favorite Stars:</span>
+                <div className="profile-chips">
+                  {userPrefs.favoriteActors?.length > 0 ? (
+                    userPrefs.favoriteActors.map(star => (
+                      <span key={star.id} className="summary-chip star-chip">★ {star.name}</span>
+                    ))
+                  ) : (
+                    <span className="summary-muted">No stars selected yet</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="profile-buttons-row">
+              <Link href="/onboarding" className="btn-primary-setting">
+                <Sparkles size={14} />
+                <span>Reconfigure Cinema Preferences</span>
+              </Link>
+              <button className="btn-secondary-setting" onClick={handleResetOnboarding}>
+                <RotateCcw size={14} />
+                <span>Reset Onboarding</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* AI Companion & Assistant Persona */}
+        <section className="settings-section glass">
+          <div className="section-header">
+            <Bot className="sec-icon" size={18} />
+            <h2>AI Companion & Persona</h2>
+          </div>
+          <div className="section-body">
+            <div className="setting-subgroup">
+              <label className="input-label">AI Assistant Name</label>
+              <div className="api-input-row">
+                <input
+                  type="text"
+                  placeholder="e.g. Cine, Jarvis, Nova"
+                  value={aiAssistantName}
+                  onChange={(e) => setAiAssistantName(e.target.value)}
+                  className="modal-input"
+                />
+                <button 
+                  className="btn-primary" 
+                  onClick={handleSaveAiName}
+                  style={{ height: '44px', borderRadius: '10px' }}
+                >
+                  {aiNameSaved ? <Check size={16} /> : 'Save'}
+                </button>
+              </div>
+              <span className="sub-desc">Name used by your conversational AI cinema companion.</span>
+            </div>
+
+            <div className="setting-subgroup">
+              <div className="memory-header-row">
+                <label className="input-label">AI Taste Memory</label>
+                {aiMemory && (
+                  <button className="memory-clear-btn" onClick={handleClearAiMemory}>
+                    Clear Memory
+                  </button>
+                )}
+              </div>
+              <textarea
+                rows={3}
+                placeholder="Watcher AI automatically notes down your taste profile, favorite genres, and favorite directors here as you chat..."
+                value={aiMemory}
+                onChange={(e) => setAiMemory(e.target.value)}
+                className="memory-textarea"
+              />
+              <div className="memory-footer">
+                <span className="sub-desc">The AI references this memory during conversations to give hyper-personalized recommendations.</span>
+                <button 
+                  className="btn-secondary-setting" 
+                  onClick={handleSaveAiMemory}
+                >
+                  {aiMemorySaved ? <Check size={14} /> : 'Update Memory'}
+                </button>
+              </div>
+            </div>
+
+            <div className="toggle-item" style={{ marginTop: '6px' }}>
+              <div className="toggle-label">
+                <span className="toggle-title">Intelligent AI Recommendations</span>
+                <span className="toggle-desc">Automatically trigger Gemini cinematic analysis on detail screens.</span>
+              </div>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={isAutoAi} 
+                  onChange={(e) => handleToggleAutoAi(e.target.checked)} 
+                />
+                <span className="slider round"></span>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        {/* Gemini API Key */}
+        <section className="settings-section glass">
+          <div className="section-header">
+            <Key className="sec-icon" size={18} />
+            <h2>Gemini AI Key (Optional)</h2>
+          </div>
+          <div className="section-body">
+            <p className="description">
+              Watcher includes built-in proxy servers for AI recommendations and RSS extraction. Providing your own free Google Gemini API key unlocks unlimited query speed and bypasses shared proxy limits.
             </p>
             <div className="api-input-row">
-              <input
-                type="password"
-                placeholder="Paste your Gemini API Key here..."
-                value={customApiKey}
-                onChange={(e) => setCustomApiKey(e.target.value)}
-                className="modal-input"
-              />
+              <div className="password-input-wrapper">
+                <input
+                  type={showApiKey ? "text" : "password"}
+                  placeholder="Paste your Gemini API Key here (AIzaSy...)"
+                  value={customApiKey}
+                  onChange={(e) => setCustomApiKey(e.target.value)}
+                  className="modal-input"
+                />
+                <button 
+                  type="button" 
+                  className="toggle-eye-btn"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                >
+                  {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
               <button 
                 className="btn-primary" 
                 onClick={handleSaveApiKey}
@@ -229,21 +540,87 @@ export default function SettingsPage() {
             >
               <HelpCircle size={14} />
               <span>Get a free Gemini API Key from Google AI Studio</span>
+              <ExternalLink size={12} />
             </a>
           </div>
         </section>
 
-        {/* Global toggles section */}
+        {/* Video Player Preferences */}
+        <section className="settings-section glass">
+          <div className="section-header">
+            <PlaySquare className="sec-icon" size={18} />
+            <h2>Player Preferences</h2>
+          </div>
+          <div className="section-body">
+            <div className="toggle-item">
+              <div className="toggle-label">
+                <span className="toggle-title">Default Stream Quality</span>
+                <span className="toggle-desc">Preferred video resolution for direct HLS and streaming sources.</span>
+              </div>
+              <div className="segmented-selector">
+                {(['auto', '1080p', '720p', '480p'] as PlayerQuality[]).map(q => (
+                  <button 
+                    key={q}
+                    className={playerPrefs.quality === q ? 'active' : ''}
+                    onClick={() => handleUpdateQuality(q)}
+                  >
+                    {q.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="toggle-item">
+              <div className="toggle-label">
+                <span className="toggle-title">Default Audio Volume</span>
+                <span className="toggle-desc">Initial playback volume level when entering the player.</span>
+              </div>
+              <div className="segmented-selector">
+                {[
+                  { label: '100%', vol: 1 },
+                  { label: '80%', vol: 0.8 },
+                  { label: '50%', vol: 0.5 },
+                  { label: 'Muted', vol: 0 }
+                ].map(v => (
+                  <button 
+                    key={v.label}
+                    className={(playerPrefs.muted && v.vol === 0) || (!playerPrefs.muted && playerPrefs.volume === v.vol) ? 'active' : ''}
+                    onClick={() => handleUpdateVolume(v.vol)}
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="toggle-item">
+              <div className="toggle-label">
+                <span className="toggle-title">Auto Credit Skip & Next Episode</span>
+                <span className="toggle-desc">Display prompt to skip outro credits and jump to the next series episode.</span>
+              </div>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={autoSkipCredits} 
+                  onChange={(e) => handleToggleAutoSkip(e.target.checked)} 
+                />
+                <span className="slider round"></span>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        {/* Global toggles & Display */}
         <section className="settings-section glass">
           <div className="section-header">
             <Shield className="sec-icon" size={18} />
-            <h2>Preferences</h2>
+            <h2>App & Display Settings</h2>
           </div>
           <div className="section-body toggles-list">
             <div className="toggle-item">
               <div className="toggle-label">
                 <span className="toggle-title">High Resolution backdrops</span>
-                <span className="toggle-desc">Fetches high-quality originals instead of compressed backdrops. Slows load speeds.</span>
+                <span className="toggle-desc">Fetches high-quality originals instead of compressed backdrops.</span>
               </div>
               <label className="switch">
                 <input 
@@ -272,14 +649,14 @@ export default function SettingsPage() {
 
             <div className="toggle-item">
               <div className="toggle-label">
-                <span className="toggle-title">Intelligent Recommendations</span>
-                <span className="toggle-desc">Auto-triggers Gemini semantic analysis on detail screens.</span>
+                <span className="toggle-title">Desktop Release Notifications</span>
+                <span className="toggle-desc">Receive notifications for upcoming releases and library updates.</span>
               </div>
               <label className="switch">
                 <input 
                   type="checkbox" 
-                  checked={isAutoAi} 
-                  onChange={(e) => handleToggleAutoAi(e.target.checked)} 
+                  checked={isNotifications} 
+                  onChange={(e) => handleToggleNotifications(e.target.checked)} 
                 />
                 <span className="slider round"></span>
               </label>
@@ -287,15 +664,15 @@ export default function SettingsPage() {
 
             <div className="toggle-item">
               <div className="toggle-label">
-                <span className="toggle-title">Appearance</span>
-                <span className="toggle-desc">Switch between light, dark, or system auto theme.</span>
+                <span className="toggle-title">Appearance Theme</span>
+                <span className="toggle-desc">Switch between sleek dark mode, clean light, or system auto theme.</span>
               </div>
-              <div className="theme-selector">
+              <div className="segmented-selector">
                 {mounted && (
                   <>
                     <button className={theme === 'light' ? 'active' : ''} onClick={() => setTheme('light')}>Light</button>
                     <button className={theme === 'dark' ? 'active' : ''} onClick={() => setTheme('dark')}>Dark</button>
-                    <button className={theme === 'system' ? 'active' : ''} onClick={() => setTheme('system')}>Auto</button>
+                    <button className={theme === 'system' ? 'active' : ''} onClick={() => setTheme('system')}>System</button>
                   </>
                 )}
               </div>
@@ -307,22 +684,22 @@ export default function SettingsPage() {
         <section className="settings-section glass">
           <div className="section-header">
             <FileJson className="sec-icon" size={18} />
-            <h2>Data Management</h2>
+            <h2>Data Management & Backups</h2>
           </div>
           <div className="section-body actions-list">
             <div className="data-action-item">
               <div className="action-info">
-                <span className="action-title">Export Watchlist & History</span>
-                <span className="action-desc">Download a backup containing all your watchlist items, favorites, and history.</span>
+                <span className="action-title">Export Watchlist & Library</span>
+                <span className="action-desc">Download a backup file containing your watchlist, history, favorite artists, and franchise collections.</span>
               </div>
               <div className="action-btns">
-                <button className="btn-secondary" onClick={() => handleExportData('json')}>
+                <button className="btn-secondary-setting" onClick={() => handleExportData('json')}>
                   <FileJson size={14} />
-                  <span>JSON</span>
+                  <span>JSON Backup</span>
                 </button>
-                <button className="btn-secondary" onClick={() => handleExportData('txt')}>
+                <button className="btn-secondary-setting" onClick={() => handleExportData('txt')}>
                   <FileText size={14} />
-                  <span>TXT</span>
+                  <span>Text Summary</span>
                 </button>
               </div>
             </div>
@@ -332,7 +709,7 @@ export default function SettingsPage() {
                 <span className="action-title">Restore Library Backup</span>
                 <span className="action-desc">Upload a previously exported JSON backup file to restore your entire library.</span>
               </div>
-              <button className="btn-secondary" onClick={() => fileInputRef.current?.click()}>
+              <button className="btn-secondary-setting" onClick={() => fileInputRef.current?.click()}>
                 <Upload size={14} />
                 <span>Upload Backup</span>
               </button>
@@ -348,7 +725,7 @@ export default function SettingsPage() {
             <div className="data-action-item danger">
               <div className="action-info">
                 <span className="action-title">Wipe Local Database</span>
-                <span className="action-desc">Delete watchlist feed syncs, favorite artists, history, and search history caches completely.</span>
+                <span className="action-desc">Permanently delete watchlist items, favorite stars, franchise collections, history, and AI chat logs.</span>
               </div>
               <button className="btn-danger-setting" onClick={handleWipeLibrary}>
                 <Trash2 size={14} />
@@ -361,8 +738,9 @@ export default function SettingsPage() {
 
       <style jsx>{`
         .settings-container {
-          max-width: 800px;
+          max-width: 820px;
           margin: 0 auto;
+          padding-bottom: 60px;
         }
 
         .header-row {
@@ -383,16 +761,16 @@ export default function SettingsPage() {
         }
 
         .header-title {
-          font-size: 24px;
+          font-size: 26px;
           font-weight: 800;
           color: var(--foreground);
-          letter-spacing: 0.5px;
+          letter-spacing: -0.5px;
         }
 
         .settings-sections {
           display: flex;
           flex-direction: column;
-          gap: 20px;
+          gap: 24px;
         }
 
         .settings-section {
@@ -406,9 +784,9 @@ export default function SettingsPage() {
           display: flex;
           align-items: center;
           gap: 10px;
-          margin-bottom: 16px;
+          margin-bottom: 18px;
           border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-          padding-bottom: 10px;
+          padding-bottom: 12px;
         }
 
         .sec-icon {
@@ -419,13 +797,13 @@ export default function SettingsPage() {
           font-size: 16px;
           font-weight: 700;
           color: var(--foreground);
-          letter-spacing: 0.5px;
+          letter-spacing: 0.3px;
         }
 
         .section-body {
           display: flex;
           flex-direction: column;
-          gap: 14px;
+          gap: 16px;
         }
 
         .description {
@@ -434,91 +812,208 @@ export default function SettingsPage() {
           line-height: 1.5;
         }
 
-        .api-input-row {
+        /* Profile Summary Box */
+        .profile-summary-box {
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid var(--card-border);
+          border-radius: var(--border-radius-md);
+          padding: 16px;
           display: flex;
+          flex-direction: column;
           gap: 12px;
-          width: 100%;
         }
 
-        .action-btn {
-          width: 100%;
+        .profile-row {
           display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 16px 20px;
-          background: var(--badge-bg);
-          border: 1px solid var(--badge-border);
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .profile-label {
+          font-size: 12px;
+          font-weight: 700;
+          color: var(--foreground-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .profile-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .summary-chip {
+          background: rgba(255, 255, 255, 0.06);
+          border: 1px solid rgba(255, 255, 255, 0.1);
           border-radius: 14px;
+          padding: 3px 10px;
+          font-size: 12px;
           color: var(--foreground);
-          font-size: 15px;
+          font-weight: 500;
+        }
+
+        .summary-chip.star-chip {
+          border-color: rgba(234, 179, 8, 0.3);
+          color: #facc15;
+          background: rgba(234, 179, 8, 0.08);
+        }
+
+        .summary-muted {
+          font-size: 12.5px;
+          color: var(--foreground-muted);
+          font-style: italic;
+        }
+
+        .profile-buttons-row {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          margin-top: 4px;
+        }
+
+        .btn-primary-setting {
+          background: var(--primary-gradient);
+          color: #fff;
+          border: none;
+          padding: 9px 18px;
+          border-radius: 12px;
+          font-size: 13px;
           font-weight: 600;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          text-decoration: none;
           cursor: pointer;
           transition: var(--transition-smooth);
-          text-align: left;
         }
 
-        .action-btn:hover {
-          background: var(--sidebar-hover);
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        .btn-primary-setting:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px var(--primary-glow);
         }
 
-        .danger-zone .action-btn {
-          background: rgba(239, 68, 68, 0.05);
-          border-color: rgba(239, 68, 68, 0.2);
-          color: #ef4444;
-        }
-
-        .danger-zone .action-btn:hover {
-          background: rgba(239, 68, 68, 0.1);
-          border-color: rgba(239, 68, 68, 0.4);
-        }
-        
-        .theme-selector {
-          display: flex;
-          gap: 8px;
+        .btn-secondary-setting {
           background: var(--input-bg);
-          padding: 4px;
-          border-radius: 12px;
           border: 1px solid var(--card-border);
+          color: var(--foreground);
+          padding: 8px 16px;
+          border-radius: 12px;
+          font-size: 13px;
+          font-weight: 600;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          cursor: pointer;
+          transition: var(--transition-smooth);
         }
-        
-        .theme-selector button {
-          padding: 6px 16px;
+
+        .btn-secondary-setting:hover {
+          background: var(--sidebar-hover);
+          border-color: var(--foreground-muted);
+        }
+
+        /* Setting Subgroup */
+        .setting-subgroup {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .input-label {
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--foreground);
+        }
+
+        .sub-desc {
+          font-size: 12px;
+          color: var(--foreground-muted);
+          line-height: 1.4;
+        }
+
+        .api-input-row {
+          display: flex;
+          gap: 10px;
+          width: 100%;
+        }
+
+        .password-input-wrapper {
+          position: relative;
+          flex: 1;
+          display: flex;
+          align-items: center;
+        }
+
+        .toggle-eye-btn {
+          position: absolute;
+          right: 12px;
           background: transparent;
           border: none;
           color: var(--foreground-muted);
-          font-size: 13px;
-          font-weight: 600;
-          border-radius: 8px;
           cursor: pointer;
-          transition: var(--transition-smooth);
-        }
-        
-        .theme-selector button:hover {
-          color: var(--foreground);
-        }
-        
-        .theme-selector button.active {
-          background: var(--sidebar-hover);
-          color: var(--foreground);
-          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+          display: flex;
+          align-items: center;
         }
 
         .modal-input {
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 10px;
+          background: var(--input-bg);
+          border: 1px solid var(--input-border);
+          border-radius: 12px;
           color: var(--foreground);
           padding: 12px 16px;
-          font-size: 14px;
-          flex: 1;
+          font-size: 13.5px;
+          width: 100%;
           outline: none;
+          transition: var(--transition-smooth);
         }
 
         .modal-input:focus {
           border-color: var(--primary);
-          background: rgba(255, 255, 255, 0.08);
+          background: var(--input-focus-bg);
+        }
+
+        .memory-header-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .memory-clear-btn {
+          background: transparent;
+          border: none;
+          color: #fca5a5;
+          font-size: 11.5px;
+          font-weight: 600;
+          cursor: pointer;
+          text-decoration: underline;
+        }
+
+        .memory-textarea {
+          width: 100%;
+          background: var(--input-bg);
+          border: 1px solid var(--input-border);
+          border-radius: 12px;
+          color: var(--foreground);
+          padding: 12px 16px;
+          font-size: 13px;
+          font-family: inherit;
+          resize: vertical;
+          outline: none;
+          line-height: 1.5;
+        }
+
+        .memory-textarea:focus {
+          border-color: var(--primary);
+          background: var(--input-focus-bg);
+        }
+
+        .memory-footer {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 16px;
+          flex-wrap: wrap;
         }
 
         .helper-link {
@@ -530,11 +1025,45 @@ export default function SettingsPage() {
           color: var(--primary);
           transition: var(--transition-smooth);
           align-self: flex-start;
+          text-decoration: none;
         }
 
         .helper-link:hover {
           filter: brightness(1.2);
           text-decoration: underline;
+        }
+
+        /* Segmented Selector */
+        .segmented-selector {
+          display: flex;
+          gap: 6px;
+          background: var(--input-bg);
+          padding: 4px;
+          border-radius: 12px;
+          border: 1px solid var(--card-border);
+        }
+
+        .segmented-selector button {
+          padding: 6px 14px;
+          background: transparent;
+          border: 1px solid transparent;
+          color: var(--foreground-muted);
+          font-size: 12.5px;
+          font-weight: 600;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: var(--transition-smooth);
+        }
+
+        .segmented-selector button:hover {
+          color: var(--foreground);
+        }
+
+        .segmented-selector button.active {
+          background: var(--card-bg);
+          color: var(--foreground);
+          border-color: var(--card-border);
+          box-shadow: 0 1px 4px var(--shadow-color);
         }
 
         /* Switch list */
@@ -552,7 +1081,7 @@ export default function SettingsPage() {
         .toggle-label {
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 3px;
         }
 
         .toggle-title {
@@ -571,8 +1100,8 @@ export default function SettingsPage() {
         .switch {
           position: relative;
           display: inline-block;
-          width: 48px;
-          height: 26px;
+          width: 46px;
+          height: 25px;
           flex-shrink: 0;
         }
 
@@ -597,8 +1126,8 @@ export default function SettingsPage() {
         .slider:before {
           position: absolute;
           content: "";
-          height: 18px;
-          width: 18px;
+          height: 17px;
+          width: 17px;
           left: 3px;
           bottom: 3px;
           background-color: white;
@@ -610,12 +1139,8 @@ export default function SettingsPage() {
           background-color: var(--primary);
         }
 
-        input:focus + .slider {
-          box-shadow: 0 0 1px var(--primary);
-        }
-
         input:checked + .slider:before {
-          transform: translateX(22px);
+          transform: translateX(21px);
         }
 
         .slider.round {
@@ -648,11 +1173,11 @@ export default function SettingsPage() {
         .action-info {
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 3px;
         }
 
         .action-title {
-          font-size: 14.5px;
+          font-size: 14px;
           font-weight: 700;
           color: var(--foreground);
         }
@@ -669,13 +1194,13 @@ export default function SettingsPage() {
         }
 
         .btn-danger-setting {
-          background: rgba(239, 68, 68, 0.15);
+          background: rgba(239, 68, 68, 0.12);
           color: #fca5a5;
           border: 1px solid rgba(239, 68, 68, 0.25);
           padding: 8px 16px;
           border-radius: 20px;
           font-weight: 600;
-          font-size: 13.5px;
+          font-size: 13px;
           display: inline-flex;
           align-items: center;
           gap: 8px;
@@ -684,8 +1209,9 @@ export default function SettingsPage() {
         }
 
         .btn-danger-setting:hover {
-          background: rgba(239, 68, 68, 0.3);
+          background: rgba(239, 68, 68, 0.25);
           border-color: rgba(239, 68, 68, 0.5);
+          color: #fff;
           transform: translateY(-1px);
         }
       `}</style>

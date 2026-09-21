@@ -1,45 +1,65 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
   Bookmark, 
   History, 
   Heart, 
+  Layers,
   Trash2, 
   RefreshCw, 
-  Download, 
-  Upload, 
   ArrowUpDown, 
   X, 
   FileText, 
   Image as ImageIcon, 
   Link2,
-  AlertCircle
+  AlertCircle,
+  Search,
+  BarChart3,
+  Film,
+  Tv,
+  Sparkles,
+  SlidersHorizontal,
+  Compass
 } from 'lucide-react';
 import { AsyncStorage } from '@/utils/storage';
 import { getImageUrl, searchTMDB, GLOBAL_CONFIG } from '@/utils/tmdb';
+import { GENRE_OPTIONS } from '@/utils/userPreferences';
 import axios from 'axios';
+
+type TabType = 'watchlist' | 'history' | 'artists' | 'collections';
+type MediaTypeFilter = 'all' | 'movie' | 'tv' | 'collection';
+type SortOption = 'default' | 'title' | 'rating' | 'date';
 
 export default function WatchListPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'watchlist' | 'history' | 'artists'>('watchlist');
+  const [activeTab, setActiveTab] = useState<TabType>('watchlist');
   
   const [watchlist, setWatchlist] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [artists, setArtists] = useState<any[]>([]);
+  const [collections, setCollections] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState('');
   
+  // Search & Filter States
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [selectedMediaType, setSelectedMediaType] = useState<MediaTypeFilter>('all');
+  const [selectedGenreIds, setSelectedGenreIds] = useState<number[]>([]);
+  
+  // Sorting States
+  const [sortBy, setSortBy] = useState<SortOption>('default');
+  const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
+  
   // UI Dialog States
   const [isLinkModalVisible, setIsLinkModalVisible] = useState(false);
   const [syncLinkInput, setSyncLinkInput] = useState('');
   const [isImportMenuOpen, setIsImportMenuOpen] = useState(false);
-  const [sortBy, setSortBy] = useState<'default' | 'title' | 'rating' | 'date'>('default');
-  const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
   
   // Import Summary Alert State
   const [importSummary, setImportSummary] = useState<{
@@ -58,10 +78,12 @@ export default function WatchListPage() {
       const storedMovies = await AsyncStorage.getItem('watchlist');
       const storedArtists = await AsyncStorage.getItem('favoriteArtists');
       const storedWatched = await AsyncStorage.getItem('history');
+      const storedCollections = await AsyncStorage.getItem('savedCollections');
       
       if (storedMovies) setWatchlist(JSON.parse(storedMovies));
       if (storedArtists) setArtists(JSON.parse(storedArtists));
       if (storedWatched) setHistory(JSON.parse(storedWatched));
+      if (storedCollections) setCollections(JSON.parse(storedCollections));
     } catch (error) {
       console.error('Failed to load library data', error);
     } finally {
@@ -73,7 +95,7 @@ export default function WatchListPage() {
     loadData();
   }, []);
 
-  const handleRemove = async (id: number, type: 'watchlist' | 'artists' | 'history') => {
+  const handleRemove = async (id: number, type: TabType) => {
     try {
       if (type === 'watchlist') {
         const newList = watchlist.filter(item => item.id !== id);
@@ -87,6 +109,41 @@ export default function WatchListPage() {
         const newList = history.filter(item => item.id !== id);
         setHistory(newList);
         await AsyncStorage.setItem('history', JSON.stringify(newList));
+      } else if (type === 'collections') {
+        const newList = collections.filter(item => item.id !== id);
+        setCollections(newList);
+        await AsyncStorage.setItem('savedCollections', JSON.stringify(newList));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleClearCurrentTab = async () => {
+    const tabName = activeTab === 'watchlist' 
+      ? 'Watchlist' 
+      : activeTab === 'history' 
+      ? 'History' 
+      : activeTab === 'artists' 
+      ? 'Artists' 
+      : 'Collections';
+    
+    const confirm = window.confirm(`Are you sure you want to clear your entire ${tabName}?`);
+    if (!confirm) return;
+
+    try {
+      if (activeTab === 'watchlist') {
+        setWatchlist([]);
+        await AsyncStorage.setItem('watchlist', JSON.stringify([]));
+      } else if (activeTab === 'history') {
+        setHistory([]);
+        await AsyncStorage.setItem('history', JSON.stringify([]));
+      } else if (activeTab === 'artists') {
+        setArtists([]);
+        await AsyncStorage.setItem('favoriteArtists', JSON.stringify([]));
+      } else if (activeTab === 'collections') {
+        setCollections([]);
+        await AsyncStorage.setItem('savedCollections', JSON.stringify([]));
       }
     } catch (e) {
       console.error(e);
@@ -211,7 +268,6 @@ export default function WatchListPage() {
     return results;
   };
 
-  // HTML5 File inputs change handlers
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -284,63 +340,125 @@ export default function WatchListPage() {
     reader.readAsDataURL(file);
   };
 
-  // Sorting Handler
-  const getSortedItems = (items: any[]) => {
-    const sorted = [...items];
+  // Filter and Sort Logic
+  const filteredAndSortedItems = useMemo(() => {
+    let list: any[] = [];
+    if (activeTab === 'watchlist') list = [...watchlist];
+    else if (activeTab === 'history') list = [...history];
+    else if (activeTab === 'artists') list = [...artists];
+    else if (activeTab === 'collections') list = [...collections];
+
+    // Search query filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(item => {
+        const title = (item.title || item.name || '').toLowerCase();
+        const overview = (item.overview || '').toLowerCase();
+        return title.includes(q) || overview.includes(q);
+      });
+    }
+
+    // Media type filter (for watchlist & history)
+    if (activeTab === 'watchlist' || activeTab === 'history') {
+      if (selectedMediaType === 'movie') {
+        list = list.filter(item => item.media_type === 'movie' || (!item.first_air_date && item.media_type !== 'tv' && item.media_type !== 'collection'));
+      } else if (selectedMediaType === 'tv') {
+        list = list.filter(item => item.media_type === 'tv' || item.first_air_date);
+      } else if (selectedMediaType === 'collection') {
+        list = list.filter(item => item.media_type === 'collection');
+      }
+    }
+
+    // Genre filter (for watchlist & history)
+    if ((activeTab === 'watchlist' || activeTab === 'history') && selectedGenreIds.length > 0) {
+      list = list.filter(item => {
+        if (item.genre_ids && Array.isArray(item.genre_ids)) {
+          return selectedGenreIds.some(id => item.genre_ids.includes(id));
+        }
+        if (item.genres && Array.isArray(item.genres)) {
+          return selectedGenreIds.some(id => item.genres.some((g: any) => g.id === id));
+        }
+        return false;
+      });
+    }
+
+    // Sorting
     if (sortBy === 'title') {
-      sorted.sort((a, b) => {
-        const tA = a.title || a.name || '';
-        const tB = b.title || b.name || '';
+      list.sort((a, b) => {
+        const tA = (a.title || a.name || '').toLowerCase();
+        const tB = (b.title || b.name || '').toLowerCase();
         return sortDirection === 'asc' ? tA.localeCompare(tB) : tB.localeCompare(tA);
       });
     } else if (sortBy === 'rating') {
-      sorted.sort((a, b) => {
+      list.sort((a, b) => {
         const rA = a.vote_average || 0;
         const rB = b.vote_average || 0;
         return sortDirection === 'asc' ? rA - rB : rB - rA;
       });
     } else if (sortBy === 'date') {
-      sorted.sort((a, b) => {
+      list.sort((a, b) => {
         const dA = a.release_date || a.first_air_date || '';
         const dB = b.release_date || b.first_air_date || '';
         return sortDirection === 'asc' ? dA.localeCompare(dB) : dB.localeCompare(dA);
       });
+    } else if (sortBy === 'default' && sortDirection === 'asc') {
+      list.reverse();
     }
-    return sorted;
-  };
 
-  const activeItems = activeTab === 'watchlist' 
-    ? getSortedItems(watchlist) 
-    : activeTab === 'history' 
-    ? getSortedItems(history) 
-    : getSortedItems(artists);
+    return list;
+  }, [activeTab, watchlist, history, artists, collections, searchQuery, selectedMediaType, selectedGenreIds, sortBy, sortDirection]);
 
   return (
     <div className="watchlist-container">
       {/* Header section */}
       <div className="header-row animate-fade-in-up">
-        <h1 className="header-title">My Library</h1>
+        <div className="header-left">
+          <h1 className="header-title">My Library</h1>
+          <div className="library-stats-pill">
+            <span>{filteredAndSortedItems.length} items</span>
+          </div>
+        </div>
         
         <div className="header-actions">
-          {/* Sort trigger button */}
-          <div className="sort-menu-container">
-            <button className="icon-btn" onClick={() => {
+          {/* Search Toggle */}
+          <button 
+            className={`icon-btn ${isSearchOpen ? 'active' : ''}`}
+            onClick={() => {
+              setIsSearchOpen(prev => !prev);
+              if (isSearchOpen) setSearchQuery('');
+            }}
+            title="Search library"
+          >
+            <Search size={16} />
+          </button>
+
+          {/* Stats Page Link */}
+          <Link href="/stats" className="icon-btn" title="View Watch Statistics & Insights">
+            <BarChart3 size={16} />
+            <span className="btn-text">Stats</span>
+          </Link>
+
+          {/* Sort Menu Button */}
+          <button 
+            className="icon-btn" 
+            onClick={() => {
               if (sortBy === 'default') setSortBy('title');
               else if (sortBy === 'title') setSortBy('rating');
               else if (sortBy === 'rating') setSortBy('date');
               else setSortBy('default');
               setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
-            }} title="Change Sort Mode">
-              <ArrowUpDown size={18} />
-              <span className="sort-label">Sort: {sortBy}</span>
-            </button>
-          </div>
+            }} 
+            title={`Sort: ${sortBy} (${sortDirection})`}
+          >
+            <ArrowUpDown size={16} />
+            <span className="btn-text">{sortBy} ({sortDirection})</span>
+          </button>
 
           {/* Import sync options button */}
           <div className="import-menu-container">
             <button className="icon-btn btn-primary" onClick={() => setIsImportMenuOpen(!isImportMenuOpen)}>
-              <RefreshCw size={16} />
-              <span>Sync & Import</span>
+              <RefreshCw size={15} />
+              <span className="btn-text">Sync & Import</span>
             </button>
 
             {isImportMenuOpen && (
@@ -360,8 +478,43 @@ export default function WatchListPage() {
               </div>
             )}
           </div>
+
+          {/* Clear Current Tab */}
+          {filteredAndSortedItems.length > 0 && (
+            <button 
+              className="icon-btn btn-danger-ghost" 
+              onClick={handleClearCurrentTab}
+              title="Clear all in this tab"
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Inline Search Bar */}
+      {isSearchOpen && (
+        <div className="search-bar-row animate-fade-in-up">
+          <div className="search-input-wrapper">
+            <span className="search-icon-wrapper">
+              <Search size={18} />
+            </span>
+            <input 
+              type="text" 
+              placeholder={`Search ${activeTab}...`} 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="search-input-field"
+              autoFocus
+            />
+            {searchQuery && (
+              <button className="search-clear-btn" onClick={() => setSearchQuery('')}>
+                <X size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Hidden Web File Inputs */}
       <input 
@@ -379,7 +532,7 @@ export default function WatchListPage() {
         onChange={handleImageChange} 
       />
 
-      {/* Tab Navigation */}
+      {/* Main Tabs Navigation */}
       <div className="tabs-row animate-fade-in-up">
         <button 
           className={`tab-btn ${activeTab === 'watchlist' ? 'active' : ''}`}
@@ -389,6 +542,7 @@ export default function WatchListPage() {
           <span>Watchlist</span>
           <span className="count-badge">{watchlist.length}</span>
         </button>
+
         <button 
           className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
           onClick={() => setActiveTab('history')}
@@ -397,6 +551,7 @@ export default function WatchListPage() {
           <span>History</span>
           <span className="count-badge">{history.length}</span>
         </button>
+
         <button 
           className={`tab-btn ${activeTab === 'artists' ? 'active' : ''}`}
           onClick={() => setActiveTab('artists')}
@@ -405,7 +560,76 @@ export default function WatchListPage() {
           <span>Artists</span>
           <span className="count-badge">{artists.length}</span>
         </button>
+
+        <button 
+          className={`tab-btn ${activeTab === 'collections' ? 'active' : ''}`}
+          onClick={() => setActiveTab('collections')}
+        >
+          <Layers size={16} />
+          <span>Franchises</span>
+          <span className="count-badge">{collections.length}</span>
+        </button>
       </div>
+
+      {/* Media Type and Genre Filter Pills (Watchlist & History) */}
+      {(activeTab === 'watchlist' || activeTab === 'history') && (
+        <div className="filters-container animate-fade-in-up">
+          {/* Media Type Chips */}
+          <div className="media-type-pills">
+            <button 
+              className={`pill-btn ${selectedMediaType === 'all' ? 'active' : ''}`}
+              onClick={() => setSelectedMediaType('all')}
+            >
+              All
+            </button>
+            <button 
+              className={`pill-btn ${selectedMediaType === 'movie' ? 'active' : ''}`}
+              onClick={() => setSelectedMediaType(selectedMediaType === 'movie' ? 'all' : 'movie')}
+            >
+              <Film size={13} />
+              <span>Movies</span>
+            </button>
+            <button 
+              className={`pill-btn ${selectedMediaType === 'tv' ? 'active' : ''}`}
+              onClick={() => setSelectedMediaType(selectedMediaType === 'tv' ? 'all' : 'tv')}
+            >
+              <Tv size={13} />
+              <span>Series</span>
+            </button>
+            <button 
+              className={`pill-btn ${selectedMediaType === 'collection' ? 'active' : ''}`}
+              onClick={() => setSelectedMediaType(selectedMediaType === 'collection' ? 'all' : 'collection')}
+            >
+              <Layers size={13} />
+              <span>Franchises</span>
+            </button>
+          </div>
+
+          <div className="filter-divider" />
+
+          {/* Genre Chips Carousel */}
+          <div className="genres-scroll-row">
+            {GENRE_OPTIONS.map(genre => {
+              const isSelected = selectedGenreIds.includes(genre.id);
+              return (
+                <button 
+                  key={genre.id}
+                  className={`genre-chip ${isSelected ? 'active' : ''}`}
+                  onClick={() => {
+                    setSelectedGenreIds(prev => 
+                      prev.includes(genre.id) ? prev.filter(id => id !== genre.id) : [...prev, genre.id]
+                    );
+                  }}
+                >
+                  <span className="genre-emoji">{genre.emoji}</span>
+                  <span className="genre-label">{genre.label}</span>
+                  {isSelected && <X size={12} className="genre-clear" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Syncing loader */}
       {syncing && (
@@ -420,17 +644,29 @@ export default function WatchListPage() {
         <div className="loading-spinner-container">
           <div className="spinner" />
         </div>
-      ) : activeItems.length > 0 ? (
+      ) : filteredAndSortedItems.length > 0 ? (
         <div className="media-grid animate-fade-in-up">
-          {activeItems.map((item) => {
-            const isArtist = activeTab === 'artists';
-            const mediaType = item.media_type || (isArtist ? 'person' : 'movie');
+          {filteredAndSortedItems.map((item) => {
+            const isArtist = activeTab === 'artists' || item.known_for_department !== undefined;
+            const isCollection = activeTab === 'collections' || item.media_type === 'collection';
+            const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
             const titleText = item.title || item.name || 'Unknown';
-            const imagePath = isArtist ? item.profile_path : item.poster_path;
+            const imagePath = isArtist 
+              ? item.profile_path 
+              : (item.poster_path || item.backdrop_path);
             
+            // Link destination
+            let targetHref = `/detail?id=${item.id}&type=${mediaType}`;
+            if (isArtist) targetHref = `/cast?id=${item.id}`;
+            else if (isCollection) targetHref = `/collection?id=${item.id}&name=${encodeURIComponent(titleText)}`;
+
+            const releaseYear = (item.release_date || item.first_air_date)
+              ? String(item.release_date || item.first_air_date).substring(0, 4)
+              : null;
+
             return (
-              <div key={item.id} className="library-card-wrapper">
-                <Link href={isArtist ? `/cast?id=${item.id}` : `/detail?id=${item.id}&type=${mediaType}`} className="card-link">
+              <div key={`${activeTab}-${item.id}`} className="library-card-wrapper">
+                <Link href={targetHref} className="card-link">
                   <div className="card-image-box">
                     <img 
                       src={getImageUrl(imagePath, 'w342')} 
@@ -438,7 +674,34 @@ export default function WatchListPage() {
                       className="card-img"
                       loading="lazy"
                     />
-                    
+
+                    {/* Gradient Overlay */}
+                    <div className="card-overlay" />
+
+                    {/* Top Badges */}
+                    <div className="card-top-badges">
+                      {isCollection ? (
+                        <span className="badge-pill franchise-badge">
+                          <Layers size={11} />
+                          <span>{item.parts_count ? `${item.parts_count} Films` : 'Franchise'}</span>
+                        </span>
+                      ) : isArtist ? (
+                        <span className="badge-pill artist-badge">
+                          {item.known_for_department || 'Artist'}
+                        </span>
+                      ) : (
+                        <span className="badge-pill type-badge">
+                          {mediaType.toUpperCase()}
+                        </span>
+                      )}
+
+                      {item.vote_average && (
+                        <span className="badge-pill rating-badge">
+                          ★ {item.vote_average.toFixed(1)}
+                        </span>
+                      )}
+                    </div>
+
                     {/* Delete item button */}
                     <button 
                       className="remove-btn" 
@@ -449,10 +712,22 @@ export default function WatchListPage() {
                       }}
                       title="Remove from library"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={13} />
                     </button>
                   </div>
-                  <h3 className="card-title" title={titleText}>{titleText}</h3>
+
+                  <div className="card-info">
+                    <h3 className="card-title" title={titleText}>{titleText}</h3>
+                    <div className="card-subtext">
+                      {isArtist ? (
+                        <span>{item.known_for_department || 'Cast & Crew'}</span>
+                      ) : isCollection ? (
+                        <span>Universe Anthology</span>
+                      ) : (
+                        <span>{releaseYear || 'Media'}</span>
+                      )}
+                    </div>
+                  </div>
                 </Link>
               </div>
             );
@@ -460,9 +735,52 @@ export default function WatchListPage() {
         </div>
       ) : (
         <div className="empty-state animate-fade-in-up">
-          <AlertCircle size={40} className="empty-icon" />
-          <h2>Your {activeTab} is empty</h2>
-          <p>Go to the Explore tab to search and add content.</p>
+          <div className="empty-icon-circle">
+            {activeTab === 'watchlist' ? (
+              <Bookmark size={36} />
+            ) : activeTab === 'history' ? (
+              <History size={36} />
+            ) : activeTab === 'artists' ? (
+              <Heart size={36} />
+            ) : (
+              <Layers size={36} />
+            )}
+          </div>
+          <h2>
+            {searchQuery || selectedGenreIds.length > 0 || selectedMediaType !== 'all'
+              ? "No matching items found"
+              : activeTab === 'watchlist'
+              ? "Your Watchlist is empty"
+              : activeTab === 'history'
+              ? "Nothing watched yet"
+              : activeTab === 'artists'
+              ? "No favorite artists"
+              : "No saved franchises"}
+          </h2>
+          <p>
+            {searchQuery || selectedGenreIds.length > 0 || selectedMediaType !== 'all'
+              ? "Try adjusting your search query or removing some active filters."
+              : activeTab === 'watchlist'
+              ? "Save movies and series you want to watch next by clicking the Bookmark icon."
+              : activeTab === 'history'
+              ? "Titles you mark as watched or stream will automatically appear in this history."
+              : activeTab === 'artists'
+              ? "Follow favorite actors & directors to track their filmography and releases."
+              : "Save whole movie universes and collections from movie detail pages."}
+          </p>
+
+          <div className="empty-actions">
+            {activeTab === 'watchlist' && !searchQuery && (
+              <button className="btn-primary" onClick={() => setIsImportMenuOpen(true)}>
+                <RefreshCw size={15} />
+                <span>Import Existing Watchlist</span>
+              </button>
+            )}
+            <Link href="/" className="btn-secondary">
+              <Compass size={15} />
+              <span>Explore Content</span>
+            </Link>
+          </div>
         </div>
       )}
 
@@ -477,11 +795,11 @@ export default function WatchListPage() {
               </button>
             </div>
             <p className="modal-desc">
-              Link your Letterboxd RSS Feed URL or custom Vercel database endpoint to sync watchlist entries automatically.
+              Link your Letterboxd RSS Feed URL or custom watchlist endpoint to sync movie entries automatically.
             </p>
             <input 
               type="text" 
-              placeholder="https://example.com/rss/feed"
+              placeholder="https://letterboxd.com/username/watchlist/rss/"
               value={syncLinkInput}
               onChange={(e) => setSyncLinkInput(e.target.value)}
               className="modal-input"
@@ -535,46 +853,75 @@ export default function WatchListPage() {
       <style jsx>{`
         .watchlist-container {
           position: relative;
+          padding-bottom: 60px;
         }
 
         .header-row {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 28px;
+          margin-bottom: 24px;
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+
+        .header-left {
+          display: flex;
+          align-items: center;
+          gap: 14px;
         }
 
         .header-title {
-          font-size: 24px;
+          font-size: 26px;
           font-weight: 800;
           color: var(--foreground);
-          letter-spacing: 0.5px;
+          letter-spacing: -0.5px;
+        }
+
+        .library-stats-pill {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid var(--card-border);
+          border-radius: 20px;
+          padding: 4px 12px;
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--foreground-muted);
         }
 
         .header-actions {
           display: flex;
-          gap: 12px;
+          gap: 10px;
           align-items: center;
+          flex-wrap: wrap;
         }
 
         .icon-btn {
           background: rgba(255, 255, 255, 0.04);
           border: 1px solid var(--card-border);
           border-radius: 12px;
-          padding: 8px 16px;
+          padding: 8px 14px;
           color: var(--foreground);
-          font-size: 13.5px;
+          font-size: 13px;
           font-weight: 600;
-          display: flex;
+          display: inline-flex;
           align-items: center;
           gap: 8px;
           cursor: pointer;
           transition: var(--transition-smooth);
+          text-decoration: none;
         }
 
         .icon-btn:hover {
           background: rgba(255, 255, 255, 0.08);
           border-color: rgba(255, 255, 255, 0.2);
+          transform: translateY(-1px);
+        }
+
+        .icon-btn.active {
+          background: rgba(229, 9, 20, 0.15);
+          border-color: var(--primary);
+          color: var(--primary);
+          font-weight: 700;
         }
 
         .icon-btn.btn-primary {
@@ -582,8 +929,74 @@ export default function WatchListPage() {
           border-color: transparent;
         }
 
-        .sort-label {
+        .icon-btn.btn-danger-ghost {
+          background: rgba(239, 68, 68, 0.1);
+          border-color: rgba(239, 68, 68, 0.2);
+          color: #fca5a5;
+        }
+
+        .icon-btn.btn-danger-ghost:hover {
+          background: rgba(239, 68, 68, 0.25);
+          color: #fff;
+        }
+
+        .btn-text {
           text-transform: capitalize;
+        }
+
+        .search-bar-row {
+          margin-bottom: 20px;
+        }
+
+        .search-input-wrapper {
+          position: relative;
+          display: flex;
+          align-items: center;
+          max-width: 600px;
+        }
+
+        .search-icon-wrapper {
+          position: absolute;
+          left: 16px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: var(--foreground-muted);
+          pointer-events: none;
+          z-index: 2;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 18px;
+          height: 18px;
+        }
+
+        .search-input-field {
+          width: 100%;
+          padding: 12px 42px 12px 46px;
+          background: var(--input-bg);
+          border: 1px solid var(--input-border);
+          border-radius: 14px;
+          color: var(--foreground);
+          font-size: 14px;
+          outline: none;
+          transition: var(--transition-smooth);
+        }
+
+        .search-input-field:focus {
+          border-color: var(--primary);
+          background: var(--input-focus-bg);
+          box-shadow: 0 0 15px rgba(229, 9, 20, 0.2);
+        }
+
+        .search-clear-btn {
+          position: absolute;
+          right: 14px;
+          background: transparent;
+          border: none;
+          color: var(--foreground-muted);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
         }
 
         .import-menu-container {
@@ -595,14 +1008,14 @@ export default function WatchListPage() {
           top: 100%;
           right: 0;
           margin-top: 10px;
-          width: 220px;
+          width: 230px;
           border-radius: var(--border-radius-md);
           overflow: hidden;
-          z-index: 50;
+          z-index: 60;
           display: flex;
           flex-direction: column;
           border: 1px solid var(--card-border);
-          box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+          box-shadow: 0 10px 25px rgba(0,0,0,0.6);
         }
 
         .import-dropdown button {
@@ -610,7 +1023,7 @@ export default function WatchListPage() {
           border: none;
           padding: 12px 16px;
           color: var(--foreground-muted);
-          font-size: 13.5px;
+          font-size: 13px;
           font-weight: 600;
           display: flex;
           align-items: center;
@@ -621,7 +1034,7 @@ export default function WatchListPage() {
         }
 
         .import-dropdown button:hover {
-          background: rgba(255, 255, 255, 0.05);
+          background: rgba(255, 255, 255, 0.08);
           color: var(--foreground);
         }
 
@@ -630,17 +1043,18 @@ export default function WatchListPage() {
           display: flex;
           background: rgba(255, 255, 255, 0.02);
           border: 1px solid var(--card-border);
-          padding: 4px;
-          border-radius: 30px;
-          margin-bottom: 30px;
-          max-width: 500px;
+          padding: 5px;
+          border-radius: 16px;
+          margin-bottom: 20px;
+          max-width: 620px;
+          gap: 4px;
         }
 
         .tab-btn {
           flex: 1;
           background: transparent;
           border: none;
-          height: 40px;
+          height: 42px;
           border-radius: 12px;
           color: var(--foreground-muted);
           font-size: 13.5px;
@@ -659,15 +1073,16 @@ export default function WatchListPage() {
         }
 
         .tab-btn.active {
-          background: rgba(255, 255, 255, 0.06);
+          background: var(--card-bg);
           color: var(--foreground);
-          box-shadow: inset 0 1px 0 0 rgba(255,255,255,0.05);
+          box-shadow: 0 2px 8px var(--shadow-color);
+          border: 1px solid var(--card-border);
         }
 
         .count-badge {
-          font-size: 10px;
+          font-size: 11px;
           font-weight: 700;
-          padding: 2px 6px;
+          padding: 2px 7px;
           border-radius: 10px;
           background: rgba(255, 255, 255, 0.08);
           color: var(--foreground-muted);
@@ -675,7 +1090,105 @@ export default function WatchListPage() {
 
         .tab-btn.active .count-badge {
           background: var(--primary);
+          color: #fff;
+        }
+
+        /* Filter Row */
+        .filters-container {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          margin-bottom: 28px;
+          overflow-x: auto;
+          padding-bottom: 6px;
+        }
+
+        .media-type-pills {
+          display: flex;
+          gap: 6px;
+          flex-shrink: 0;
+        }
+
+        .pill-btn {
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid var(--card-border);
+          border-radius: 20px;
+          padding: 6px 14px;
+          color: var(--foreground-muted);
+          font-size: 12.5px;
+          font-weight: 600;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          transition: var(--transition-smooth);
+          white-space: nowrap;
+        }
+
+        .pill-btn:hover {
           color: var(--foreground);
+          border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .pill-btn.active {
+          background: var(--foreground);
+          color: var(--bg-color);
+          border-color: var(--foreground);
+          font-weight: 700;
+        }
+
+        .filter-divider {
+          width: 1px;
+          height: 22px;
+          background: rgba(255, 255, 255, 0.1);
+          flex-shrink: 0;
+        }
+
+        .genres-scroll-row {
+          display: flex;
+          gap: 8px;
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+
+        .genres-scroll-row::-webkit-scrollbar {
+          display: none;
+        }
+
+        .genre-chip {
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid var(--card-border);
+          border-radius: 20px;
+          padding: 5px 12px;
+          color: var(--foreground-muted);
+          font-size: 12px;
+          font-weight: 600;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: var(--transition-smooth);
+        }
+
+        .genre-chip:hover {
+          border-color: rgba(255, 255, 255, 0.2);
+          color: var(--foreground);
+        }
+
+        .genre-chip.active {
+          background: rgba(229, 9, 20, 0.15);
+          border-color: var(--primary);
+          color: var(--primary);
+          font-weight: 700;
+        }
+
+        .genre-emoji {
+          font-size: 13px;
+        }
+
+        .genre-clear {
+          opacity: 0.7;
         }
 
         /* Sync banner */
@@ -719,7 +1232,8 @@ export default function WatchListPage() {
         .card-link {
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 10px;
+          text-decoration: none;
         }
 
         .card-image-box {
@@ -735,6 +1249,7 @@ export default function WatchListPage() {
 
         .library-card-wrapper:hover .card-image-box {
           border-color: var(--card-hover-border);
+          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
         }
 
         .card-img {
@@ -748,15 +1263,68 @@ export default function WatchListPage() {
           scale: 1.05;
         }
 
+        .card-overlay {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 60%);
+          pointer-events: none;
+        }
+
+        .card-top-badges {
+          position: absolute;
+          top: 8px;
+          left: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          z-index: 5;
+        }
+
+        .badge-pill {
+          padding: 3px 8px;
+          border-radius: 6px;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.3px;
+          backdrop-filter: blur(8px);
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          width: fit-content;
+        }
+
+        .type-badge {
+          background: rgba(0, 0, 0, 0.7);
+          color: var(--foreground);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .franchise-badge {
+          background: rgba(168, 85, 247, 0.7);
+          color: #fff;
+          border: 1px solid rgba(168, 85, 247, 0.3);
+        }
+
+        .artist-badge {
+          background: rgba(229, 9, 20, 0.7);
+          color: #fff;
+        }
+
+        .rating-badge {
+          background: rgba(0, 0, 0, 0.75);
+          color: #facc15;
+          border: 1px solid rgba(250, 204, 21, 0.3);
+        }
+
         .remove-btn {
           position: absolute;
-          top: 10px;
-          right: 10px;
+          top: 8px;
+          right: 8px;
           width: 28px;
           height: 28px;
           border-radius: 50%;
-          background: rgba(0, 0, 0, 0.65);
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(0, 0, 0, 0.75);
+          border: 1px solid rgba(255, 255, 255, 0.15);
           color: var(--foreground-muted);
           display: flex;
           align-items: center;
@@ -774,23 +1342,36 @@ export default function WatchListPage() {
         .remove-btn:hover {
           background: rgba(239, 68, 68, 0.9);
           border-color: transparent;
-          color: var(--foreground);
+          color: #fff;
+          transform: scale(1.1);
+        }
+
+        .card-info {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
         }
 
         .card-title {
           font-size: 13.5px;
           font-weight: 600;
-          color: var(--foreground-muted);
+          color: var(--foreground);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          text-align: center;
+          transition: var(--transition-smooth);
         }
 
         .library-card-wrapper:hover .card-title {
-          color: var(--foreground);
+          color: var(--primary);
         }
 
+        .card-subtext {
+          font-size: 11.5px;
+          color: var(--foreground-muted);
+        }
+
+        /* Empty state */
         .empty-state {
           display: flex;
           flex-direction: column;
@@ -798,13 +1379,40 @@ export default function WatchListPage() {
           justify-content: center;
           text-align: center;
           padding: 80px 20px;
-          gap: 16px;
+          gap: 14px;
           color: var(--foreground-muted);
+          max-width: 500px;
+          margin: 0 auto;
         }
 
-        .empty-icon {
-          opacity: 0.4;
+        .empty-icon-circle {
+          width: 76px;
+          height: 76px;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid var(--card-border);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--primary);
           margin-bottom: 8px;
+        }
+
+        .empty-state h2 {
+          font-size: 18px;
+          font-weight: 700;
+          color: var(--foreground);
+        }
+
+        .empty-state p {
+          font-size: 13.5px;
+          line-height: 1.5;
+        }
+
+        .empty-actions {
+          display: flex;
+          gap: 12px;
+          margin-top: 14px;
         }
 
         /* Modal popup dialogs */
@@ -814,7 +1422,7 @@ export default function WatchListPage() {
           left: 0;
           right: 0;
           bottom: 0;
-          background: rgba(0, 0, 0, 0.7);
+          background: rgba(0, 0, 0, 0.75);
           backdrop-filter: blur(4px);
           display: flex;
           align-items: center;
@@ -868,8 +1476,8 @@ export default function WatchListPage() {
         }
 
         .modal-input {
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255,255,255,0.1);
+          background: var(--input-bg);
+          border: 1px solid var(--input-border);
           border-radius: 10px;
           color: var(--foreground);
           padding: 12px 16px;
@@ -880,7 +1488,7 @@ export default function WatchListPage() {
 
         .modal-input:focus {
           border-color: var(--primary);
-          background: rgba(255, 255, 255, 0.08);
+          background: var(--input-focus-bg);
         }
 
         .modal-footer {

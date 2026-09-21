@@ -119,6 +119,16 @@ export interface TMDBCollection {
   backdrop_path: string | null;
 }
 
+export interface TMDBCollectionDetails {
+  id: number;
+  name: string;
+  overview: string;
+  poster_path: string | null;
+  backdrop_path: string | null;
+  media_type: 'collection';
+  parts: TMDBResult[];
+}
+
 export interface TMDBResult {
   id: number;
   title?: string;
@@ -137,6 +147,7 @@ export interface TMDBResult {
   runtime?: number; 
   tagline?: string; 
   genre_ids?: number[];
+  genres?: { id: number; name: string }[];
   original_language?: string;
    
   cast?: TMDBCastMember[]; 
@@ -685,6 +696,39 @@ export const searchTMDB = async (query: string, page: number = 1): Promise<TMDBR
   } catch (error) { return []; }
 };
 
+export const getCollectionDetails = async (collectionId: number): Promise<TMDBCollectionDetails | null> => {
+  try {
+    const data = await fetchWithCache(`/collection/${collectionId}`);
+    return {
+      id: data.id,
+      name: data.name,
+      overview: data.overview || "",
+      poster_path: data.poster_path,
+      backdrop_path: data.backdrop_path,
+      media_type: 'collection',
+      parts: (data.parts || []).map((item: any) => ({
+        ...formatBasicItemData(item),
+        media_type: "movie" as const,
+      })),
+    };
+  } catch (error) { return null; }
+};
+
+export const searchCollections = async (query: string, page: number = 1): Promise<TMDBResult[]> => {
+  try {
+    const data = await fetchWithCache("/search/collection", { query, page });
+    return data.results.map((item: any) => ({
+      id: item.id,
+      title: item.name,
+      name: item.name,
+      poster_path: item.poster_path,
+      backdrop_path: item.backdrop_path,
+      media_type: "collection",
+      overview: item.overview,
+    }));
+  } catch (error) { return []; }
+};
+
 export const searchPeople = async (query: string, page: number = 1): Promise<TMDBPerson[]> => {
   try {
     const data = await fetchWithCache("/search/person", { query, page });
@@ -693,7 +737,10 @@ export const searchPeople = async (query: string, page: number = 1): Promise<TMD
       name: person.name,
       profile_path: person.profile_path,
       popularity: person.popularity,
-      known_for_department: person.known_for_department
+      known_for_department: person.known_for_department,
+      biography: person.biography || "",
+      birthday: person.birthday || null,
+      place_of_birth: person.place_of_birth || null
     }));
   } catch (error) { return []; }
 };
@@ -707,33 +754,170 @@ export const searchGenres = async (query: string): Promise<{ id: number; name: s
   } catch (error) { return []; }
 };
 
-export const fetchMoreContentByType = async (type: string, page: number = 1): Promise<TMDBResult[]> => {
-  if (type.startsWith('genre/')) { return await getMoviesByGenre(parseInt(type.split('/')[1]), page); }
-  if (type.startsWith('similar/')) { const [mediaType, id] = type.split('/').slice(1); return await getSimilarMedia(parseInt(id), mediaType as "movie" | "tv", page); }
+export const getSimilarForHistory = async (history: any[]): Promise<{ sourceTitle: string; items: any[] }[]> => {
+  const recent = (history || []).slice(0, 3);
+  const results = await Promise.all(
+    recent.map(async (item) => {
+      try {
+        const mediaType = item.mediaType || item.media_type || (item.first_air_date ? 'tv' : 'movie');
+        const mediaId = item.tmdbId || item.id;
+        if (!mediaId) return null;
+        const similar = await getSimilarMedia(mediaId, mediaType, 1);
+        return { sourceTitle: item.title || item.name || '', items: similar.slice(0, 10) };
+      } catch {
+        return null;
+      }
+    })
+  );
+  return results.filter((r): r is { sourceTitle: string; items: any[] } => r !== null && r.items.length > 0);
+};
 
-  switch (type.toLowerCase()) {
-    case 'trendingmovies': return await getTrendingMovies(page);
-    case 'trendingtv': return await getTrendingTV(page);
-    case 'toprated': return await getTopRated(page);
-    case 'regional': return await getRegionalMovies('IN', page);
-    case 'hindimovies': return await getLanguageMovies('hi', page);
-    case 'malayalammovies': return await getLanguageMovies('ml', page);
-    case 'tamilmovies': return await getLanguageMovies('ta', page);
-    case 'koreanmovies': return await getLanguageMovies('ko', page);
-    case 'japanesemovies': return await getLanguageMovies('ja', page);
-    case 'hinditv': return await getLanguageTV('hi', page);
-    case 'malayalamtv': return await getLanguageTV('ml', page);
-    case 'koreantv': return await getLanguageTV('ko', page);
-    case 'japanesetv': return await getLanguageTV('ja', page);
-    case 'animemovies': return await getAnimeContent(page, true);
-    case 'animeshows': return await getAnimeContent(page, false);
-    case 'animatedmovies': return await getAnimatedMovies(page);
-    case 'upcoming': return await getUpcomingMovies(page);
-    case 'hiddengems': return await getHiddenGems(page);
-    case 'nostalgia': return await getNostalgicMovies(page);
-    default:
-      if (type.startsWith('search:')) { return await searchTMDB(type.substring(7), page); }
-      return await getTrendingMovies(page);
+export const fetchPersonalisedDiscoveryContent = async (
+  languages: string[] = ['en'],
+  genreIds: number[] = [],
+  genreFilterId: number = 0,
+  forceRefresh = false,
+  favoriteActors: any[] = []
+) => {
+  const gId = genreFilterId === 0 ? undefined : genreFilterId;
+  const actorsKey = (favoriteActors || []).map((a: any) => a.id).join('_');
+  const cacheKey = `PERSONALISED_PAGE_DATA_${languages.join('_')}_${genreIds.join('_')}_${actorsKey}_${gId || 'ALL'}`;
+
+  if (!forceRefresh) {
+    try {
+      const saved = await AsyncStorage.getItem(cacheKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        fetchFreshPersonalisedContent(languages, genreIds, favoriteActors, gId, cacheKey);
+        return parsed;
+      }
+    } catch {}
+  }
+
+  return fetchFreshPersonalisedContent(languages, genreIds, favoriteActors, gId, cacheKey);
+};
+
+const fetchFreshPersonalisedContent = async (
+  languages: string[],
+  genreIds: number[],
+  favoriteActors: any[],
+  gId: number | undefined,
+  cacheKey: string,
+) => {
+  try {
+    const langSlice = (languages && languages.length > 0) ? languages.slice(0, 15) : ['en'];
+    const langResults = await Promise.all(
+      langSlice.flatMap(lang => [
+        getLanguageMovies(lang, 1, gId),
+        getLanguageTV(lang, 1, gId),
+      ])
+    );
+
+    const langData: Record<string, { movies: any[]; tv: any[] }> = {};
+    langSlice.forEach((lang, i) => {
+      const movies = langResults[i * 2] ?? [];
+      const tv = langResults[i * 2 + 1] ?? [];
+      if (movies.length > 0 || tv.length > 0) {
+        langData[lang] = { movies, tv };
+      }
+    });
+
+    const actorSlice = (favoriteActors || []).slice(0, 4);
+    const actorResults = await Promise.all(
+      actorSlice.map(async (actor: any) => {
+        try {
+          const credits = await getPersonCombinedCredits(actor.id);
+          const topItems = credits
+            .filter((item: any) => item.poster_path && (item.vote_count || 0) > 10)
+            .sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0))
+            .slice(0, 15);
+          return {
+            actorId: actor.id,
+            actorName: actor.name,
+            profilePath: actor.profile_path,
+            items: topItems,
+          };
+        } catch {
+          return null;
+        }
+      })
+    );
+    const actorData = actorResults.filter(Boolean);
+
+    const genreSlice = (genreIds || []).slice(0, 3);
+    const genreResults = await Promise.all(
+      genreSlice.map(async (genreId: number) => {
+        try {
+          const movies = await getMoviesByGenre(genreId, 1);
+          return {
+            genreId,
+            items: movies.slice(0, 15),
+          };
+        } catch {
+          return null;
+        }
+      })
+    );
+    const genreData = genreResults.filter(Boolean);
+
+    const base = await Promise.all([
+      getTrendingMovies(1, gId),
+      getTrendingTV(1, gId),
+      getUpcomingMovies(1),
+      getHiddenGems(1, gId),
+      getTopRated(1, gId),
+    ]);
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const twoYearsAgoStr = `${new Date().getFullYear() - 2}-01-01`;
+
+    const releasedTrending = base[0].filter((m: any) => {
+      const relDate = m.release_date || '';
+      return (
+        relDate &&
+        relDate <= todayStr &&
+        relDate >= twoYearsAgoStr &&
+        m.poster_path &&
+        (m.vote_count || 0) >= 20
+      );
+    });
+    const heroMovies = releasedTrending.length >= 5 
+      ? releasedTrending.slice(0, 10) 
+      : base[0].filter((m: any) => m.release_date && m.release_date <= todayStr).slice(0, 10);
+
+    let personalizedTrending = [...base[0]];
+    if (langSlice.length > 0) {
+      const topLangMovies = langSlice.flatMap(l => (langData[l]?.movies || []).slice(0, 3));
+      if (topLangMovies.length > 0) {
+        const seen = new Set<number>();
+        const merged: any[] = [];
+        for (const m of [...base[0], ...topLangMovies]) {
+          if (m && m.id && !seen.has(m.id)) {
+            seen.add(m.id);
+            merged.push(m);
+          }
+        }
+        personalizedTrending = merged;
+      }
+    }
+
+    const result = {
+      heroMovies,
+      trendingMovies: personalizedTrending,
+      trendingTV: base[1],
+      upcoming: base[2],
+      hiddenGems: base[3],
+      topRated: base[4],
+      langData,
+      actorData,
+      genreData,
+    };
+
+    AsyncStorage.setItem(cacheKey, JSON.stringify(result)).catch(() => {});
+    return result;
+  } catch (error) {
+    console.error('Error fetching personalised content:', error);
+    return null;
   }
 };
 
@@ -744,8 +928,97 @@ export const getMoviesByGenre = async (genreId: number, page: number = 1): Promi
   } catch (error) { return []; }
 };
 
+export const fetchMoreContentByType = async (type: string, page: number = 1): Promise<TMDBResult[]> => {
+  if (!type) return await getTrendingMovies(page);
+
+  if (type.startsWith('genre/')) {
+    const genreId = parseInt(type.split('/')[1]);
+    if (isNaN(genreId)) return [];
+    return await getMoviesByGenre(genreId, page);
+  }
+
+  if (type.startsWith('similar/')) {
+    const parts = type.split('/');
+    const mediaType = (parts[1] || 'movie') as 'movie' | 'tv';
+    const id = parseInt(parts[2]);
+    if (isNaN(id)) return [];
+    return await getSimilarMedia(id, mediaType, page);
+  }
+
+  if (type.startsWith('lang-movies-')) {
+    const lang = type.replace('lang-movies-', '');
+    return await getLanguageMovies(lang, page);
+  }
+
+  if (type.startsWith('lang-tv-')) {
+    const lang = type.replace('lang-tv-', '');
+    return await getLanguageTV(lang, page);
+  }
+
+  if (type.startsWith('actor-')) {
+    const actorId = parseInt(type.replace('actor-', ''));
+    if (isNaN(actorId)) return [];
+    try {
+      const credits = await getPersonCombinedCredits(actorId);
+      const filtered = credits.filter((item: any) => item.poster_path);
+      const pageSize = 20;
+      const start = (page - 1) * pageSize;
+      return filtered.slice(start, start + pageSize);
+    } catch {
+      return [];
+    }
+  }
+
+  if (type.startsWith('search:')) {
+    return await searchTMDB(type.substring(7), page);
+  }
+
+  switch (type.toLowerCase()) {
+    case 'trendingmovies':
+      return await getTrendingMovies(page);
+    case 'trendingtv':
+      return await getTrendingTV(page);
+    case 'toprated':
+      return await getTopRated(page);
+    case 'regional':
+      return await getRegionalMovies('IN', page);
+    case 'hindimovies':
+      return await getLanguageMovies('hi', page);
+    case 'malayalammovies':
+      return await getLanguageMovies('ml', page);
+    case 'tamilmovies':
+      return await getLanguageMovies('ta', page);
+    case 'koreanmovies':
+      return await getLanguageMovies('ko', page);
+    case 'japanesemovies':
+      return await getLanguageMovies('ja', page);
+    case 'hinditv':
+      return await getLanguageTV('hi', page);
+    case 'malayalamtv':
+      return await getLanguageTV('ml', page);
+    case 'koreantv':
+      return await getLanguageTV('ko', page);
+    case 'japanesetv':
+      return await getLanguageTV('ja', page);
+    case 'upcoming':
+      return await getUpcomingMovies(page);
+    case 'hiddengems':
+      return await getHiddenGems(page);
+    case 'nostalgia':
+      return await getNostalgicMovies(page);
+    case 'animatedmovies':
+      return await getAnimatedMovies(page);
+    case 'animemovies':
+      return await getAnimeContent(page, true);
+    case 'animeshows':
+      return await getAnimeContent(page, false);
+    default:
+      return await getDiscoverMedia('movie', page, {}, type);
+  }
+};
+
 // ==========================================
-// 7. GEMINI AI RECOMMENDATIONS
+// 7. GEMINI AI RECOMMENDATIONS & CHAT
 // ==========================================
 
 export const getGeminiRecommendations = async (userPrompt: string): Promise<TMDBResult[]> => {
@@ -807,5 +1080,156 @@ export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie'
   } catch (error: any) {
     console.error("AI Proxy Error:", error.message);
     return [];
+  }
+};
+
+export const getGeminiLensInsight = async (
+  title: string,
+  mediaType: 'movie' | 'tv' = 'movie',
+  year: string = '',
+  overview: string = ''
+): Promise<any> => {
+  try {
+    const response = await axios.post('https://watcher-api-rho.vercel.app/api/gemini', {
+      action: 'lens',
+      title: title,
+      mediaType: mediaType,
+      year: year,
+      overview: overview.slice(0, 500),
+      customApiKey: GLOBAL_CONFIG.customApiKey
+    });
+    return response.data?.result || null;
+  } catch (error: any) {
+    console.error("Gemini Lens Error:", error);
+    throw error;
+  }
+};
+
+export const fetchChatGemini = async (
+  message: string,
+  history: any[] = [],
+  userMemory: string = '',
+  watchedTitles: string[] = [],
+  watchlistTitles: string[] = [],
+  watchlistCollections: string[] = [],
+  userPreferences: any = null
+): Promise<any> => {
+  try {
+    const response = await axios.post('https://watcher-api-rho.vercel.app/api/gemini', {
+      action: 'chat',
+      message,
+      history,
+      userMemory,
+      watchedTitles,
+      watchlistTitles,
+      watchlistCollections,
+      userPreferences,
+      customApiKey: GLOBAL_CONFIG.customApiKey,
+    });
+
+    let reply = response.data?.reply || { kind: 'text', text: "I'm not sure how to answer that." };
+
+    if (typeof reply === 'string') {
+      try { reply = JSON.parse(reply); } catch {}
+    }
+
+    if (reply?.kind === 'text' && typeof reply.text === 'string' && reply.text.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(reply.text.trim());
+        if (parsed && typeof parsed === 'object' && parsed.kind) {
+          reply = parsed;
+        }
+      } catch {
+        const match = reply.text.match(/\{[\s\S]*\}/);
+        if (match) {
+          try {
+            const parsed = JSON.parse(match[0]);
+            if (parsed && typeof parsed === 'object' && parsed.kind) {
+              reply = parsed;
+            }
+          } catch {}
+        }
+      }
+    }
+
+    if (reply.kind === 'movies' && Array.isArray(reply.titles) && reply.titles.length > 0) {
+      const moviePromises = reply.titles.map(async (t: string) => {
+        try {
+          const results = await searchTMDB(t);
+          return results.find((m) => m.poster_path) || results[0] || null;
+        } catch {
+          return null;
+        }
+      });
+      const resolvedMovies = await Promise.all(moviePromises);
+      reply.movies = resolvedMovies.filter(Boolean);
+    }
+
+    if (reply.kind === 'actors' && Array.isArray(reply.names) && reply.names.length > 0) {
+      const actorPromises = reply.names.map(async (n: string) => {
+        try {
+          const results = await searchPeople(n, 1);
+          return results[0] || null;
+        } catch {
+          return null;
+        }
+      });
+      const resolvedActors = await Promise.all(actorPromises);
+      reply.actors = resolvedActors.filter(Boolean);
+    }
+
+    if (reply.kind === 'movie_detail' && reply.title) {
+      try {
+        const results = await searchTMDB(reply.title);
+        reply.movie = results.find((m) => m.poster_path) || results[0] || null;
+      } catch {
+        reply.movie = null;
+      }
+    }
+
+    return reply;
+  } catch (error: any) {
+    console.error('fetchChatGemini error:', error.message);
+    throw error;
+  }
+};
+
+export const updateUserMemoryWithAi = async (existingMemory: string, userMessage: string): Promise<string> => {
+  try {
+    const response = await axios.post('https://watcher-api-rho.vercel.app/api/gemini', {
+      action: 'update_memory',
+      existingMemory,
+      userMessage,
+      customApiKey: GLOBAL_CONFIG.customApiKey,
+    });
+    return response.data?.memory || existingMemory;
+  } catch (e) {
+    return existingMemory;
+  }
+};
+
+export const fetchEmbedding = async (text: string): Promise<number[] | null> => {
+  try {
+    const response = await axios.post('https://watcher-api-rho.vercel.app/api/embed', {
+      text,
+      customApiKey: GLOBAL_CONFIG.customApiKey,
+    });
+    return response.data?.embedding || null;
+  } catch (error: any) {
+    console.error('fetchEmbedding error:', error.message, error.response?.data);
+    return null;
+  }
+};
+
+export const fetchEmbeddingsBatch = async (texts: string[]): Promise<number[][] | null> => {
+  try {
+    const response = await axios.post('https://watcher-api-rho.vercel.app/api/embed', {
+      texts,
+      customApiKey: GLOBAL_CONFIG.customApiKey,
+    });
+    return response.data?.embeddings || null;
+  } catch (error: any) {
+    console.error('fetchEmbeddingsBatch error:', error.message, error.response?.data);
+    return null;
   }
 };

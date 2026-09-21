@@ -1,23 +1,25 @@
 {
-  "name": "temp_next",
-  "version": "2.0.2",
+  "name": "watcher-tauri",
+  "version": "3.0.32",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "tauri": "tauri"
   },
   "dependencies": {
     "axios": "^1.18.1",
     "hls.js": "^1.6.16",
     "lucide-react": "^1.22.0",
-    "next": "16.2.9",
+    "next": "^16.2.9",
     "next-themes": "^0.4.6",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.5",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

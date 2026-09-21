@@ -142,7 +142,9 @@ function TorrentSearchContent() {
 
       {/* Input section */}
       <div className="search-input-wrapper animate-fade-in-up">
-        <Search className="input-search-icon" size={20} />
+        <span className="search-icon-wrapper">
+          <Search size={20} />
+        </span>
         <input
           type="text"
           placeholder="Search movies, shows, anime torrents..."
@@ -328,15 +330,45 @@ function TorrentSearchContent() {
         .search-input-wrapper {
           position: relative;
           width: 100%;
+          display: flex;
+          align-items: center;
           margin-bottom: 20px;
         }
 
-        .input-search-icon {
+        .search-icon-wrapper {
           position: absolute;
           left: 18px;
           top: 50%;
           transform: translateY(-50%);
           color: var(--foreground-muted);
+          pointer-events: none;
+          z-index: 2;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 20px;
+          height: 20px;
+        }
+
+        .search-input-field {
+          width: 100%;
+          height: 52px;
+          padding: 0 50px 0 52px;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid var(--card-border);
+          border-radius: var(--border-radius-md);
+          color: var(--foreground);
+          font-size: 15px;
+          font-weight: 500;
+          outline: none;
+          box-sizing: border-box;
+          transition: var(--transition-smooth);
+        }
+
+        .search-input-field:focus {
+          border-color: var(--primary);
+          background: rgba(255, 255, 255, 0.07);
+          box-shadow: 0 0 15px rgba(229, 9, 20, 0.25);
         }
 
         .clear-btn {
@@ -352,6 +384,7 @@ function TorrentSearchContent() {
           align-items: center;
           justify-content: center;
           transition: var(--transition-smooth);
+          z-index: 2;
         }
 
         .clear-btn:hover {
@@ -428,13 +461,14 @@ function TorrentSearchContent() {
           border-radius: var(--border-radius-md);
           border: 1px solid var(--card-border);
           overflow: hidden;
-          background: rgba(20, 20, 25, 0.5);
+          background: var(--card-bg);
+          box-shadow: 0 4px 16px var(--shadow-color);
           transition: var(--transition-smooth);
         }
 
         .torrent-card:hover {
           border-color: var(--card-hover-border);
-          background: var(--card-bg);
+          transform: translateY(-2px);
         }
 
         .card-top {
@@ -447,8 +481,8 @@ function TorrentSearchContent() {
           width: 48px;
           height: 48px;
           border-radius: var(--border-radius-sm);
-          background: rgba(255, 255, 255, 0.04);
-          border: 1px solid rgba(255,255,255,0.06);
+          background: var(--input-bg);
+          border: 1px solid var(--card-border);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -490,8 +524,8 @@ function TorrentSearchContent() {
           font-weight: 700;
           padding: 3px 8px;
           border-radius: 4px;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1.5px solid rgba(255, 255, 255, 0.08);
+          background: var(--badge-bg);
+          border: 1px solid var(--badge-border);
           color: var(--foreground-muted);
         }
 
@@ -518,8 +552,8 @@ function TorrentSearchContent() {
 
         .card-actions {
           display: flex;
-          border-top: 1px solid rgba(255, 255, 255, 0.05);
-          background: rgba(10, 10, 12, 0.4);
+          border-top: 1px solid var(--card-border);
+          background: var(--badge-bg);
         }
 
         .share-file-btn, .open-magnet-btn {
@@ -545,7 +579,7 @@ function TorrentSearchContent() {
 
         .open-magnet-btn {
           background: var(--primary-gradient);
-          color: var(--foreground);
+          color: #ffffff;
           box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
         }
 

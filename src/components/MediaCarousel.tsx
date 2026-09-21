@@ -37,9 +37,19 @@ export default function MediaCarousel({ title, type, data, savedIds, toggleWatch
     <div className="carousel-section animate-fade-in-up">
       <div className="carousel-header">
         <h2 className="carousel-title">{title}</h2>
-        <Link href={`/view-all?title=${encodeURIComponent(title)}&type=${type || ''}`} className="view-all-link">
-          See All
-        </Link>
+        <div className="header-actions">
+          <div className="header-nav-arrows">
+            <button className="header-arrow-btn" onClick={() => scroll('left')} aria-label="Scroll left">
+              <ChevronLeft size={16} />
+            </button>
+            <button className="header-arrow-btn" onClick={() => scroll('right')} aria-label="Scroll right">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+          <Link href={`/view-all?title=${encodeURIComponent(title)}&type=${type || ''}`} className="view-all-link">
+            See All
+          </Link>
+        </div>
       </div>
 
       <div className="carousel-wrapper">
@@ -83,6 +93,39 @@ export default function MediaCarousel({ title, type, data, savedIds, toggleWatch
           font-weight: 700;
           letter-spacing: 0.5px;
           color: var(--foreground);
+        }
+
+        .header-actions {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+
+        .header-nav-arrows {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .header-arrow-btn {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid var(--card-border);
+          color: var(--foreground-muted);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: var(--transition-fast);
+        }
+
+        .header-arrow-btn:hover {
+          background: var(--primary);
+          border-color: var(--primary);
+          color: #fff;
+          transform: scale(1.05);
         }
 
         .view-all-link {
@@ -134,17 +177,18 @@ export default function MediaCarousel({ title, type, data, savedIds, toggleWatch
           width: 44px;
           height: 44px;
           border-radius: 50%;
-          background: rgba(10, 10, 15, 0.8);
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
+          background: var(--card-bg);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
           border: 1px solid var(--card-border);
           color: var(--foreground);
           display: flex;
           align-items: center;
           justify-content: center;
           cursor: pointer;
-          opacity: 0;
-          transition: var(--transition-smooth);
+          opacity: 0.85;
+          box-shadow: 0 4px 18px var(--shadow-color);
+          transition: all 0.2s ease-in-out;
           z-index: 10;
         }
 
@@ -153,18 +197,19 @@ export default function MediaCarousel({ title, type, data, savedIds, toggleWatch
         }
 
         .nav-btn:hover {
-          background: var(--primary-gradient);
-          border-color: transparent;
-          box-shadow: 0 0 15px var(--primary-glow);
-          scale: 1.1;
+          background: var(--primary);
+          border-color: var(--primary);
+          color: #ffffff;
+          box-shadow: 0 0 20px rgba(229, 9, 20, 0.6);
+          transform: translateY(-50%) scale(1.1);
         }
 
         .prev-btn {
-          left: 15px;
+          left: 12px;
         }
 
         .next-btn {
-          right: 15px;
+          right: 12px;
         }
 
         @media (max-width: 768px) {

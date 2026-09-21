@@ -39,9 +39,11 @@ jobs:
           tagName: watcher-v__VERSION__
           releaseName: 'Watcher App v__VERSION__'
           releaseBody: |
-            ## Watcher Desktop v2.0.2
-            - Minor bug fixes and improvements.
-            - Enhanced Tauri integration.
+            ## Watcher Desktop v__VERSION__
+            - Complete feature parity with mobile Watcher app.
+            - AI Companion with persistent chats and responsive input.
+            - Enhanced details page, franchise timeline banners, and themed season selector.
+            - Full light and dark theme support with universal scrollbar suppression.
             
             Download the .msi or .exe file below to install Watcher on Windows.
           releaseDraft: true
