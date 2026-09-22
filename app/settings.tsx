@@ -21,6 +21,7 @@ import { ThemedDialog, DialogButton } from '../src/components/shared/ThemedDialo
 import { ActivityIndicator } from 'react-native';
 import { clearUserMemory, getUserMemory } from '../src/chatStorage';
 import { DEFAULT_PLAYER_PREFERENCES, getPlayerPreferences, PlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
+import { cloudSync, MobileUserProfile } from '../src/cloudSync';
 
 interface DialogConfig {
   visible: boolean;
@@ -59,10 +60,64 @@ const Settings = () => {
   
   const appVersion = Constants.expoConfig?.version || '3.0.0';
 
+  // Cloud Sync State
+  const [cloudUser, setCloudUser] = useState<MobileUserProfile | null>(null);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
   useEffect(() => {
     loadSettings();
     handleCheckUpdate(true); // Silent check on mount
+    cloudSync.getAuthUser().then(u => setCloudUser(u));
   }, []);
+
+  const handleCloudDemoLogin = async () => {
+    setIsSyncingCloud(true);
+    const res = await cloudSync.loginWithDemo();
+    setIsSyncingCloud(false);
+    if (res.success && res.user) {
+      setCloudUser(res.user);
+      showDialog({
+        title: "Cloud Connected! ☁️",
+        message: `Signed in as ${res.user.name}.\n\nYour Watchlist, History, and Progress are now synced across desktop, web, and mobile!`,
+        type: "success",
+      });
+    } else {
+      showDialog({
+        title: "Sync Failed",
+        message: res.error || "Could not connect to cloud server.",
+        type: "danger",
+      });
+    }
+  };
+
+  const handleManualCloudSync = async () => {
+    setIsSyncingCloud(true);
+    const res = await cloudSync.syncWithCloud();
+    setIsSyncingCloud(false);
+    if (res.success) {
+      showDialog({
+        title: "Library Synced! 🎉",
+        message: res.message || "All items synchronized with Watcher Cloud.",
+        type: "success",
+      });
+    } else {
+      showDialog({
+        title: "Sync Failed",
+        message: res.error || "Could not sync with cloud.",
+        type: "danger",
+      });
+    }
+  };
+
+  const handleCloudLogout = async () => {
+    await cloudSync.logout();
+    setCloudUser(null);
+    showDialog({
+      title: "Signed Out",
+      message: "Disconnected from Watcher Cloud.",
+      type: "info",
+    });
+  };
 
   const loadSettings = async () => {
     try {
@@ -438,6 +493,64 @@ const Settings = () => {
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.header}>Settings</Text>
+
+        {/* ── Cloud Sync & Account ── */}
+        <Text style={styles.sectionLabel}>CLOUD SYNC (OPTIONAL)</Text>
+        <Text style={{ fontSize: 13, color: '#8E8E93', marginHorizontal: 20, marginBottom: 8, lineHeight: 18 }}>
+          Cloud sync is strictly optional. All movies, bookmarks, and features work 100% offline. Connect only if you want cross-device library sync.
+        </Text>
+        <View style={styles.card}>
+          {cloudUser ? (
+            <>
+              <View style={styles.cloudUserRow}>
+                <View style={styles.cloudAvatar}>
+                  <Text style={styles.cloudAvatarText}>
+                    {cloudUser.name ? cloudUser.name.charAt(0).toUpperCase() : 'U'}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>{cloudUser.name}</Text>
+                  <Text style={styles.rowSubtitle}>{cloudUser.email}</Text>
+                  <Text style={[styles.rowSubtitle, { color: '#30D158', marginTop: 2, fontWeight: '600' }]}>
+                    🟢 Connected to Watcher Cloud
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.separator} />
+              <ActionRow
+                title="Sync with Cloud"
+                subtitle={isSyncingCloud ? "Synchronizing library data..." : "Merge Watchlist & History with cloud"}
+                onPress={handleManualCloudSync}
+              />
+              <View style={styles.separator} />
+              <ActionRow
+                title="Sign Out"
+                subtitle="Disconnect from cloud sync on this device"
+                onPress={handleCloudLogout}
+              />
+            </>
+          ) : (
+            <>
+              <ActionRow
+                title="Connect Cloud Account (Instant Demo)"
+                subtitle="1-Click test sync across Desktop, Web & Mobile"
+                onPress={handleCloudDemoLogin}
+              />
+              <View style={styles.separator} />
+              <ActionRow
+                title="About Multi-Device Sync"
+                subtitle="Sync your Watchlist, History, and Progress"
+                onPress={() => {
+                  showDialog({
+                    title: "Cloud Sync ☁️",
+                    message: "Keep your Watchlist, Viewing History, and Continued Watching progress in sync between your phone, desktop app, and web browser.",
+                    type: "info",
+                  });
+                }}
+              />
+            </>
+          )}
+        </View>
 
         {/* ── Content ── */}
         <Text style={styles.sectionLabel}>CONTENT</Text>
@@ -815,6 +928,26 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontFamily: 'GoogleSansFlex-Bold',
+  },
+  cloudUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  cloudAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E50914',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cloudAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
   },
 });
 
