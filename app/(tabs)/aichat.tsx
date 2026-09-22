@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   FadeInUp, FadeIn, ZoomIn,
@@ -431,6 +431,13 @@ const AiChat = () => {
     })();
   }, []);
 
+  // Sync latest AI memory whenever this tab is focused (e.g. after clearing in Settings)
+  useFocusEffect(
+    useCallback(() => {
+      getUserMemory().then(setUserMemoryState).catch(() => {});
+    }, [])
+  );
+
   // ── Persist conversations (never while typing / never empty) ─
   useEffect(() => {
     if (messages.length === 0 || messages.some((m) => m.kind === 'typing')) return;
@@ -530,7 +537,10 @@ const AiChat = () => {
         }
       }
 
-      const enrichedMemory = `${userMemory}\n\n[System Note: The user has a total of ${watchlistTitles.length} movies/shows saved in their Watchlist, and ${watchedTitles.length} titles in their Watched history.]`;
+      const freshMemory = await getUserMemory();
+      setUserMemoryState(freshMemory);
+
+      const enrichedMemory = `${freshMemory}\n\n[System Note: The user has a total of ${watchlistTitles.length} movies/shows saved in their Watchlist, and ${watchedTitles.length} titles in their Watched history.]`;
 
       const reply = await fetchChatGemini(
         text, history, enrichedMemory, watchedTitles, topWatchlistTitles, watchlistCollections, userPrefs

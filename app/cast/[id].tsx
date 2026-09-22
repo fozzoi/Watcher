@@ -10,17 +10,16 @@ import {
   Share,
   Modal,
   FlatList,
-  ActivityIndicator,
   useWindowDimensions,
   Platform,
   ToastAndroid,
-  Alert,
-} from 'react-native';
+  Alert } from 'react-native';
 import { hasSavedItem, addSavedItem, removeSavedItem } from '../../src/database';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -84,6 +83,27 @@ export default function CastDetails() {
   const likedScale = useSharedValue(1);
 
   const [galleryVisible, setGalleryVisible] = useState(false);
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message?: string;
+    type?: 'info' | 'success' | 'warning' | 'danger';
+    buttons?: DialogButton[];
+    iconName?: string;
+  }>({
+    visible: false,
+    title: '',
+  });
+
+  const showDialog = useCallback((config: {
+    title: string;
+    message?: string;
+    type?: 'info' | 'success' | 'warning' | 'danger';
+    buttons?: DialogButton[];
+    iconName?: string;
+  }) => {
+    setDialogConfig({ ...config, visible: true });
+  }, []);
   const headerListRef = useRef<FlatList>(null);
 
   const scrollY = useSharedValue(0);

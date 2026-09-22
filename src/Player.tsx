@@ -111,12 +111,12 @@ export default function Player() {
     await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     if (transition !== transitionRef.current) return;
     setStatusBarHidden(false, 'none');
-    if (Platform.OS === 'android') await NavigationBar.setVisibilityAsync("visible");
+    if (Platform.OS === 'android') await NavigationBar.setVisibilityAsync("visible").catch(() => {});
   };
 
   const handleAppStateChange = (nextAppState: any) => {
     if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-      if (Platform.OS === 'android') NavigationBar.setVisibilityAsync("hidden");
+      if (Platform.OS === 'android') NavigationBar.setVisibilityAsync("hidden").catch(() => {});
       setStatusBarHidden(true, 'none');
     }
     appState.current = nextAppState;

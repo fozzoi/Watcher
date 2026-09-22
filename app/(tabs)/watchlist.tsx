@@ -8,7 +8,6 @@ import {
   Text,
   Platform,
   StatusBar,
-  Alert,
   Modal,
   TextInput,
   ActivityIndicator,
@@ -18,7 +17,6 @@ import {
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image'; // Highly optimized image rendering
-import { enableFreeze } from 'react-native-screens'; // Prevents background screens from eating CPU
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, insertAiEmbedding, getAiEmbedding } from '../../src/database';
 import { getImageUrl, searchTMDB, GLOBAL_CONFIG, fetchEmbedding } from '../../src/tmdb';
@@ -289,10 +287,10 @@ const WatchListPage = () => {
           });
         }
       } else {
-        if (!silent) Alert.alert("No movies found", "The AI couldn't find any movie titles in the provided source.");
+        if (!silent) showDialog({ title: "No movies found", message: "The AI couldn't find any movie titles in the provided source.", type: "warning" });
       }
     } catch (e: any) {
-      if (!silent) Alert.alert("Sync Failed", e.response?.data?.error || e.message);
+      if (!silent) showDialog({ title: "Sync Failed", message: e.response?.data?.error || e.message || "Failed to sync movies.", type: "danger" });
     } finally {
       if (!silent) {
         setSyncing(false);
@@ -313,7 +311,7 @@ const WatchListPage = () => {
   const handleSaveAndSyncLink = async () => {
     const trimmedUrl = syncLinkInput.trim();
     if (!trimmedUrl) {
-      Alert.alert("Error", "Please enter a valid URL.");
+      showDialog({ title: "Error", message: "Please enter a valid URL.", type: "warning" });
       return;
     }
     setIsLinkModalVisible(false);
@@ -1506,6 +1504,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     borderTopWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)', // Subtle edge
+    borderColor: 'rgba(255,255,255,0.08)',
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 36,

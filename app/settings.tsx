@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, Switch, Platform, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Switch, Platform, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -19,6 +19,7 @@ import { checkForAppUpdate, isUpdateNotificationEnabled, setUpdateNotificationEn
 import AppUpdateModal from '../src/components/shared/AppUpdateModal';
 import { ThemedDialog, DialogButton } from '../src/components/shared/ThemedDialog';
 import { ActivityIndicator } from 'react-native';
+import { clearUserMemory, getUserMemory } from '../src/chatStorage';
 import { DEFAULT_PLAYER_PREFERENCES, getPlayerPreferences, PlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
 
 interface DialogConfig {
@@ -357,6 +358,51 @@ const Settings = () => {
     });
   };
 
+
+  const handleClearAiMemory = async () => {
+    try {
+      const mem = await getUserMemory();
+      const hasMemory = Boolean(mem && mem.trim().length > 0);
+
+      showDialog({
+        title: "Clear AI Memory?",
+        message: hasMemory
+          ? `Learned profile:\n"${mem.trim()}"\n\nAre you sure you want to erase this? The AI assistant will forget your saved taste profile and start fresh.`
+          : "This will erase any personal taste profile and movie preferences the AI assistant has learned about you across conversations.",
+        type: "danger",
+        buttons: [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Clear Memory",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await clearUserMemory();
+                showDialog({
+                  title: "AI Memory Cleared ✨",
+                  message: "The AI assistant's learned memory has been reset to a clean slate.",
+                  type: "success",
+                });
+              } catch (e) {
+                showDialog({
+                  title: "Error",
+                  message: e?.message || "Failed to clear AI memory.",
+                  type: "danger",
+                });
+              }
+            },
+          },
+        ],
+      });
+    } catch (e) {
+      showDialog({
+        title: "Error",
+        message: e?.message || "Could not retrieve AI memory.",
+        type: "danger",
+      });
+    }
+  };
+
   // ── Reusable row components ──
 
   const ToggleRow = ({ title, subtitle, value, onValueChange }: any) => (
@@ -518,6 +564,18 @@ const Settings = () => {
               <Feather name="refresh-cw" size={18} color="#8E8E93" />
             )}
           </TouchableOpacity>
+        </View>
+
+
+        {/* ── AI Assistant ── */}
+        <Text style={styles.sectionLabel}>AI ASSISTANT</Text>
+        <View style={styles.card}>
+          <ActionRow 
+            title="Clear AI Memory" 
+            subtitle="Reset what the AI has learned about your taste & habits" 
+            onPress={handleClearAiMemory} 
+            destructive
+          />
         </View>
 
         {/* ── Data & Storage ── */}

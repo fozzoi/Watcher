@@ -7,9 +7,8 @@
 //  - onSelect / onNewChat also close the drawer, so the parent can't forget
 //  - delete asks for confirmation; Modal covers the status bar on Android
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  Alert,
   Animated,
   Dimensions,
   Easing,
@@ -27,6 +26,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Conversation } from '../../chatStorage';
 import { ai } from './aiTheme';
+import { ThemedDialog } from '../shared/ThemedDialog';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const PANEL_WIDTH = Math.min(SCREEN_WIDTH * 0.82, 340);
@@ -44,6 +44,7 @@ type Props = {
 const ChatHistorySidebar = (props: Props) => {
   const { visible, conversations, activeId } = props;
   const insets = useSafeAreaInsets();
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
   // always-fresh callbacks for the (created-once) PanResponder
   const latest = useRef(props);
@@ -107,17 +108,7 @@ const ChatHistorySidebar = (props: Props) => {
   ).current;
 
   const confirmDelete = (id: string, title: string) => {
-    Alert.alert('Delete this chat?', title, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          latest.current.onDelete(id);
-        },
-      },
-    ]);
+    setDeleteTarget({ id, title });
   };
 
   if (!visible) return null;
@@ -205,6 +196,28 @@ const ChatHistorySidebar = (props: Props) => {
           }}
         />
       </Animated.View>
+
+      <ThemedDialog
+        visible={!!deleteTarget}
+        title="Delete this chat?"
+        message={deleteTarget?.title}
+        type="danger"
+        buttons={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setDeleteTarget(null) },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => {
+              if (deleteTarget) {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                latest.current.onDelete(deleteTarget.id);
+                setDeleteTarget(null);
+              }
+            },
+          },
+        ]}
+        onClose={() => setDeleteTarget(null)}
+      />
     </Modal>
   );
 };
@@ -212,7 +225,7 @@ const ChatHistorySidebar = (props: Props) => {
 export default ChatHistorySidebar;
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.65)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.65)' },
   panel: {
     position: 'absolute',
     top: 0,

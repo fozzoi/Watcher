@@ -8,6 +8,7 @@ import {
   StatusBar,
   Platform,
   ToastAndroid,
+
   Alert,
   ActivityIndicator,
   useWindowDimensions,
@@ -45,6 +46,7 @@ import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { LANGUAGE_OPTIONS } from '../../src/userPreferences';
 import MovieChatSection from '../../src/components/movie/MovieChatSection';
+import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
 
 
 
@@ -254,6 +256,26 @@ const DetailPage = () => {
   const [initialMovie, setInitialMovie] = useState<any>(null);
   const [movie, setMovie] = useState<any>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message?: string;
+    type?: 'info' | 'success' | 'warning' | 'danger';
+    buttons?: DialogButton[];
+    iconName?: string;
+  }>({
+    visible: false,
+    title: '',
+  });
+  const showDialog = useCallback((config: {
+    title: string;
+    message?: string;
+    type?: 'info' | 'success' | 'warning' | 'danger';
+    buttons?: DialogButton[];
+    iconName?: string;
+  }) => {
+    setDialogConfig({ ...config, visible: true });
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -1423,7 +1445,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   collectionBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     width: '100%',
     height: '100%',
     opacity: 0.8,

@@ -13,8 +13,7 @@ import {
   TouchableOpacity,
   BackHandler,
   Keyboard,
-  TextInput,
-  Alert,
+  TextInput,
   ActivityIndicator,
   DeviceEventEmitter
 } from 'react-native';

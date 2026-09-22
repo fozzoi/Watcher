@@ -117,7 +117,7 @@ const CollectionDetails = () => {
   const renderMovieItem = ({ item }: { item: TMDBResult }) => {
     const year = item.release_date?.split('-')[0] || '';
     return (
-      <TouchableOpacity activeOpacity={0.95}
+      <TouchableOpacity
         style={styles.movieCard}
         onPress={() => handleMoviePress(item)}
         activeOpacity={0.95}
@@ -234,7 +234,7 @@ const CollectionDetails = () => {
 
       {/* Back button */}
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-        <TouchableOpacity activeOpacity={0.95}
+        <TouchableOpacity
           onPress={() => router.back()}
           style={styles.glassBtn}
           activeOpacity={0.95}

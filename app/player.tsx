@@ -120,10 +120,10 @@ export default function Player() {
         orientationInfo.orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
       if (landscape && !isLeavingRef.current) {
         setStatusBarHidden(true, 'none');
-        if (Platform.OS === 'android') void NavigationBar.setVisibilityAsync('hidden');
+        if (Platform.OS === 'android') void NavigationBar.setVisibilityAsync('hidden').catch(() => {});
       } else if (!landscape && isLeavingRef.current) {
         setStatusBarHidden(false, 'none');
-        if (Platform.OS === 'android') void NavigationBar.setVisibilityAsync('visible');
+        if (Platform.OS === 'android') void NavigationBar.setVisibilityAsync('visible').catch(() => {});
       }
     });
     return () => {
@@ -196,7 +196,7 @@ export default function Player() {
     if (transition !== transitionRef.current) return;
     setIsFullscreen(false);
     setStatusBarHidden(false, 'none');
-    if (Platform.OS === 'android') await NavigationBar.setVisibilityAsync("visible");
+    if (Platform.OS === 'android') await NavigationBar.setVisibilityAsync("visible").catch(() => {});
   };
 
   const handleAppStateChange = (nextAppState: any) => {
@@ -204,7 +204,7 @@ export default function Player() {
       void flushProgress();
     }
     if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-      if (Platform.OS === 'android') NavigationBar.setVisibilityAsync("hidden");
+      if (Platform.OS === 'android') NavigationBar.setVisibilityAsync("hidden").catch(() => {});
       setStatusBarHidden(true, 'none');
     }
     appState.current = nextAppState;

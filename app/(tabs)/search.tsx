@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { 
-  View, StyleSheet, Alert, Linking, StatusBar, 
+  View, StyleSheet, Linking, StatusBar, 
   ScrollView, TouchableOpacity, TextInput, 
   Keyboard, ActivityIndicator, Text, BackHandler,
   LayoutAnimation, Platform, UIManager, Dimensions
