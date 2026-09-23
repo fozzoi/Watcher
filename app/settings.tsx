@@ -23,6 +23,17 @@ import { clearUserMemory, getUserMemory } from '../src/chatStorage';
 import { DEFAULT_PLAYER_PREFERENCES, getPlayerPreferences, PlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
 import { cloudSync, MobileUserProfile } from '../src/cloudSync';
 
+// Google OAuth via expo-auth-session
+import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
+import * as Crypto from 'expo-crypto';
+
+WebBrowser.maybeCompleteAuthSession();
+
+// Use the web client ID — works for browser-based OAuth on Android
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '741301139600-n3b1b0jmrlf3t8nccbf8e3bskqrtb0sp.apps.googleusercontent.com';
+
+
 interface DialogConfig {
   visible: boolean;
   title: string;
@@ -63,6 +74,61 @@ const Settings = () => {
   // Cloud Sync State
   const [cloudUser, setCloudUser] = useState<MobileUserProfile | null>(null);
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
+  // ── Google OAuth Setup ──────────────────────────────────────────
+  const discovery = AuthSession.useAutoDiscovery('https://accounts.google.com');
+  const redirectUri = AuthSession.makeRedirectUri({ scheme: 'myapp', path: 'oauth' });
+
+  const [request, response, promptAsync] = AuthSession.useAuthRequest(
+    {
+      clientId: GOOGLE_CLIENT_ID,
+      redirectUri,
+      scopes: ['openid', 'profile', 'email'],
+      responseType: AuthSession.ResponseType.Token,
+      usePKCE: false,
+    },
+    discovery
+  );
+
+  // Handle OAuth callback response
+  useEffect(() => {
+    if (response?.type === 'success' && response.params.access_token) {
+      handleGoogleLoginSuccess(response.params.access_token);
+    } else if (response?.type === 'error') {
+      setIsSyncingCloud(false);
+      showDialog({
+        title: 'Sign-In Failed',
+        message: response.error?.message || 'Google OAuth failed. Please try again.',
+        type: 'danger',
+      });
+    }
+  }, [response]);
+
+  const handleGoogleLoginSuccess = async (accessToken: string) => {
+    setIsSyncingCloud(true);
+    const res = await cloudSync.loginWithGoogle(undefined, accessToken);
+    setIsSyncingCloud(false);
+    if (res.success && res.user) {
+      setCloudUser(res.user);
+      showDialog({
+        title: 'Cloud Connected! ☁️',
+        message: `Signed in as ${res.user.name}.\n\nYour Watchlist, History, and Progress are now synced across desktop, web, and mobile!`,
+        type: 'success',
+      });
+    } else {
+      showDialog({
+        title: 'Sync Failed',
+        message: res.error || 'Could not connect to cloud server.',
+        type: 'danger',
+      });
+    }
+  };
+
+  const handleGoogleSignIn = () => {
+    setIsSyncingCloud(true);
+    promptAsync();
+  };
+  // ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     loadSettings();
@@ -531,22 +597,27 @@ const Settings = () => {
             </>
           ) : (
             <>
-              <ActionRow
-                title="Connect Cloud Account (Instant Demo)"
-                subtitle="1-Click test sync across Desktop, Web & Mobile"
-                onPress={handleCloudDemoLogin}
-              />
+              {/* Google Sign-In Button */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleGoogleSignIn}
+                disabled={isSyncingCloud || !request}
+                style={[styles.googleSignInBtn, (isSyncingCloud || !request) && { opacity: 0.6 }]}
+              >
+                {isSyncingCloud ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="logo-google" size={18} color="#fff" />
+                )}
+                <Text style={styles.googleSignInText}>
+                  {isSyncingCloud ? 'Signing in...' : 'Sign in with Google'}
+                </Text>
+              </TouchableOpacity>
               <View style={styles.separator} />
               <ActionRow
-                title="About Multi-Device Sync"
-                subtitle="Sync your Watchlist, History, and Progress"
-                onPress={() => {
-                  showDialog({
-                    title: "Cloud Sync ☁️",
-                    message: "Keep your Watchlist, Viewing History, and Continued Watching progress in sync between your phone, desktop app, and web browser.",
-                    type: "info",
-                  });
-                }}
+                title="Demo Account (No Account Needed)"
+                subtitle="1-Click test sync across Desktop, Web & Mobile"
+                onPress={handleCloudDemoLogin}
               />
             </>
           )}
@@ -948,6 +1019,23 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '800',
+  },
+  googleSignInBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#E50914',
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginHorizontal: 16,
+    marginVertical: 12,
+  },
+  googleSignInText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });
 
