@@ -43,6 +43,8 @@ async function applyCloudLibrary(library: any, revision: number) {
       for (const item of Array.isArray(library?.[remoteType]) ? library[remoteType] : []) addSavedItem(item, type);
     }
     await setUserPreferences(library?.preferences && typeof library.preferences === 'object' ? library.preferences : DEFAULT_PREFERENCES);
+    await AsyncStorage.setItem('watch_progress_v1', JSON.stringify(library?.watchProgress || {}));
+    await AsyncStorage.setItem('savedCollections', JSON.stringify(Array.isArray(library?.savedCollections) ? library.savedCollections : []));
     const chat = library?.aiChatData;
     await AsyncStorage.setItem('watcher.chat.conversations.v1', JSON.stringify(Array.isArray(chat?.conversations) ? chat.conversations : []));
     await AsyncStorage.setItem('watcher.chat.userMemory.v1', typeof chat?.userMemory === 'string' ? chat.userMemory : '');
