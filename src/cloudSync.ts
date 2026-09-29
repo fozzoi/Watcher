@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, SavedItemsMutation } from './database';
-import { getUserPreferences, setUserPreferences } from './userPreferences';
+import { DEFAULT_PREFERENCES, getUserPreferences, setUserPreferences } from './userPreferences';
 
 const AUTH_API_BASE = 'https://watcher-api-rho.vercel.app';
 let applyingRemoteChanges = false;
@@ -42,13 +42,11 @@ async function applyCloudLibrary(library: any, revision: number) {
       const remoteType = type === 'artist' ? 'favoriteArtists' : type;
       for (const item of Array.isArray(library?.[remoteType]) ? library[remoteType] : []) addSavedItem(item, type);
     }
-    if (library?.preferences && typeof library.preferences === 'object') await setUserPreferences(library.preferences);
+    await setUserPreferences(library?.preferences && typeof library.preferences === 'object' ? library.preferences : DEFAULT_PREFERENCES);
     const chat = library?.aiChatData;
-    if (chat) {
-      if (Array.isArray(chat.conversations)) await AsyncStorage.setItem('watcher.chat.conversations.v1', JSON.stringify(chat.conversations));
-      if (typeof chat.userMemory === 'string') await AsyncStorage.setItem('watcher.chat.userMemory.v1', chat.userMemory);
-      if (typeof chat.aiName === 'string') await AsyncStorage.setItem('watcher.chat.aiName.v1', chat.aiName);
-    }
+    await AsyncStorage.setItem('watcher.chat.conversations.v1', JSON.stringify(Array.isArray(chat?.conversations) ? chat.conversations : []));
+    await AsyncStorage.setItem('watcher.chat.userMemory.v1', typeof chat?.userMemory === 'string' ? chat.userMemory : '');
+    await AsyncStorage.setItem('watcher.chat.aiName.v1', typeof chat?.aiName === 'string' ? chat.aiName : 'Cine');
     await AsyncStorage.setItem('cloud_sync_revision', String(revision));
   } finally {
     applyingRemoteChanges = false;
@@ -199,6 +197,19 @@ export const cloudSync = {
     }
 
     try {
+      const knownRevision = Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0);
+      if (knownRevision > 0) {
+        const delta = await axios.get(`${AUTH_API_BASE}/api/sync?since_revision=${knownRevision}`, {
+          headers: { Authorization: `Bearer ${token}` }, timeout: 12000,
+        });
+        if (Array.isArray(delta.data?.changes) && delta.data.changes.some((change: any) => change.action === 'clear' && !change.type)) {
+          const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+          if (snapshot.data?.library) {
+            await applyCloudLibrary(snapshot.data.library, Number(snapshot.data.revision || delta.data.revision || 0));
+            return { success: true, message: 'Cloud library reset applied' };
+          }
+        }
+      }
       // 1. Gather local SQLite items
       const localWatchlist = getSavedItems('watchlist') || [];
       const localHistory = getSavedItems('history') || [];
