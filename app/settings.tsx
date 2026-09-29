@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Switch, Platform, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Switch, Platform, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -21,7 +21,7 @@ import { ThemedDialog, DialogButton } from '../src/components/shared/ThemedDialo
 import { ActivityIndicator } from 'react-native';
 import { clearUserMemory, getUserMemory } from '../src/chatStorage';
 import { DEFAULT_PLAYER_PREFERENCES, getPlayerPreferences, PlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
-import { cloudSync, MobileUserProfile } from '../src/cloudSync';
+import { cloudSync, MobileUserProfile, queueCloudValue } from '../src/cloudSync';
 import { signInWithNativeGoogle } from '../src/nativeGoogleAuth';
 
 // Google OAuth via expo-auth-session
@@ -167,6 +167,11 @@ const Settings = () => {
     loadSettings();
     handleCheckUpdate(true); // Silent check on mount
     cloudSync.getAuthUser().then(u => setCloudUser(u));
+    const nsfwListener = DeviceEventEmitter.addListener('watcher_nsfw_setting_changed', (value: boolean) => {
+      setIsNsfwFilter(value);
+      setGlobalConfig('nsfwFilterEnabled', value);
+    });
+    return () => nsfwListener.remove();
   }, []);
 
   const handleCloudDemoLogin = async () => {
@@ -253,6 +258,7 @@ const Settings = () => {
     setIsNsfwFilter(value);
     setGlobalConfig('nsfwFilterEnabled', value);
     await AsyncStorage.setItem('settings_nsfw', JSON.stringify(value));
+    queueCloudValue('preferences', { nsfwFilterEnabled: value });
   };
 
   const toggleSmartNotifs = async (value: boolean) => {

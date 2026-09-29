@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import * as Crypto from 'expo-crypto';
+import { DeviceEventEmitter } from 'react-native';
 import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, setCloudOnlyMode, SavedItemsMutation } from './database';
+import { GLOBAL_CONFIG, setGlobalConfig } from './tmdb';
 
 const AUTH_API_BASE = 'https://watcher-api-rho.vercel.app';
 let applyingRemoteChanges = false;
@@ -13,6 +15,35 @@ let retryDelay = 1000;
 let retryAfter = 0;
 
 const outboxKey = (userId: string) => `cloud_sync_outbox_v1:${userId}`;
+const snapshotCacheKey = (userId: string) => `cloud_library_snapshot_v1:${userId}`;
+
+async function writeSnapshotCache(library: any, userId?: string) {
+  const owner = userId ? { userId } : await cloudSync.getAuthUser();
+  if (!owner?.userId) return;
+  const snapshot = {
+    watchlist: Array.isArray(library?.watchlist) ? library.watchlist : [],
+    history: Array.isArray(library?.history) ? library.history : [],
+    favoriteArtists: Array.isArray(library?.favoriteArtists) ? library.favoriteArtists : [],
+    preferences: library?.preferences && typeof library.preferences === 'object' ? library.preferences : {},
+  };
+  await AsyncStorage.setItem(snapshotCacheKey(owner.userId), JSON.stringify(snapshot));
+}
+
+async function applyNsfwPreference(value: unknown) {
+  if (typeof value !== 'boolean') return;
+  await AsyncStorage.setItem('settings_nsfw', JSON.stringify(value));
+  setGlobalConfig('nsfwFilterEnabled', value);
+  DeviceEventEmitter.emit('watcher_nsfw_setting_changed', value);
+}
+
+async function readSnapshotCache(userId: string): Promise<any | null> {
+  try {
+    const raw = await AsyncStorage.getItem(snapshotCacheKey(userId));
+    const cached = raw ? JSON.parse(raw) : null;
+    if (!cached || !Array.isArray(cached.watchlist) || !Array.isArray(cached.history) || !Array.isArray(cached.favoriteArtists)) return null;
+    return cached;
+  } catch { return null; }
+}
 
 async function prepareLocalLibraryForAccount(userId: string) {
   const owner = await AsyncStorage.getItem('cloud_local_library_owner');
@@ -91,6 +122,7 @@ export const queueCloudValue = (type: 'preferences' | 'watchProgress', value: an
 
 async function applyCloudLibrary(library: any, revision: number) {
   setCloudOnlyMode(true, library);
+  await applyNsfwPreference(library?.preferences?.nsfwFilterEnabled);
   await AsyncStorage.setItem('watch_progress_v1', JSON.stringify(library?.watchProgress || {}));
   await AsyncStorage.setItem('savedCollections', JSON.stringify(Array.isArray(library?.savedCollections) ? library.savedCollections : []));
   const chat = library?.aiChatData;
@@ -98,12 +130,18 @@ async function applyCloudLibrary(library: any, revision: number) {
   await AsyncStorage.setItem('watcher.chat.userMemory.v1', typeof chat?.userMemory === 'string' ? chat.userMemory : '');
   await AsyncStorage.setItem('watcher.chat.aiName.v1', typeof chat?.aiName === 'string' ? chat.aiName : 'Cine');
   await AsyncStorage.setItem('cloud_sync_revision', String(revision));
+  await writeSnapshotCache(library);
 }
 
 export async function prepareCloudSessionOnStartup(): Promise<void> {
-  const token = await cloudSync.getAuthToken();
-  if (!token) return;
+  const [token, user] = await Promise.all([cloudSync.getAuthToken(), cloudSync.getAuthUser()]);
+  if (!token || !user) return;
   setCloudOnlyMode(true);
+  const cachedLibrary = await readSnapshotCache(user.userId);
+  if (cachedLibrary) {
+    setCloudOnlyMode(true, cachedLibrary);
+    await applyNsfwPreference(cachedLibrary.preferences?.nsfwFilterEnabled);
+  }
   // The in-memory watchlist was intentionally cleared. Do not let a saved
   // cursor make a failed snapshot look current on the next polling pass.
   await AsyncStorage.removeItem('cloud_sync_revision');
@@ -162,8 +200,15 @@ export async function pollCloudChanges(): Promise<void> {
       } finally { applyingRemoteChanges = false; }
       for (const change of changes) {
         if (change.action === 'set' && change.type === 'watchProgress' && change.value) await AsyncStorage.setItem('watch_progress_v1', JSON.stringify(change.value));
+        if (change.action === 'set' && change.type === 'preferences') await applyNsfwPreference(change.value?.nsfwFilterEnabled);
       }
       await AsyncStorage.setItem('cloud_sync_revision', String(nextRevision));
+      await writeSnapshotCache({
+        watchlist: getSavedItems('watchlist'),
+        history: getSavedItems('history'),
+        favoriteArtists: getSavedItems('artist'),
+        preferences: { nsfwFilterEnabled: GLOBAL_CONFIG.nsfwFilterEnabled },
+      }, (await cloudSync.getAuthUser())?.userId);
       return;
     }
     const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });

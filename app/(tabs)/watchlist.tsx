@@ -19,7 +19,8 @@ import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image'; // Highly optimized image rendering
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, insertAiEmbedding, getAiEmbedding, subscribeToSavedItemsChanges } from '../../src/database';
-import { getImageUrl, searchTMDB, GLOBAL_CONFIG, fetchEmbedding } from '../../src/tmdb';
+import { getImageUrl, searchTMDB, GLOBAL_CONFIG, fetchEmbedding, setGlobalConfig } from '../../src/tmdb';
+import { isAdultContent } from '../../src/contentSafety';
 import { GENRE_OPTIONS } from '../../src/userPreferences';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -106,6 +107,7 @@ const WatchListPage = () => {
   const [watchlist, setWatchlist] = useState<any[]>([]);
   const [artists, setArtists] = useState<any[]>([]);
   const [watched, setWatched] = useState<any[]>([]);
+  const [nsfwFilterEnabled, setNsfwFilterEnabled] = useState(GLOBAL_CONFIG.nsfwFilterEnabled);
   const [loading, setLoading] = useState(true);
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -192,6 +194,22 @@ const WatchListPage = () => {
 
   const flatListRef = useRef<FlashList<any>>(null);
   const horizontalScrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem('settings_nsfw').then((raw) => {
+      if (active && raw !== null) {
+        const enabled = JSON.parse(raw) === true;
+        setNsfwFilterEnabled(enabled);
+        setGlobalConfig('nsfwFilterEnabled', enabled);
+      }
+    }).catch(() => {});
+    const settingListener = DeviceEventEmitter.addListener('watcher_nsfw_setting_changed', (enabled: boolean) => {
+      setNsfwFilterEnabled(enabled);
+      setGlobalConfig('nsfwFilterEnabled', enabled);
+    });
+    return () => { active = false; settingListener.remove(); };
+  }, []);
 
   const loadData = async () => {
     try {
@@ -610,7 +628,9 @@ const WatchListPage = () => {
   };
 
   const getListForTab = useCallback((tabIndex: number) => {
-    let list = tabIndex === 0 ? watchlist : tabIndex === 1 ? artists : watched;
+    let list = tabIndex === 0
+      ? (nsfwFilterEnabled ? watchlist.filter(item => !isAdultContent(item)) : watchlist)
+      : tabIndex === 1 ? artists : watched;
 
     if (semanticSearchVector && tabIndex !== 1) {
       list = [...list]
@@ -676,7 +696,7 @@ const WatchListPage = () => {
       }
       return 0;
     });
-  }, [watchlist, artists, watched, searchQuery, semanticSearchVector, selectedMediaType, selectedGenreIds, sortBy, sortDirection]);
+  }, [watchlist, artists, watched, nsfwFilterEnabled, searchQuery, semanticSearchVector, selectedMediaType, selectedGenreIds, sortBy, sortDirection]);
 
   const handleAiSearch = async () => {
     if (!searchQuery.trim()) return;
