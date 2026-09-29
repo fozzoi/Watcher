@@ -40,7 +40,7 @@ import {
   fetchEmbedding,
 } from '../../src/tmdb';
 import { getProgress } from '../../src/utils/progress';
-import { getSavedItems, addSavedItem, removeSavedItem, hasSavedItem, saveAiEmbedding } from '../../src/database';
+import { getSavedItems, addSavedItem, removeSavedItem, hasSavedItem, saveAiEmbedding, subscribeToSavedItemsChanges } from '../../src/database';
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -624,6 +624,11 @@ const DetailPage = () => {
     if (!targetId) return;
     setIsWatched(hasSavedItem(targetId, 'history'));
   };
+
+  useEffect(() => subscribeToSavedItemsChanges((type) => {
+    if (type === 'watchlist') checkIfInWatchlist();
+    else if (type === 'history') checkIfWatched();
+  }), [movie?.id, initialMovie?.id]);
 
   const toggleWatched = async () => {
     if (!movie) return;

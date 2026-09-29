@@ -18,7 +18,7 @@ import {
 import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image'; // Highly optimized image rendering
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, insertAiEmbedding, getAiEmbedding } from '../../src/database';
+import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, insertAiEmbedding, getAiEmbedding, subscribeToSavedItemsChanges } from '../../src/database';
 import { getImageUrl, searchTMDB, GLOBAL_CONFIG, fetchEmbedding } from '../../src/tmdb';
 import { GENRE_OPTIONS } from '../../src/userPreferences';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -212,6 +212,12 @@ const WatchListPage = () => {
       loadData();
     }, [])
   );
+
+  useEffect(() => subscribeToSavedItemsChanges((type) => {
+    if (type === 'watchlist') setWatchlist(getSavedItems('watchlist'));
+    else if (type === 'artist') setArtists(getSavedItems('artist'));
+    else if (type === 'history') setWatched(getSavedItems('history'));
+  }), []);
 
   const runDailyAutoSync = async () => {
     try {

@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const db = SQLite.openDatabaseSync('watcher.db');
 
 export type SavedItemType = 'watchlist' | 'history' | 'artist';
+const savedItemsUiListeners = new Set<(type: SavedItemType) => void>();
 let cloudOnlyMode = false;
 const cloudItems: Record<SavedItemType, any[]> = { watchlist: [], history: [], artist: [] };
 
@@ -12,6 +13,17 @@ const itemRowId = (item: any, type: SavedItemType) => {
   const id = String(item?.id ?? item?.media_id ?? '');
   if (type === 'artist') return `${type}_${id}`;
   return `${type}_${item?.media_type === 'tv' ? 'tv' : 'movie'}_${id}`;
+};
+
+export const subscribeToSavedItemsChanges = (listener: (type: SavedItemType) => void) => {
+  savedItemsUiListeners.add(listener);
+  return () => { savedItemsUiListeners.delete(listener); };
+};
+
+const notifySavedItemsUiListeners = (type: SavedItemType) => {
+  for (const listener of savedItemsUiListeners) {
+    try { listener(type); } catch (error) { console.warn('Saved item UI refresh listener failed:', error); }
+  }
 };
 
 export const initDb = () => {
@@ -45,6 +57,9 @@ export const setCloudOnlyMode = (enabled: boolean, library?: any) => {
       cloudItems.watchlist = Array.isArray(library.watchlist) ? [...library.watchlist] : [];
       cloudItems.history = Array.isArray(library.history) ? [...library.history] : [];
       cloudItems.artist = Array.isArray(library.favoriteArtists) ? [...library.favoriteArtists] : [];
+      notifySavedItemsUiListeners('watchlist');
+      notifySavedItemsUiListeners('history');
+      notifySavedItemsUiListeners('artist');
     }
     try { db.runSync('DELETE FROM saved_items'); } catch (error) { console.warn('Could not clear signed-in SQLite cache:', error); }
     return;
@@ -170,6 +185,7 @@ export const setOnSavedItemsChangedListener = (callback: ((mutation: SavedItemsM
 export const setOnWatchlistChangedListener = setOnSavedItemsChangedListener;
 
 const notifySavedItemsChanged = (mutation: SavedItemsMutation) => {
+  notifySavedItemsUiListeners(mutation.type);
   if (onSavedItemsChangedCallback) {
     try {
       onSavedItemsChangedCallback(mutation);
