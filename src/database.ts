@@ -112,27 +112,24 @@ export const hasSavedItem = (mediaId: number, type: SavedItemType): boolean => {
   }
 };
 
-let onSavedItemsChangedCallback: (() => void) | null = null;
+export type SavedItemsMutation = { type: SavedItemType; action: 'add' | 'remove' | 'clear'; item?: any; mediaId?: number };
+let onSavedItemsChangedCallback: ((mutation: SavedItemsMutation) => void) | null = null;
 
-export const setOnSavedItemsChangedListener = (callback: (() => void) | null) => {
+export const setOnSavedItemsChangedListener = (callback: ((mutation: SavedItemsMutation) => void) | null) => {
   onSavedItemsChangedCallback = callback;
 };
 
 // Kept for callers using the old name. Library changes now include history and artists.
 export const setOnWatchlistChangedListener = setOnSavedItemsChangedListener;
 
-const notifySavedItemsChanged = () => {
+const notifySavedItemsChanged = (mutation: SavedItemsMutation) => {
   if (onSavedItemsChangedCallback) {
     try {
-      onSavedItemsChangedCallback();
+      onSavedItemsChangedCallback(mutation);
     } catch (e) {
       console.error('Error in onSavedItemsChangedCallback:', e);
     }
   }
-};
-
-const notifyWatchlistChanged = (type: SavedItemType) => {
-  notifySavedItemsChanged();
 };
 
 /**
@@ -146,7 +143,7 @@ export const addSavedItem = (item: any, type: SavedItemType) => {
       'INSERT OR REPLACE INTO saved_items (id, media_id, type, data, created_at) VALUES (?, ?, ?, ?, ?)',
       [rowId, item.id, type, JSON.stringify(item), Date.now()]
     );
-    notifyWatchlistChanged(type);
+    notifySavedItemsChanged({ type, action: 'add', item });
   } catch (error) {
     console.error(`Failed to add item to ${type}:`, error);
   }
@@ -159,7 +156,7 @@ export const removeSavedItem = (mediaId: number, type: SavedItemType) => {
   try {
     const rowId = `${type}_${mediaId}`;
     db.runSync('DELETE FROM saved_items WHERE id = ?', [rowId]);
-    notifyWatchlistChanged(type);
+    notifySavedItemsChanged({ type, action: 'remove', mediaId });
   } catch (error) {
     console.error(`Failed to remove item from ${type}:`, error);
   }
@@ -171,7 +168,7 @@ export const removeSavedItem = (mediaId: number, type: SavedItemType) => {
 export const clearSavedItems = (type: SavedItemType) => {
   try {
     db.runSync('DELETE FROM saved_items WHERE type = ?', [type]);
-    notifyWatchlistChanged(type);
+    notifySavedItemsChanged({ type, action: 'clear' });
   } catch (error) {
     console.error(`Failed to clear ${type}:`, error);
   }

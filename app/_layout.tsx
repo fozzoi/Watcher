@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, LogBox, View, ActivityIndicator } from 'react-native';
+import { Platform, LogBox, View, ActivityIndicator, AppState } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Brightness from 'expo-brightness';
 
-import { isOnboardingComplete } from '@/src/userPreferences';
+import { isOnboardingComplete, setOnPreferencesChangedListener } from '@/src/userPreferences';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { setupNotificationChannel, registerBackgroundFetchAsync, isNotificationsEnabled } from '@/src/notifications';
@@ -15,6 +15,7 @@ import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, setOnSavedItemsChangedListener } from '@/src/database';
 import { fetchEmbedding, fetchEmbeddingsBatch, loadGlobalConfig } from '@/src/tmdb';
+import { pollCloudChanges, queueCloudMutation, queueCloudValue } from '@/src/cloudSync';
 
 // Disable non-critical warnings
 LogBox.ignoreLogs([
@@ -110,10 +111,20 @@ export default function RootLayout() {
     })();
 
     // Automatically sync watchlist to remote server whenever changed
-    setOnSavedItemsChangedListener(() => {
+    setOnSavedItemsChangedListener((mutation) => {
       syncPushTokenAndWatchlist().catch((err) =>
         console.log('Watchlist push sync error:', err)
       );
+      queueCloudMutation(mutation);
+    });
+    setOnPreferencesChangedListener(prefs => queueCloudValue('preferences', prefs));
+
+    const syncIfActive = () => {
+      if (AppState.currentState === 'active') pollCloudChanges();
+    };
+    const syncTimer = setInterval(syncIfActive, 2000);
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') pollCloudChanges();
     });
 
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
@@ -157,7 +168,10 @@ export default function RootLayout() {
 
     return () => {
       subscription.remove();
+      clearInterval(syncTimer);
+      appStateSubscription.remove();
       setOnSavedItemsChangedListener(null);
+      setOnPreferencesChangedListener(null);
     };
   }, [router, isReady, databaseReady]);
 

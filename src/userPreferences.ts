@@ -4,6 +4,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PREFS_KEY = 'user_preferences';
+let onPreferencesChanged: ((prefs: Partial<UserPreferences>) => void) | null = null;
+export const setOnPreferencesChangedListener = (listener: typeof onPreferencesChanged) => { onPreferencesChanged = listener; };
 
 export interface FavoriteActor {
   id: number;
@@ -41,10 +43,12 @@ export const setUserPreferences = async (prefs: Partial<UserPreferences>): Promi
   const current = await getUserPreferences();
   const updated = { ...current, ...prefs };
   await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(updated));
+  onPreferencesChanged?.(updated);
 };
 
 export const completeOnboarding = async (prefs: Omit<UserPreferences, 'onboardingComplete'>): Promise<void> => {
   await AsyncStorage.setItem(PREFS_KEY, JSON.stringify({ ...prefs, onboardingComplete: true }));
+  onPreferencesChanged?.({ ...prefs, onboardingComplete: true });
 };
 
 export const isOnboardingComplete = async (): Promise<boolean> => {
@@ -54,6 +58,7 @@ export const isOnboardingComplete = async (): Promise<boolean> => {
 
 export const resetOnboarding = async (): Promise<void> => {
   await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(DEFAULT_PREFERENCES));
+  onPreferencesChanged?.(DEFAULT_PREFERENCES);
 };
 
 // ── Metadata ─────────────────────────────────────────────────────────────────

@@ -22,6 +22,7 @@ import { ActivityIndicator } from 'react-native';
 import { clearUserMemory, getUserMemory } from '../src/chatStorage';
 import { DEFAULT_PLAYER_PREFERENCES, getPlayerPreferences, PlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
 import { cloudSync, MobileUserProfile } from '../src/cloudSync';
+import { signInWithNativeGoogle } from '../src/nativeGoogleAuth';
 
 // Google OAuth via expo-auth-session
 import * as WebBrowser from 'expo-web-browser';
@@ -31,7 +32,7 @@ import * as Crypto from 'expo-crypto';
 WebBrowser.maybeCompleteAuthSession();
 
 // Use the web client ID — works for browser-based OAuth on Android
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '741301139600-n3b1b0jmrlf3t8nccbf8e3bskqrtb0sp.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
 
 
 interface DialogConfig {
@@ -76,7 +77,11 @@ const Settings = () => {
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
 
   // ── Google OAuth Setup ──────────────────────────────────────────
-  const discovery = AuthSession.useAutoDiscovery('https://accounts.google.com');
+  const discovery: AuthSession.DiscoveryDocument = {
+    authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenEndpoint: 'https://oauth2.googleapis.com/token',
+    revocationEndpoint: 'https://oauth2.googleapis.com/revoke',
+  };
   const redirectUri = AuthSession.makeRedirectUri({ scheme: 'myapp', path: 'oauth' });
 
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
@@ -104,9 +109,12 @@ const Settings = () => {
     }
   }, [response]);
 
-  const handleGoogleLoginSuccess = async (accessToken: string) => {
+  const handleGoogleLoginSuccess = async (token: string, tokenType: 'idToken' | 'accessToken' = 'accessToken') => {
     setIsSyncingCloud(true);
-    const res = await cloudSync.loginWithGoogle(undefined, accessToken);
+    const res = await cloudSync.loginWithGoogle(
+      tokenType === 'idToken' ? token : undefined,
+      tokenType === 'accessToken' ? token : undefined,
+    );
     setIsSyncingCloud(false);
     if (res.success && res.user) {
       setCloudUser(res.user);
@@ -124,9 +132,34 @@ const Settings = () => {
     }
   };
 
-  const handleGoogleSignIn = () => {
+  const handleGoogleSignIn = async () => {
     setIsSyncingCloud(true);
-    promptAsync();
+    if (Platform.OS === 'android') {
+      try {
+        const idToken = await signInWithNativeGoogle();
+        if (!idToken) {
+          setIsSyncingCloud(false);
+          return;
+        }
+        await handleGoogleLoginSuccess(idToken, 'idToken');
+      } catch (error: any) {
+        setIsSyncingCloud(false);
+        showDialog({
+          title: 'Sign-In Failed',
+          message: error?.message || 'Native Google sign-in failed. Check the Android OAuth package name and signing SHA-1.',
+          type: 'danger',
+        });
+      }
+      return;
+    }
+
+    try {
+      const result = await promptAsync();
+      if (result.type === 'cancel' || result.type === 'dismiss') setIsSyncingCloud(false);
+    } catch (error: any) {
+      setIsSyncingCloud(false);
+      showDialog({ title: 'Sign-In Failed', message: error?.message || 'Google OAuth failed.', type: 'danger' });
+    }
   };
   // ────────────────────────────────────────────────────────────────
 
@@ -601,8 +634,8 @@ const Settings = () => {
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={handleGoogleSignIn}
-                disabled={isSyncingCloud || !request}
-                style={[styles.googleSignInBtn, (isSyncingCloud || !request) && { opacity: 0.6 }]}
+                disabled={isSyncingCloud || (Platform.OS !== 'android' && !request)}
+                style={[styles.googleSignInBtn, (isSyncingCloud || (Platform.OS !== 'android' && !request)) && { opacity: 0.6 }]}
               >
                 {isSyncingCloud ? (
                   <ActivityIndicator size="small" color="#fff" />

@@ -1,9 +1,97 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { getSavedItems, addSavedItem } from './database';
+import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, SavedItemsMutation } from './database';
 import { getUserPreferences, setUserPreferences } from './userPreferences';
 
 const AUTH_API_BASE = 'https://watcher-api-rho.vercel.app';
+let applyingRemoteChanges = false;
+let syncQueue: Promise<unknown> = Promise.resolve();
+let pollInFlight = false;
+
+const apiType = (type: SavedItemsMutation['type']) => type === 'artist' ? 'favoriteArtists' : type;
+
+export const queueCloudMutation = (mutation: SavedItemsMutation) => {
+  if (applyingRemoteChanges) return;
+  syncQueue = syncQueue.then(async () => {
+    const token = await cloudSync.getAuthToken();
+    if (!token) return;
+    const response = await axios.post(`${AUTH_API_BASE}/api/sync`, {
+      action: 'mutate', mutation: { ...mutation, type: apiType(mutation.type) },
+    }, { headers: { Authorization: `Bearer ${token}` }, timeout: 12000 });
+    if (response.data?.revision) await AsyncStorage.setItem('cloud_sync_revision', String(response.data.revision));
+  }).catch(error => console.warn('Cloud library mutation failed:', error?.response?.data || error.message));
+};
+
+export const queueCloudValue = (type: 'preferences' | 'watchProgress', value: any) => {
+  if (applyingRemoteChanges) return;
+  syncQueue = syncQueue.then(async () => {
+    const token = await cloudSync.getAuthToken();
+    if (!token) return;
+    const response = await axios.post(`${AUTH_API_BASE}/api/sync`, { action: 'mutate', mutation: { type, action: 'set', value } }, {
+      headers: { Authorization: `Bearer ${token}` }, timeout: 12000,
+    });
+    if (response.data?.revision) await AsyncStorage.setItem('cloud_sync_revision', String(response.data.revision));
+  }).catch(error => console.warn('Cloud library setting sync failed:', error?.response?.data || error.message));
+};
+
+async function applyCloudLibrary(library: any, revision: number) {
+  applyingRemoteChanges = true;
+  try {
+    for (const type of ['watchlist', 'history', 'artist'] as const) {
+      clearSavedItems(type);
+      const remoteType = type === 'artist' ? 'favoriteArtists' : type;
+      for (const item of Array.isArray(library?.[remoteType]) ? library[remoteType] : []) addSavedItem(item, type);
+    }
+    if (library?.preferences && typeof library.preferences === 'object') await setUserPreferences(library.preferences);
+    const chat = library?.aiChatData;
+    if (chat) {
+      if (Array.isArray(chat.conversations)) await AsyncStorage.setItem('watcher.chat.conversations.v1', JSON.stringify(chat.conversations));
+      if (typeof chat.userMemory === 'string') await AsyncStorage.setItem('watcher.chat.userMemory.v1', chat.userMemory);
+      if (typeof chat.aiName === 'string') await AsyncStorage.setItem('watcher.chat.aiName.v1', chat.aiName);
+    }
+    await AsyncStorage.setItem('cloud_sync_revision', String(revision));
+  } finally {
+    applyingRemoteChanges = false;
+  }
+}
+
+export async function pollCloudChanges(): Promise<void> {
+  if (pollInFlight) return;
+  const token = await cloudSync.getAuthToken();
+  if (!token) return;
+  pollInFlight = true;
+  try {
+    const revision = Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0);
+    const response = await axios.get(`${AUTH_API_BASE}/api/sync?since_revision=${revision}`, {
+      headers: { Authorization: `Bearer ${token}` }, timeout: 12000,
+    });
+    const nextRevision = Number(response.data?.revision || 0);
+    if (!nextRevision || nextRevision === revision) return;
+    const changes = response.data?.changes;
+    if (response.data?.status === 'delta' && Array.isArray(changes) && changes.every((change: any) => change.type && change.action !== 'snapshot')) {
+      applyingRemoteChanges = true;
+      try {
+        for (const change of changes) {
+          const type = (change.type === 'favoriteArtists' ? 'artist' : change.type) as 'watchlist' | 'history' | 'artist';
+          if (!['watchlist', 'history', 'artist'].includes(type)) continue;
+          if (change.action === 'clear') clearSavedItems(type);
+          else if (change.action === 'remove') removeSavedItem(Number(change.mediaId), type);
+          else if (change.action === 'add' && change.item) addSavedItem(change.item, type);
+        }
+        for (const change of changes) {
+          if (change.action === 'set' && change.type === 'preferences' && change.value) await setUserPreferences(change.value);
+          if (change.action === 'set' && change.type === 'watchProgress' && change.value) await AsyncStorage.setItem('watch_progress_v1', JSON.stringify(change.value));
+        }
+        await AsyncStorage.setItem('cloud_sync_revision', String(nextRevision));
+      } finally { applyingRemoteChanges = false; }
+      return;
+    }
+    const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+    if (snapshot.data?.library) await applyCloudLibrary(snapshot.data.library, Number(snapshot.data.revision || nextRevision));
+  } catch (error: any) {
+    console.warn('Cloud sync check failed:', error?.response?.data || error.message);
+  } finally { pollInFlight = false; }
+}
 
 export interface MobileUserProfile {
   userId: string;
@@ -116,6 +204,10 @@ export const cloudSync = {
       const localHistory = getSavedItems('history') || [];
       const localArtists = getSavedItems('artist') || [];
       const localPreferences = await getUserPreferences();
+      
+      const convStr = await AsyncStorage.getItem('watcher.chat.conversations.v1');
+      const memStr = await AsyncStorage.getItem('watcher.chat.userMemory.v1');
+      const aiNameStr = await AsyncStorage.getItem('watcher.chat.aiName.v1');
 
       // 2. Post to cloud sync endpoint
       const response = await axios.post(`${AUTH_API_BASE}/api/sync`, {
@@ -123,6 +215,11 @@ export const cloudSync = {
         history: localHistory,
         favoriteArtists: localArtists,
         preferences: localPreferences,
+        aiChatData: {
+          conversations: convStr ? JSON.parse(convStr) : [],
+          userMemory: memStr || '',
+          aiName: aiNameStr || 'Cine',
+        },
         mode: 'merge',
       }, {
         headers: {
@@ -137,7 +234,9 @@ export const cloudSync = {
         throw new Error('Sync response did not contain library data');
       }
 
-      // 3. Write back missing cloud items into local SQLite database
+      // 3. Write back missing cloud items into local SQLite database without echoing them
+      applyingRemoteChanges = true;
+      try {
       if (Array.isArray(merged.watchlist)) {
         merged.watchlist.forEach((item: any) => {
           if (item?.id) addSavedItem(item, 'watchlist');
@@ -160,8 +259,27 @@ export const cloudSync = {
         await setUserPreferences(merged.preferences);
       }
 
+      const saveOps: Promise<void>[] = [];
+      if (merged.aiChatData) {
+        if (Array.isArray(merged.aiChatData.conversations)) {
+          saveOps.push(AsyncStorage.setItem('watcher.chat.conversations.v1', JSON.stringify(merged.aiChatData.conversations)));
+        }
+        if (typeof merged.aiChatData.userMemory === 'string') {
+          saveOps.push(AsyncStorage.setItem('watcher.chat.userMemory.v1', merged.aiChatData.userMemory));
+        }
+        if (typeof merged.aiChatData.aiName === 'string' && merged.aiChatData.aiName) {
+          saveOps.push(AsyncStorage.setItem('watcher.chat.aiName.v1', merged.aiChatData.aiName));
+        }
+      }
+      
       const syncTime = new Date().toISOString();
-      await AsyncStorage.setItem('last_cloud_sync_time', syncTime);
+      saveOps.push(AsyncStorage.setItem('last_cloud_sync_time', syncTime));
+      
+      await Promise.all(saveOps);
+      if (response.data?.revision) await AsyncStorage.setItem('cloud_sync_revision', String(response.data.revision));
+      } finally {
+        applyingRemoteChanges = false;
+      }
 
       return { 
         success: true, 

@@ -16,7 +16,7 @@
         "backgroundColor": "#000000"
       },
       "package": "com.thewatcher.dev",
-      "runtimeVersion": "1.0.0",
+      "runtimeVersion": "1.0.1",
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
@@ -90,6 +90,7 @@
       "expo-sharing",
       "expo-status-bar",
       "expo-notifications",
+      "react-native-nitro-google-signin",
       "expo-router",
       "expo-image",
       "expo-web-browser"
