@@ -5,6 +5,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const db = SQLite.openDatabaseSync('watcher.db');
 
 export type SavedItemType = 'watchlist' | 'history' | 'artist';
+let cloudOnlyMode = false;
+const cloudItems: Record<SavedItemType, any[]> = { watchlist: [], history: [], artist: [] };
+
+const itemRowId = (item: any, type: SavedItemType) => {
+  const id = String(item?.id ?? item?.media_id ?? '');
+  if (type === 'artist') return `${type}_${id}`;
+  return `${type}_${item?.media_type === 'tv' ? 'tv' : 'movie'}_${id}`;
+};
 
 export const initDb = () => {
   try {
@@ -27,6 +35,38 @@ export const initDb = () => {
     console.error('Failed to initialize SQLite database:', error);
     throw error;
   }
+};
+
+/** Keep signed-in library data in memory; SQLite remains the signed-out store. */
+export const setCloudOnlyMode = (enabled: boolean, library?: any) => {
+  if (enabled) {
+    cloudOnlyMode = true;
+    if (library) {
+      cloudItems.watchlist = Array.isArray(library.watchlist) ? [...library.watchlist] : [];
+      cloudItems.history = Array.isArray(library.history) ? [...library.history] : [];
+      cloudItems.artist = Array.isArray(library.favoriteArtists) ? [...library.favoriteArtists] : [];
+    }
+    try { db.runSync('DELETE FROM saved_items'); } catch (error) { console.warn('Could not clear signed-in SQLite cache:', error); }
+    return;
+  }
+  if (!cloudOnlyMode) return;
+  cloudOnlyMode = false;
+  try {
+    db.withTransactionSync(() => {
+      db.runSync('DELETE FROM saved_items');
+      const stmt = db.prepareSync('INSERT OR REPLACE INTO saved_items (id, media_id, type, data, created_at) VALUES (?, ?, ?, ?, ?)');
+      for (const type of ['watchlist', 'history', 'artist'] as const) {
+        cloudItems[type].forEach((item, index) => {
+          const mediaId = Number(item?.id ?? item?.media_id);
+          if (Number.isFinite(mediaId)) stmt.executeSync([itemRowId(item, type), mediaId, type, JSON.stringify(item), Date.now() + index]);
+        });
+      }
+      stmt.finalizeSync();
+    });
+  } catch (error) { console.error('Could not restore the signed-out library:', error); }
+  cloudItems.watchlist = [];
+  cloudItems.history = [];
+  cloudItems.artist = [];
 };
 
 /**
@@ -60,7 +100,7 @@ export const performMigration = async () => {
               // Ensure we have an ID
               const mediaId = item.id;
               if (mediaId !== undefined) {
-                const rowId = `${type}_${mediaId}`;
+                const rowId = itemRowId(item, type);
                 // Keep original sorting by using Date.now() + index (so older items have lower timestamps if list was chronological)
                 // Actually AsyncStorage is stored in order of addition usually.
                 // Reversing index to simulate older items first
@@ -89,10 +129,17 @@ export const performMigration = async () => {
  * Returns an array of parsed objects.
  */
 export const getSavedItems = (type: SavedItemType): any[] => {
+  if (cloudOnlyMode) return [...cloudItems[type]];
   try {
     // We order by created_at DESC (newest first)
     const result = db.getAllSync<{ data: string }>('SELECT data FROM saved_items WHERE type = ? ORDER BY created_at DESC', [type]);
-    return result.map(row => JSON.parse(row.data));
+    const seen = new Set<string>();
+    return result.map(row => JSON.parse(row.data)).filter(item => {
+      const key = itemRowId(item, type);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   } catch (error) {
     console.error(`Failed to get ${type}:`, error);
     return [];
@@ -103,16 +150,16 @@ export const getSavedItems = (type: SavedItemType): any[] => {
  * Check if a specific item exists in a specific list.
  */
 export const hasSavedItem = (mediaId: number, type: SavedItemType): boolean => {
+  if (cloudOnlyMode) return cloudItems[type].some(item => Number(item?.id ?? item?.media_id) === Number(mediaId));
   try {
-    const rowId = `${type}_${mediaId}`;
-    const result = db.getFirstSync<{ id: string }>('SELECT id FROM saved_items WHERE id = ?', [rowId]);
-    return !!result;
+    const result = db.getAllSync<{ data: string }>('SELECT data FROM saved_items WHERE type = ? AND media_id = ?', [type, mediaId]);
+    return result.length > 0;
   } catch (error) {
     return false;
   }
 };
 
-export type SavedItemsMutation = { type: SavedItemType; action: 'add' | 'remove' | 'clear'; item?: any; mediaId?: number };
+export type SavedItemsMutation = { type: SavedItemType; action: 'add' | 'remove' | 'clear'; item?: any; mediaId?: number; mediaType?: 'movie' | 'tv' };
 let onSavedItemsChangedCallback: ((mutation: SavedItemsMutation) => void) | null = null;
 
 export const setOnSavedItemsChangedListener = (callback: ((mutation: SavedItemsMutation) => void) | null) => {
@@ -137,8 +184,14 @@ const notifySavedItemsChanged = (mutation: SavedItemsMutation) => {
  */
 export const addSavedItem = (item: any, type: SavedItemType) => {
   if (!item || item.id === undefined) return;
+  if (cloudOnlyMode) {
+    const rowId = itemRowId(item, type);
+    cloudItems[type] = [item, ...cloudItems[type].filter(existing => itemRowId(existing, type) !== rowId)];
+    notifySavedItemsChanged({ type, action: 'add', item });
+    return;
+  }
   try {
-    const rowId = `${type}_${item.id}`;
+    const rowId = itemRowId(item, type);
     db.runSync(
       'INSERT OR REPLACE INTO saved_items (id, media_id, type, data, created_at) VALUES (?, ?, ?, ?, ?)',
       [rowId, item.id, type, JSON.stringify(item), Date.now()]
@@ -152,11 +205,23 @@ export const addSavedItem = (item: any, type: SavedItemType) => {
 /**
  * Remove an item from a specific list.
  */
-export const removeSavedItem = (mediaId: number, type: SavedItemType) => {
+export const removeSavedItem = (mediaId: number, type: SavedItemType, mediaType?: 'movie' | 'tv') => {
+  if (cloudOnlyMode) {
+    const removed = cloudItems[type].filter(item => Number(item?.id ?? item?.media_id) === Number(mediaId) && (!mediaType || (item?.media_type === 'tv' ? 'tv' : 'movie') === mediaType));
+    cloudItems[type] = cloudItems[type].filter(item => !removed.includes(item));
+    notifySavedItemsChanged({ type, action: 'remove', mediaId, mediaType: mediaType || (removed[0]?.media_type === 'tv' ? 'tv' : 'movie') });
+    return;
+  }
   try {
-    const rowId = `${type}_${mediaId}`;
-    db.runSync('DELETE FROM saved_items WHERE id = ?', [rowId]);
-    notifySavedItemsChanged({ type, action: 'remove', mediaId });
+    const existing = db.getAllSync<{ id: string; data: string }>('SELECT id, data FROM saved_items WHERE type = ? AND media_id = ?', [type, mediaId]);
+    const removed = existing.filter(row => {
+      if (type === 'artist' || !mediaType) return true;
+      const item = JSON.parse(row.data);
+      return (item?.media_type === 'tv' ? 'tv' : 'movie') === mediaType;
+    });
+    if (!mediaType && type !== 'artist' && removed[0]) mediaType = JSON.parse(removed[0].data)?.media_type === 'tv' ? 'tv' : 'movie';
+    for (const row of removed) db.runSync('DELETE FROM saved_items WHERE id = ?', [row.id]);
+    notifySavedItemsChanged({ type, action: 'remove', mediaId, mediaType });
   } catch (error) {
     console.error(`Failed to remove item from ${type}:`, error);
   }
@@ -165,10 +230,15 @@ export const removeSavedItem = (mediaId: number, type: SavedItemType) => {
 /**
  * Clear an entire list.
  */
-export const clearSavedItems = (type: SavedItemType) => {
+export const clearSavedItems = (type: SavedItemType, notify = true) => {
+  if (cloudOnlyMode) {
+    cloudItems[type] = [];
+    if (notify) notifySavedItemsChanged({ type, action: 'clear' });
+    return;
+  }
   try {
     db.runSync('DELETE FROM saved_items WHERE type = ?', [type]);
-    notifySavedItemsChanged({ type, action: 'clear' });
+    if (notify) notifySavedItemsChanged({ type, action: 'clear' });
   } catch (error) {
     console.error(`Failed to clear ${type}:`, error);
   }

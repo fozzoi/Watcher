@@ -6,7 +6,7 @@ import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Brightness from 'expo-brightness';
 
-import { isOnboardingComplete, setOnPreferencesChangedListener } from '@/src/userPreferences';
+import { isOnboardingComplete } from '@/src/userPreferences';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { setupNotificationChannel, registerBackgroundFetchAsync, isNotificationsEnabled } from '@/src/notifications';
@@ -15,7 +15,7 @@ import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, setOnSavedItemsChangedListener } from '@/src/database';
 import { fetchEmbedding, fetchEmbeddingsBatch, loadGlobalConfig } from '@/src/tmdb';
-import { pollCloudChanges, queueCloudMutation, queueCloudValue } from '@/src/cloudSync';
+import { pollCloudChanges, prepareCloudSessionOnStartup, queueCloudMutation } from '@/src/cloudSync';
 
 // Disable non-critical warnings
 LogBox.ignoreLogs([
@@ -117,7 +117,6 @@ export default function RootLayout() {
       );
       queueCloudMutation(mutation);
     });
-    setOnPreferencesChangedListener(prefs => queueCloudValue('preferences', prefs));
 
     const syncIfActive = () => {
       if (AppState.currentState === 'active') pollCloudChanges();
@@ -171,7 +170,6 @@ export default function RootLayout() {
       clearInterval(syncTimer);
       appStateSubscription.remove();
       setOnSavedItemsChangedListener(null);
-      setOnPreferencesChangedListener(null);
     };
   }, [router, isReady, databaseReady]);
 
@@ -215,6 +213,7 @@ export default function RootLayout() {
       try {
         initDb();
         await performMigration();
+        await prepareCloudSessionOnStartup();
         await loadGlobalConfig();
         setDatabaseReady(true);
         

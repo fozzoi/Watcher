@@ -1,89 +1,169 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, SavedItemsMutation } from './database';
-import { DEFAULT_PREFERENCES, getUserPreferences, setUserPreferences } from './userPreferences';
+import * as Crypto from 'expo-crypto';
+import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, setCloudOnlyMode, SavedItemsMutation } from './database';
 
 const AUTH_API_BASE = 'https://watcher-api-rho.vercel.app';
 let applyingRemoteChanges = false;
 let syncQueue: Promise<unknown> = Promise.resolve();
 let pollInFlight = false;
+let initialMergeInFlight = false;
+let flushingOutbox = false;
+let retryDelay = 1000;
+let retryAfter = 0;
+
+const outboxKey = (userId: string) => `cloud_sync_outbox_v1:${userId}`;
+
+async function prepareLocalLibraryForAccount(userId: string) {
+  const owner = await AsyncStorage.getItem('cloud_local_library_owner');
+  if (owner && owner !== userId) {
+    applyingRemoteChanges = true;
+    try {
+      setCloudOnlyMode(false);
+      clearSavedItems('watchlist', false);
+      clearSavedItems('history', false);
+      clearSavedItems('artist', false);
+      for (const key of ['savedCollections', 'watch_progress_v1', 'watcher.chat.conversations.v1', 'watcher.chat.userMemory.v1', 'watcher.chat.aiName.v1']) {
+        await AsyncStorage.removeItem(key);
+      }
+      await AsyncStorage.removeItem('cloud_sync_revision');
+    } finally { applyingRemoteChanges = false; }
+  }
+  await AsyncStorage.setItem('cloud_local_library_owner', userId);
+}
+
+async function enqueueCloudOperation(operation: any) {
+  syncQueue = syncQueue.then(async () => {
+    const user = await cloudSync.getAuthUser();
+    if (!user) return;
+    const key = outboxKey(user.userId);
+    let outbox: any[] = [];
+    try { outbox = JSON.parse((await AsyncStorage.getItem(key)) || '[]'); } catch { outbox = []; }
+    outbox.push({ ...operation, operationId: Crypto.randomUUID(), clientTimestamp: Date.now() });
+    await AsyncStorage.setItem(key, JSON.stringify(outbox));
+    await flushCloudOutbox();
+  }).catch(error => console.warn('Could not queue cloud edit:', error?.message));
+}
+
+export async function flushCloudOutbox(): Promise<void> {
+  if (flushingOutbox || Date.now() < retryAfter) return;
+  const [user, token] = await Promise.all([cloudSync.getAuthUser(), cloudSync.getAuthToken()]);
+  if (!user || !token) return;
+  flushingOutbox = true;
+  const key = outboxKey(user.userId);
+  try {
+    while (true) {
+      let outbox: any[] = [];
+      try { outbox = JSON.parse((await AsyncStorage.getItem(key)) || '[]'); } catch { outbox = []; }
+      const operation = outbox[0];
+      if (!operation) { retryAfter = 0; retryDelay = 1000; break; }
+      try {
+        await axios.post(`${AUTH_API_BASE}/api/sync`, { action: 'mutate', mutation: operation }, {
+          headers: { Authorization: `Bearer ${token}` }, timeout: 12000,
+        });
+        await AsyncStorage.setItem(key, JSON.stringify(outbox.slice(1)));
+        retryAfter = 0;
+        retryDelay = 1000;
+      } catch (error: any) {
+        // Keep the same operation ID on retry. A 409 means the API exhausted
+        // its bounded compare-and-swap retries during concurrent edits; do not
+        // spin forever in the foreground while other devices are busy.
+        retryAfter = Date.now() + retryDelay;
+        retryDelay = Math.min(30000, retryDelay * 2);
+        console.warn('Cloud edit saved for retry:', error?.response?.data || error.message);
+        break;
+      }
+    }
+  } finally { flushingOutbox = false; }
+}
 
 const apiType = (type: SavedItemsMutation['type']) => type === 'artist' ? 'favoriteArtists' : type;
 
 export const queueCloudMutation = (mutation: SavedItemsMutation) => {
   if (applyingRemoteChanges) return;
-  syncQueue = syncQueue.then(async () => {
-    const token = await cloudSync.getAuthToken();
-    if (!token) return;
-    const response = await axios.post(`${AUTH_API_BASE}/api/sync`, {
-      action: 'mutate', mutation: { ...mutation, type: apiType(mutation.type) },
-    }, { headers: { Authorization: `Bearer ${token}` }, timeout: 12000 });
-    if (response.data?.revision) await AsyncStorage.setItem('cloud_sync_revision', String(response.data.revision));
-  }).catch(error => console.warn('Cloud library mutation failed:', error?.response?.data || error.message));
+  void enqueueCloudOperation({ ...mutation, type: apiType(mutation.type) });
 };
 
 export const queueCloudValue = (type: 'preferences' | 'watchProgress', value: any) => {
   if (applyingRemoteChanges) return;
-  syncQueue = syncQueue.then(async () => {
-    const token = await cloudSync.getAuthToken();
-    if (!token) return;
-    const response = await axios.post(`${AUTH_API_BASE}/api/sync`, { action: 'mutate', mutation: { type, action: 'set', value } }, {
-      headers: { Authorization: `Bearer ${token}` }, timeout: 12000,
-    });
-    if (response.data?.revision) await AsyncStorage.setItem('cloud_sync_revision', String(response.data.revision));
-  }).catch(error => console.warn('Cloud library setting sync failed:', error?.response?.data || error.message));
+  void enqueueCloudOperation({ type, action: 'set', value });
 };
 
 async function applyCloudLibrary(library: any, revision: number) {
-  applyingRemoteChanges = true;
-  try {
-    for (const type of ['watchlist', 'history', 'artist'] as const) {
-      clearSavedItems(type);
-      const remoteType = type === 'artist' ? 'favoriteArtists' : type;
-      for (const item of Array.isArray(library?.[remoteType]) ? library[remoteType] : []) addSavedItem(item, type);
-    }
-    await setUserPreferences(library?.preferences && typeof library.preferences === 'object' ? library.preferences : DEFAULT_PREFERENCES);
-    await AsyncStorage.setItem('watch_progress_v1', JSON.stringify(library?.watchProgress || {}));
-    await AsyncStorage.setItem('savedCollections', JSON.stringify(Array.isArray(library?.savedCollections) ? library.savedCollections : []));
-    const chat = library?.aiChatData;
-    await AsyncStorage.setItem('watcher.chat.conversations.v1', JSON.stringify(Array.isArray(chat?.conversations) ? chat.conversations : []));
-    await AsyncStorage.setItem('watcher.chat.userMemory.v1', typeof chat?.userMemory === 'string' ? chat.userMemory : '');
-    await AsyncStorage.setItem('watcher.chat.aiName.v1', typeof chat?.aiName === 'string' ? chat.aiName : 'Cine');
-    await AsyncStorage.setItem('cloud_sync_revision', String(revision));
-  } finally {
-    applyingRemoteChanges = false;
-  }
+  setCloudOnlyMode(true, library);
+  await AsyncStorage.setItem('watch_progress_v1', JSON.stringify(library?.watchProgress || {}));
+  await AsyncStorage.setItem('savedCollections', JSON.stringify(Array.isArray(library?.savedCollections) ? library.savedCollections : []));
+  const chat = library?.aiChatData;
+  await AsyncStorage.setItem('watcher.chat.conversations.v1', JSON.stringify(Array.isArray(chat?.conversations) ? chat.conversations : []));
+  await AsyncStorage.setItem('watcher.chat.userMemory.v1', typeof chat?.userMemory === 'string' ? chat.userMemory : '');
+  await AsyncStorage.setItem('watcher.chat.aiName.v1', typeof chat?.aiName === 'string' ? chat.aiName : 'Cine');
+  await AsyncStorage.setItem('cloud_sync_revision', String(revision));
+}
+
+export async function prepareCloudSessionOnStartup(): Promise<void> {
+  const token = await cloudSync.getAuthToken();
+  if (!token) return;
+  setCloudOnlyMode(true);
+  // The in-memory watchlist was intentionally cleared. Do not let a saved
+  // cursor make a failed snapshot look current on the next polling pass.
+  await AsyncStorage.removeItem('cloud_sync_revision');
+  if (pollInFlight) return;
+  pollInFlight = true;
+  void (async () => {
+    try {
+      const response = await axios.get(`${AUTH_API_BASE}/api/sync`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+      if (response.data?.library) await applyCloudLibrary(response.data.library, Number(response.data.revision || 0));
+    } catch (error: any) {
+      console.warn('Signed-in library will load when the API is reachable:', error?.response?.data || error.message);
+    } finally { pollInFlight = false; }
+  })();
 }
 
 export async function pollCloudChanges(): Promise<void> {
-  if (pollInFlight) return;
-  const token = await cloudSync.getAuthToken();
-  if (!token) return;
+  if (pollInFlight || initialMergeInFlight) return;
   pollInFlight = true;
   try {
+    const token = await cloudSync.getAuthToken();
+    if (!token) return;
+    void flushCloudOutbox();
     const revision = Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0);
+    if (revision <= 0) {
+      setCloudOnlyMode(true);
+      const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+      if (snapshot.data?.library) await applyCloudLibrary(snapshot.data.library, Number(snapshot.data.revision || 0));
+      return;
+    }
     const response = await axios.get(`${AUTH_API_BASE}/api/sync?since_revision=${revision}`, {
       headers: { Authorization: `Bearer ${token}` }, timeout: 12000,
     });
     const nextRevision = Number(response.data?.revision || 0);
     if (!nextRevision || nextRevision === revision) return;
     const changes = response.data?.changes;
-    if (response.data?.status === 'delta' && Array.isArray(changes) && changes.every((change: any) => change.type && change.action !== 'snapshot')) {
+    const completeDelta = Array.isArray(changes) && changes.length > 0 &&
+      changes.length === nextRevision - revision &&
+      changes.every((change: any, index: number) => change.revision === revision + index + 1 && change.type && change.action !== 'snapshot');
+    if (response.data?.status === 'delta' && completeDelta) {
       applyingRemoteChanges = true;
       try {
         for (const change of changes) {
           const type = (change.type === 'favoriteArtists' ? 'artist' : change.type) as 'watchlist' | 'history' | 'artist';
           if (!['watchlist', 'history', 'artist'].includes(type)) continue;
           if (change.action === 'clear') clearSavedItems(type);
-          else if (change.action === 'remove') removeSavedItem(Number(change.mediaId), type);
-          else if (change.action === 'add' && change.item) addSavedItem(change.item, type);
+          else if (change.action === 'remove') removeSavedItem(Number(change.mediaId), type, change.mediaType);
+          else if (change.action === 'add' && change.item) {
+            addSavedItem(change.item, type);
+            if (type === 'history' && change.removesMatchingWatchlistItem) {
+              const mediaType = change.item.media_type === 'tv' ? 'tv' : 'movie';
+              const match = getSavedItems('watchlist').find((item: any) => Number(item.id) === Number(change.item.id) && (item.media_type === 'tv' ? 'tv' : 'movie') === mediaType);
+              if (match) removeSavedItem(Number(change.item.id), 'watchlist', mediaType);
+            }
+          }
         }
-        for (const change of changes) {
-          if (change.action === 'set' && change.type === 'preferences' && change.value) await setUserPreferences(change.value);
-          if (change.action === 'set' && change.type === 'watchProgress' && change.value) await AsyncStorage.setItem('watch_progress_v1', JSON.stringify(change.value));
-        }
-        await AsyncStorage.setItem('cloud_sync_revision', String(nextRevision));
       } finally { applyingRemoteChanges = false; }
+      for (const change of changes) {
+        if (change.action === 'set' && change.type === 'watchProgress' && change.value) await AsyncStorage.setItem('watch_progress_v1', JSON.stringify(change.value));
+      }
+      await AsyncStorage.setItem('cloud_sync_revision', String(nextRevision));
       return;
     }
     const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
@@ -136,6 +216,7 @@ export const cloudSync = {
 
       const { user, token } = response.data;
       if (!user || !token) throw new Error('Invalid response from auth server');
+      await prepareLocalLibraryForAccount(user.userId);
 
       await Promise.all([
         AsyncStorage.setItem('cloud_auth_token', token),
@@ -143,7 +224,7 @@ export const cloudSync = {
       ]);
 
       // Immediate sync upon login
-      await this.syncWithCloud();
+      await this.mergeLocalWithCloud();
 
       return { success: true, user };
     } catch (err: any) {
@@ -163,13 +244,14 @@ export const cloudSync = {
 
       const { user, token } = response.data;
       if (!user || !token) throw new Error('Invalid response from auth server');
+      await prepareLocalLibraryForAccount(user.userId);
 
       await Promise.all([
         AsyncStorage.setItem('cloud_auth_token', token),
         AsyncStorage.setItem('cloud_auth_user', JSON.stringify(user)),
       ]);
 
-      await this.syncWithCloud();
+      await this.mergeLocalWithCloud();
 
       return { success: true, user };
     } catch (err: any) {
@@ -182,6 +264,10 @@ export const cloudSync = {
    * Sign out
    */
   async logout(): Promise<void> {
+    const user = await this.getAuthUser();
+    await this.syncWithCloud();
+    setCloudOnlyMode(false);
+    if (user?.userId) await AsyncStorage.setItem('cloud_local_library_owner', user.userId);
     await Promise.all([
       AsyncStorage.removeItem('cloud_auth_token'),
       AsyncStorage.removeItem('cloud_auth_user'),
@@ -192,13 +278,16 @@ export const cloudSync = {
   /**
    * Full bi-directional sync with cloud
    */
-  async syncWithCloud(): Promise<{ success: boolean; error?: string; message?: string }> {
+  async mergeLocalWithCloud(): Promise<{ success: boolean; error?: string; message?: string }> {
     const token = await this.getAuthToken();
     if (!token) {
       return { success: false, error: 'Sign in to sync your library' };
     }
+    if (initialMergeInFlight) return { success: false, error: 'Initial library merge is already running' };
+    initialMergeInFlight = true;
 
     try {
+      await flushCloudOutbox();
       const knownRevision = Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0);
       if (knownRevision > 0) {
         const delta = await axios.get(`${AUTH_API_BASE}/api/sync?since_revision=${knownRevision}`, {
@@ -216,83 +305,34 @@ export const cloudSync = {
       const localWatchlist = getSavedItems('watchlist') || [];
       const localHistory = getSavedItems('history') || [];
       const localArtists = getSavedItems('artist') || [];
-      const localPreferences = await getUserPreferences();
       
       const convStr = await AsyncStorage.getItem('watcher.chat.conversations.v1');
       const memStr = await AsyncStorage.getItem('watcher.chat.userMemory.v1');
       const aiNameStr = await AsyncStorage.getItem('watcher.chat.aiName.v1');
 
       // 2. Post to cloud sync endpoint
-      const response = await axios.post(`${AUTH_API_BASE}/api/sync`, {
-        watchlist: localWatchlist,
-        history: localHistory,
-        favoriteArtists: localArtists,
-        preferences: localPreferences,
-        aiChatData: {
-          conversations: convStr ? JSON.parse(convStr) : [],
-          userMemory: memStr || '',
-          aiName: aiNameStr || 'Cine',
-        },
-        mode: 'merge',
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        timeout: 15000,
-      });
+      let response: any;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          response = await axios.post(`${AUTH_API_BASE}/api/sync`, {
+            watchlist: localWatchlist, history: localHistory, favoriteArtists: localArtists,
+            aiChatData: { conversations: convStr ? JSON.parse(convStr) : [], userMemory: memStr || '', aiName: aiNameStr || 'Cine' },
+            mode: 'merge',
+          }, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, timeout: 15000 });
+          break;
+        } catch (error: any) {
+          if (error?.response?.status !== 409 || attempt === 3) throw error;
+          await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+        }
+      }
 
       const merged = response.data?.library;
       if (!merged) {
         throw new Error('Sync response did not contain library data');
       }
 
-      // 3. Write back missing cloud items into local SQLite database without echoing them
-      applyingRemoteChanges = true;
-      try {
-      if (Array.isArray(merged.watchlist)) {
-        merged.watchlist.forEach((item: any) => {
-          if (item?.id) addSavedItem(item, 'watchlist');
-        });
-      }
-
-      if (Array.isArray(merged.history)) {
-        merged.history.forEach((item: any) => {
-          if (item?.id) addSavedItem(item, 'history');
-        });
-      }
-
-      if (Array.isArray(merged.favoriteArtists)) {
-        merged.favoriteArtists.forEach((item: any) => {
-          if (item?.id || item?.name) addSavedItem(item, 'artist');
-        });
-      }
-
-      if (merged.preferences && typeof merged.preferences === 'object') {
-        await setUserPreferences(merged.preferences);
-      }
-
-      const saveOps: Promise<void>[] = [];
-      if (merged.aiChatData) {
-        if (Array.isArray(merged.aiChatData.conversations)) {
-          saveOps.push(AsyncStorage.setItem('watcher.chat.conversations.v1', JSON.stringify(merged.aiChatData.conversations)));
-        }
-        if (typeof merged.aiChatData.userMemory === 'string') {
-          saveOps.push(AsyncStorage.setItem('watcher.chat.userMemory.v1', merged.aiChatData.userMemory));
-        }
-        if (typeof merged.aiChatData.aiName === 'string' && merged.aiChatData.aiName) {
-          saveOps.push(AsyncStorage.setItem('watcher.chat.aiName.v1', merged.aiChatData.aiName));
-        }
-      }
-      
-      const syncTime = new Date().toISOString();
-      saveOps.push(AsyncStorage.setItem('last_cloud_sync_time', syncTime));
-      
-      await Promise.all(saveOps);
-      if (response.data?.revision) await AsyncStorage.setItem('cloud_sync_revision', String(response.data.revision));
-      } finally {
-        applyingRemoteChanges = false;
-      }
+      await applyCloudLibrary(merged, Number(response.data?.revision || 0));
+      await AsyncStorage.setItem('last_cloud_sync_time', new Date().toISOString());
 
       return { 
         success: true, 
@@ -301,6 +341,25 @@ export const cloudSync = {
     } catch (err: any) {
       console.error('Mobile cloud sync error:', err?.response?.data || err.message);
       return { success: false, error: err?.response?.data?.error || err.message || 'Sync failed' };
+    } finally { initialMergeInFlight = false; }
+  },
+
+  async syncWithCloud(): Promise<{ success: boolean; error?: string; message?: string }> {
+    const token = await this.getAuthToken();
+    if (!token) return { success: false, error: 'Sign in to sync your library' };
+    try {
+      await flushCloudOutbox();
+      const knownRevision = Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0);
+      if (knownRevision > 0) {
+        await pollCloudChanges();
+        return { success: true, message: 'Cloud library is up to date' };
+      }
+      const response = await axios.get(`${AUTH_API_BASE}/api/sync`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+      if (!response.data?.library) throw new Error('Cloud response did not include a library');
+      await applyCloudLibrary(response.data.library, Number(response.data.revision || 0));
+      return { success: true, message: 'Loaded the cloud library' };
+    } catch (error: any) {
+      return { success: false, error: error?.response?.data?.error || error.message || 'Sync failed' };
     }
   },
 };

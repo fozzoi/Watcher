@@ -39,15 +39,16 @@ export const getUserPreferences = async (): Promise<UserPreferences> => {
   }
 };
 
-export const setUserPreferences = async (prefs: Partial<UserPreferences>): Promise<void> => {
+export const setUserPreferences = async (prefs: Partial<UserPreferences>, notify = true): Promise<void> => {
   const current = await getUserPreferences();
   const updated = { ...current, ...prefs };
   await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(updated));
-  onPreferencesChanged?.(updated);
+  if (notify) onPreferencesChanged?.(updated);
 };
 
 export const completeOnboarding = async (prefs: Omit<UserPreferences, 'onboardingComplete'>): Promise<void> => {
-  await AsyncStorage.setItem(PREFS_KEY, JSON.stringify({ ...prefs, onboardingComplete: true }));
+  const updated = { ...prefs, onboardingComplete: true };
+  await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(updated));
   onPreferencesChanged?.({ ...prefs, onboardingComplete: true });
 };
 
