@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback, useRef, useEffect } from 'react';
+import React, { memo, useState, useCallback, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -8,7 +8,7 @@ import {
   Platform, 
   ImageSourcePropType 
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { 
   useSharedValue, 
@@ -217,6 +217,7 @@ const HeroSection = memo(({ items, toggleWatchlist, savedIds }: HeroSectionProps
   const scrollX = useSharedValue(0);
   const flatListRef = useRef<Animated.FlatList<any>>(null);
   const autoplayTimer = useRef<NodeJS.Timeout | null>(null);
+  const autoplayRestartTimer = useRef<NodeJS.Timeout | null>(null);
   const currentIndexRef = useRef(0);
 
   const slicedItems = items && items.length > 0 ? items.slice(0, 8) : [];
@@ -249,6 +250,10 @@ const HeroSection = memo(({ items, toggleWatchlist, savedIds }: HeroSectionProps
       clearInterval(autoplayTimer.current);
       autoplayTimer.current = null;
     }
+    if (autoplayRestartTimer.current) {
+      clearTimeout(autoplayRestartTimer.current);
+      autoplayRestartTimer.current = null;
+    }
   }, []);
 
   const startAutoplay = useCallback(() => {
@@ -265,6 +270,14 @@ const HeroSection = memo(({ items, toggleWatchlist, savedIds }: HeroSectionProps
     }, AUTOPLAY_INTERVAL);
   }, [itemCount, stopAutoplay]);
 
+  const restartAutoplayAfter = useCallback((delay: number) => {
+    if (autoplayRestartTimer.current) clearTimeout(autoplayRestartTimer.current);
+    autoplayRestartTimer.current = setTimeout(() => {
+      autoplayRestartTimer.current = null;
+      startAutoplay();
+    }, delay);
+  }, [startAutoplay]);
+
   // Restart autoplay after user interaction
   const handleScrollBeginDrag = useCallback(() => {
     stopAutoplay();
@@ -272,24 +285,20 @@ const HeroSection = memo(({ items, toggleWatchlist, savedIds }: HeroSectionProps
 
   const handleScrollEndDrag = useCallback(() => {
     stopAutoplay();
-    autoplayTimer.current = setTimeout(() => {
-      startAutoplay();
-    }, 1500) as any;
-  }, [startAutoplay, stopAutoplay]);
+    restartAutoplayAfter(1500);
+  }, [restartAutoplayAfter, stopAutoplay]);
 
   const handleMomentumScrollEnd = useCallback((e: any) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
     currentIndexRef.current = idx;
     stopAutoplay();
-    autoplayTimer.current = setTimeout(() => {
-      startAutoplay();
-    }, 2000) as any;
-  }, [startAutoplay, stopAutoplay]);
+    restartAutoplayAfter(2000);
+  }, [restartAutoplayAfter, stopAutoplay]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     startAutoplay();
     return () => stopAutoplay();
-  }, [startAutoplay, stopAutoplay]);
+  }, [startAutoplay, stopAutoplay]));
 
   const handleSlideSelect = useCallback((index: number) => {
     stopAutoplay();
@@ -299,8 +308,8 @@ const HeroSection = memo(({ items, toggleWatchlist, savedIds }: HeroSectionProps
       offset: index * CARD_WIDTH,
       animated: true,
     });
-    setTimeout(() => startAutoplay(), 3000);
-  }, [startAutoplay, stopAutoplay, triggerHaptic]);
+    restartAutoplayAfter(3000);
+  }, [restartAutoplayAfter, stopAutoplay, triggerHaptic]);
 
   const handleMoviePress = useCallback((item: TMDBResult) => {
     const mType = item.media_type || (item.first_air_date ? 'tv' : 'movie');

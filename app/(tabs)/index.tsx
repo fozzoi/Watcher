@@ -3,6 +3,7 @@ import React, {
   useState,
   useCallback,
   useRef,
+  useMemo,
 } from 'react';
 import {
   View,
@@ -14,8 +15,7 @@ import {
   BackHandler,
   Keyboard,
   TextInput,
-  ActivityIndicator,
-  DeviceEventEmitter
+  ActivityIndicator
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
@@ -75,11 +75,6 @@ const ExplorePage = () => {
   const [rawContent, setRawContent] = useState<any>(null);
 
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
-  const [allContent, setAllContent] = useState<any>({
-    trendingMovies: [], trendingTV: [], topRated: [],
-    upcoming: [], hiddenGems: [], langData: {}, actorData: [], genreData: []
-  });
-
   const router = useRouter();
   const searchTimeout = useRef<any>(null);
 
@@ -90,7 +85,6 @@ const ExplorePage = () => {
   const searchWidthAnim = useSharedValue(0);
   const searchBarTranslateY = useSharedValue(0);
   const lastOffsetY = useRef(0);
-  const scrollIdleTimeout = useRef<any>(null);
   const targetRef = useRef<View | null>(null);
 
   useEffect(() => {
@@ -217,10 +211,15 @@ const ExplorePage = () => {
     setRefreshing(false);
   }, [selectedGenre, fetchContent]);
 
-  useEffect(() => {
-    if (!rawContent) return;
+  const allContent = useMemo(() => {
+    if (!rawContent) {
+      return {
+        trendingMovies: [], trendingTV: [], topRated: [],
+        upcoming: [], hiddenGems: [], langData: {}, actorData: [], genreData: []
+      };
+    }
 
-    const filteredContent = {
+    const filteredContent: any = {
       trendingMovies: filterWatched(rawContent.trendingMovies, watchedIds),
       trendingTV: filterWatched(rawContent.trendingTV, watchedIds),
       topRated: filterWatched(rawContent.topRated, watchedIds),
@@ -246,9 +245,12 @@ const ExplorePage = () => {
       });
     }
 
-    setAllContent(filteredContent);
-    setContentLoading(false);
+    return filteredContent;
   }, [rawContent, watchedIds]);
+
+  useEffect(() => {
+    if (rawContent) setContentLoading(false);
+  }, [rawContent]);
 
   const handleSearch = useCallback(async (searchText: string) => {
     let trimmed = searchText.trim();
@@ -320,14 +322,6 @@ const ExplorePage = () => {
               searchBarTranslateY.value = withTiming(0, { duration: 300 });
             }
 
-            DeviceEventEmitter.emit('exploreScroll', currentOffset);
-
-            if (scrollIdleTimeout.current) clearTimeout(scrollIdleTimeout.current);
-            scrollIdleTimeout.current = setTimeout(() => {
-              if (searchBarTranslateY.value < 0) {
-                searchBarTranslateY.value = withTiming(0, { duration: 300 });
-              }
-            }, 2000);
           }}
           scrollEventThrottle={32}
           removeClippedSubviews={true}
