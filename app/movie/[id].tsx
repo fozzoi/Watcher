@@ -453,7 +453,9 @@ const DetailPage = () => {
       checkIfInWatchlist();
       checkIfWatched();
       const actualMediaType = initialMovie.media_type || (initialMovie.first_air_date ? 'tv' : 'movie');
+      
       const similarData = await getSimilarMedia(initialMovie.id, actualMediaType);
+      
       const detailData = initialMovie as any;
       setGenres(detailData.genres || []);
       
@@ -485,9 +487,13 @@ const DetailPage = () => {
       // 2. Stagger the heavy array updates across multiple frames to keep UI butter smooth
       requestAnimationFrame(() => {
         setDirectors(merged);
+        
         requestAnimationFrame(() => {
           setSimilarMovies(similarData);
-          requestAnimationFrame(() => setExternalIds(detailData.external_ids || {}));
+          
+          requestAnimationFrame(() => {
+            setExternalIds(detailData.external_ids || {});
+          });
         });
       });
 
@@ -715,10 +721,7 @@ const DetailPage = () => {
     length: castCardWidth + 12, offset: (castCardWidth + 12) * index, index,
   }), [castCardWidth]);
 
-  // Replace the current detail route when following recommendations. Keeping every
-  // previously viewed movie mounted in the navigation stack makes deep browsing
-  // retain unnecessary screen state and image memory.
-  const handleMoviePress = useCallback((item: any) => router.replace(`/movie/${item.id}?media_type=${item.media_type || 'movie'}`), [router]);
+  const handleMoviePress = useCallback((item: any) => router.push(`/movie/${item.id}?media_type=${item.media_type || 'movie'}`), [router]);
   const handlePersonPress = useCallback((id: string) => router.push(`/cast/${id}`), [router]);
 
   const renderAiItem = useCallback(({ item, index }: any) => (
