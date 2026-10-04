@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
@@ -21,6 +21,27 @@ interface MediaCarouselProps {
   toggleWatchlist: (item: any) => void;
 }
 
+const CarouselMovieCard = memo(({ item, isAdded, toggleWatchlist }: {
+  item: any;
+  isAdded: boolean;
+  toggleWatchlist: (item: any) => void;
+}) => {
+  const router = useRouter();
+  const handlePress = useCallback(() => {
+    const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+    router.push(`/movie/${item.id}?media_type=${mediaType}`);
+  }, [item, router]);
+
+  return (
+    <MovieCard
+      item={item}
+      isAdded={isAdded}
+      toggleWatchlist={toggleWatchlist}
+      onPress={handlePress}
+    />
+  );
+});
+
 // ✅ FIX 2: Destructured 'type' from the props
 const MediaCarousel = memo(({ title, type, data, savedIds, toggleWatchlist }: MediaCarouselProps) => {
   const router = useRouter();
@@ -42,7 +63,6 @@ const MediaCarousel = memo(({ title, type, data, savedIds, toggleWatchlist }: Me
       <FlashList
         horizontal
         data={data}
-        estimatedItemSize={SNAP_INTERVAL}
         showsHorizontalScrollIndicator={false}
         bounces={true}
         contentContainerStyle={{ paddingHorizontal: HORIZONTAL_MARGIN }}
@@ -52,14 +72,10 @@ const MediaCarousel = memo(({ title, type, data, savedIds, toggleWatchlist }: Me
         snapToAlignment="start"
         decelerationRate="fast"
         renderItem={({ item }) => (
-          <MovieCard
+          <CarouselMovieCard
             item={item}
             isAdded={savedIds.has(item.id)}
             toggleWatchlist={toggleWatchlist}
-            onPress={() => {
-              const mType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
-              router.push(`/movie/${item.id}?media_type=${mType}`);
-            }}
           />
         )}
       />

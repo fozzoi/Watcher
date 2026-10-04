@@ -14,11 +14,13 @@ import {
   TouchableOpacity,
   BackHandler,
   Keyboard,
-  TextInput,
+  TextInput,
+
   ActivityIndicator
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useRouter, useFocusEffect } from 'expo-router';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, withTiming } from 'react-native-reanimated';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSavedItems, addSavedItem, removeSavedItem, hasSavedItem } from '../../src/database';
@@ -57,6 +59,9 @@ const filterWatched = (list: any[], wIds: Set<number>) => {
   return list.filter((item: any) => !wIds.has(item.id));
 };
 
+type ExploreSection = { key: string; title: string; type: string; data: any[] };
+const AnimatedExploreFlashList = Animated.createAnimatedComponent(FlashList<ExploreSection>);
+
 const ExplorePage = () => {
   const [selectedGenre, setSelectedGenre] = useState(0);
   const [contentLoading, setContentLoading] = useState(true);
@@ -77,6 +82,7 @@ const ExplorePage = () => {
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
   const router = useRouter();
   const searchTimeout = useRef<any>(null);
+  const contentRequestRef = useRef(0);
 
   const inSearchMode = query.trim() !== '';
   const isExpanded = isSearchFocused || inSearchMode;
@@ -84,7 +90,7 @@ const ExplorePage = () => {
   const bgOpacity = useSharedValue(0);
   const searchWidthAnim = useSharedValue(0);
   const searchBarTranslateY = useSharedValue(0);
-  const lastOffsetY = useRef(0);
+  const lastOffsetY = useSharedValue(0);
   const targetRef = useRef<View | null>(null);
 
   useEffect(() => {
@@ -151,6 +157,7 @@ const ExplorePage = () => {
   const lastPrefsRef = useRef<string>('');
 
   const fetchContent = useCallback(async (genreId: number = 0, forceRefresh: boolean = false) => {
+    const requestId = ++contentRequestRef.current;
     try {
       const prefs = await getUserPreferences();
       const content = await fetchPersonalisedDiscoveryContent(
@@ -160,6 +167,7 @@ const ExplorePage = () => {
         forceRefresh,
         prefs.favoriteActors
       );
+      if (requestId !== contentRequestRef.current) return;
       if (content) {
         setRawContent(content);
       }
@@ -167,9 +175,13 @@ const ExplorePage = () => {
       const history = getSavedItems('history');
       if (history && history.length > 0) {
         const similar = await getSimilarForHistory(history);
-        setBecauseYouWatched(similar);
-      }
-    } catch (err) { console.error(err); }
+        if (requestId === contentRequestRef.current) setBecauseYouWatched(similar);
+      } else if (requestId === contentRequestRef.current) setBecauseYouWatched([]);
+    } catch (err) {
+      if (requestId === contentRequestRef.current) console.error(err);
+    } finally {
+      if (requestId === contentRequestRef.current) setContentLoading(false);
+    }
   }, []);
 
   useFocusEffect(
@@ -201,14 +213,16 @@ const ExplorePage = () => {
   }, []);
 
   useEffect(() => {
-    setContentLoading(true);
     fetchContent(selectedGenre, false);
   }, [selectedGenre, fetchContent]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchContent(selectedGenre, true);
-    setRefreshing(false);
+    try {
+      await fetchContent(selectedGenre, true);
+    } finally {
+      setRefreshing(false);
+    }
   }, [selectedGenre, fetchContent]);
 
   const allContent = useMemo(() => {
@@ -248,9 +262,79 @@ const ExplorePage = () => {
     return filteredContent;
   }, [rawContent, watchedIds]);
 
-  useEffect(() => {
-    if (rawContent) setContentLoading(false);
-  }, [rawContent]);
+  const filteredBecauseYouWatched = useMemo(() => becauseYouWatched
+    .map((row, index) => ({
+      key: `byw-${index}`,
+      title: `Because you watched ${row.sourceTitle}`,
+      type: 'becauseyouwatched',
+      data: filterWatched(row.items, watchedIds),
+    }))
+    .filter(section => section.data.length > 0), [becauseYouWatched, watchedIds]);
+
+  const exploreSections = useMemo(() => {
+    const sections: ExploreSection[] = [
+      { key: 'trending-movies', title: 'Trending Movies', type: 'trendingmovies', data: allContent.trendingMovies },
+      { key: 'upcoming', title: 'Coming Soon', type: 'upcoming', data: allContent.upcoming },
+      { key: 'trending-tv', title: 'Trending TV Shows', type: 'trendingtv', data: allContent.trendingTV },
+      { key: 'top-rated', title: 'Top Rated Movies', type: 'toprated', data: allContent.topRated },
+      { key: 'hidden-gems', title: 'Hidden Gems', type: 'hiddengems', data: allContent.hiddenGems },
+    ];
+
+    Object.entries(allContent.langData || {}).forEach(([langCode, languageData]: [string, any]) => {
+      const language = LANGUAGE_OPTIONS.find(option => option.code === langCode);
+      const languageName = language ? language.label : langCode.toUpperCase();
+      if (languageData.movies?.length) {
+        sections.push({ key: `lang-movies-${langCode}`, title: `${languageName} Movies`, type: `lang-movies-${langCode}`, data: languageData.movies });
+      }
+      if (languageData.tv?.length) {
+        sections.push({ key: `lang-tv-${langCode}`, title: `${languageName} TV Shows`, type: `lang-tv-${langCode}`, data: languageData.tv });
+      }
+    });
+
+    allContent.actorData.forEach((actor: any) => sections.push({
+      key: `actor-${actor.actorId}`,
+      title: `Starring ${actor.actorName}`,
+      type: `actor-${actor.actorId}`,
+      data: actor.items,
+    }));
+
+    filteredBecauseYouWatched.forEach(section => sections.push(section));
+    return sections.filter(section => section.data.length > 0);
+  }, [allContent, filteredBecauseYouWatched]);
+
+  const renderExploreHeader = useCallback(() => contentLoading ? (
+    <>
+      <SkeletonHero />
+      <View style={{ marginTop: 24 }}>
+        <SkeletonCarousel />
+        <SkeletonCarousel />
+        <SkeletonCarousel />
+      </View>
+    </>
+  ) : (
+    <>
+      <HeroSection items={allContent.heroMovies || allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+      <GenreFilter selectedGenre={selectedGenre} onSelectGenre={setSelectedGenre} />
+    </>
+  ), [contentLoading, allContent, savedIds, toggleWatchlist, selectedGenre]);
+
+  const renderExploreSection = useCallback(({ item }: { item: ExploreSection }) => (
+    <MediaCarousel title={item.title} type={item.type} data={item.data} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
+  ), [savedIds, toggleWatchlist]);
+
+  const handleExploreScroll = useAnimatedScrollHandler(event => {
+    const currentOffset = event.contentOffset.y;
+    const diff = currentOffset - lastOffsetY.value;
+    lastOffsetY.value = currentOffset;
+
+    if (currentOffset <= 0) {
+      searchBarTranslateY.value = withTiming(0, { duration: 150 });
+    } else if (diff > 5 && searchBarTranslateY.value === 0 && !isSearchFocused && !inSearchMode) {
+      searchBarTranslateY.value = withTiming(-100, { duration: 300 });
+    } else if (diff < -5 && searchBarTranslateY.value < 0) {
+      searchBarTranslateY.value = withTiming(0, { duration: 300 });
+    }
+  });
 
   const handleSearch = useCallback(async (searchText: string) => {
     let trimmed = searchText.trim();
@@ -306,96 +390,27 @@ const ExplorePage = () => {
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       <BlurTargetView ref={targetRef} style={{ flex: 1, backgroundColor: '#141414' }} collapsable={false}>
-        <ScrollView
+        <AnimatedExploreFlashList
+          data={contentLoading ? [] : exploreSections}
+          renderItem={renderExploreSection}
+          keyExtractor={item => item.key}
+          ListHeaderComponent={renderExploreHeader}
           keyboardDismissMode="on-drag"
           onScrollBeginDrag={() => Keyboard.dismiss()}
-          onScroll={(e) => {
-            const currentOffset = e.nativeEvent.contentOffset.y;
-            const diff = currentOffset - lastOffsetY.current;
-            lastOffsetY.current = currentOffset;
-
-            if (currentOffset <= 0) {
-              searchBarTranslateY.value = withTiming(0, { duration: 150 });
-            } else if (diff > 5 && searchBarTranslateY.value === 0 && !isSearchFocused && !inSearchMode) {
-              searchBarTranslateY.value = withTiming(-100, { duration: 300 });
-            } else if (diff < -5 && searchBarTranslateY.value < 0) {
-              searchBarTranslateY.value = withTiming(0, { duration: 300 });
-            }
-
-          }}
-          scrollEventThrottle={32}
-          removeClippedSubviews={true}
+          onScroll={handleExploreScroll}
+          scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
-          showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />}
-        >
-          {contentLoading ? (
-            <>
-              <SkeletonHero />
-              <View style={{ marginTop: 24 }}>
-                <SkeletonCarousel />
-                <SkeletonCarousel />
-                <SkeletonCarousel />
-              </View>
-            </>
-          ) : (
-            <>
-              <HeroSection items={allContent.heroMovies || allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-              <GenreFilter selectedGenre={selectedGenre} onSelectGenre={setSelectedGenre} />
-
-              {becauseYouWatched.map((row, idx) => {
-                const filtered = filterWatched(row.items, watchedIds);
-                if (filtered.length === 0) return null;
-                return (
-                  <MediaCarousel key={`byw-${idx}`} title={`Because you watched ${row.sourceTitle}`} type="becauseyouwatched" data={filtered} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                );
-              })}
-
-              <MediaCarousel title="Trending Movies" type="trendingmovies" data={allContent.trendingMovies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-              <MediaCarousel title="Coming Soon" type="upcoming" data={allContent.upcoming} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-              <MediaCarousel title="Trending TV Shows" type="trendingtv" data={allContent.trendingTV} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-              <MediaCarousel title="Top Rated Movies" type="toprated" data={allContent.topRated} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-              <MediaCarousel title="Hidden Gems" type="hiddengems" data={allContent.hiddenGems} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-
-              {/* Preferred Language Carousels */}
-              {Object.keys(allContent.langData || {}).map(langCode => {
-                const langInfo = LANGUAGE_OPTIONS.find(l => l.code === langCode);
-                const langName = langInfo ? langInfo.label : langCode.toUpperCase();
-                const movies = allContent.langData[langCode].movies;
-                const tv = allContent.langData[langCode].tv;
-                return (
-                  <React.Fragment key={langCode}>
-                    {movies && movies.length > 0 && (
-                      <MediaCarousel title={`${langName} Movies`} type={`lang-movies-${langCode}`} data={movies} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                    )}
-                    {tv && tv.length > 0 && (
-                      <MediaCarousel title={`${langName} TV Shows`} type={`lang-tv-${langCode}`} data={tv} savedIds={savedIds} toggleWatchlist={toggleWatchlist} />
-                    )}
-                  </React.Fragment>
-                );
-              })}
-
-              {/* Favorite Actors Carousels */}
-              {(allContent.actorData || []).map((act: any) => (
-                <MediaCarousel
-                  key={`actor-${act.actorId}`}
-                  title={`Starring ${act.actorName}`}
-                  type={`actor-${act.actorId}`}
-                  data={act.items}
-                  savedIds={savedIds}
-                  toggleWatchlist={toggleWatchlist}
-                />
-              ))}
-            </>
-          )}
-        </ScrollView>
+        />
       </BlurTargetView>
 
-      <Animated.View style={[StyleSheet.absoluteFill, { zIndex: 10 }, animatedBgStyle]} pointerEvents="none">
-        <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(20, 20, 20, 0.6)' }]} />
-      </Animated.View>
+      {inSearchMode && (
+        <Animated.View style={[StyleSheet.absoluteFill, { zIndex: 10 }, animatedBgStyle]} pointerEvents="none">
+          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(20, 20, 20, 0.6)' }]} />
+        </Animated.View>
+      )}
 
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100 }} pointerEvents="box-none">
         <LinearGradient colors={['rgba(20, 20, 20, 0.9)', 'rgba(20, 20, 20, 0.4)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: (StatusBar.currentHeight || 0) + 100 }} pointerEvents="none" />

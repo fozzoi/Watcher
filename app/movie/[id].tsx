@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import dayjs from 'dayjs';
 import {
   View,
@@ -44,8 +44,16 @@ import { getSavedItems, addSavedItem, removeSavedItem, hasSavedItem, saveAiEmbed
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import Animated, {
+  Extrapolate,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { LANGUAGE_OPTIONS } from '../../src/userPreferences';
 import MovieChatSection from '../../src/components/movie/MovieChatSection';
+import { MovieDetailSkeleton } from '../../src/components/movie/MovieDetailSkeleton';
 import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
 
 
@@ -53,6 +61,8 @@ import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDi
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 const IMAGE_SIZES = { THUMBNAIL: 'w154', POSTER_DETAIL: 'w780', STILL: 'w300', ORIGINAL: 'original' };
+type DetailListItem = { key: string; type: string; episode?: TMDBEpisode };
+const AnimatedFlashList = Animated.createAnimatedComponent(FlashList<DetailListItem>);
 
 const scheduleAfterInteractions = (callback: () => void) => {
   let cancelled = false;
@@ -128,7 +138,6 @@ const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => (
   <TouchableOpacity activeOpacity={0.95}
     style={[styles.similarCard, { width: cardWidth }]}
     onPress={() => onPress(item)}
-    activeOpacity={0.95}
   >
     <Image
       source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }}
@@ -149,7 +158,6 @@ const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => (
     <TouchableOpacity activeOpacity={0.95}
       style={styles.directorCard}
       onPress={() => onPress(item.id)}
-      activeOpacity={0.95}
     >
       <Image
         source={{
@@ -176,7 +184,6 @@ const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => (
     <TouchableOpacity activeOpacity={0.95}
       style={{ width: cardWidth }}
       onPress={() => onPress(item.id)}
-      activeOpacity={0.95}
     >
       <Image
         source={{
@@ -203,7 +210,6 @@ const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay
     <TouchableOpacity activeOpacity={0.95}
       style={[styles.epRow, isActive && styles.epRowActive]}
       onPress={() => onPlay(ep)}
-      activeOpacity={0.95}
     >
       <View style={{ position: 'relative' }}>
         <Image
@@ -252,6 +258,29 @@ const DetailPage = () => {
   const isLandscape = width > height;
 
   const HEADER_HEIGHT = isLandscape ? height * 0.7 : height * 0.62;
+  const COLLAPSED_HEADER_HEIGHT = TOP_BAR_PADDING + 46;
+  const scrollY = useSharedValue(0);
+
+  const heroHeaderStyle = useAnimatedStyle(() => ({
+    height: interpolate(
+      scrollY.value,
+      [0, HEADER_HEIGHT - COLLAPSED_HEADER_HEIGHT],
+      [HEADER_HEIGHT, COLLAPSED_HEADER_HEIGHT],
+      Extrapolate.CLAMP,
+    ),
+  }));
+  const heroImageStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      scrollY.value,
+      [0, HEADER_HEIGHT - COLLAPSED_HEADER_HEIGHT - 50],
+      [1, 0.15],
+      Extrapolate.CLAMP,
+    ),
+    transform: [{ scale: interpolate(scrollY.value, [-100, 0], [1.2, 1], Extrapolate.CLAMP) }],
+  }));
+  const scrollHandler = useAnimatedScrollHandler(event => {
+    scrollY.value = event.contentOffset.y;
+  });
 
   const [initialMovie, setInitialMovie] = useState<any>(null);
   const [movie, setMovie] = useState<any>(null);
@@ -312,6 +341,9 @@ const DetailPage = () => {
   const [showFullOverview, setShowFullOverview] = useState(false);
   const [genres, setGenres] = useState<{ id: number; name: string }[]>([]);
   const [similarMovies, setSimilarMovies] = useState<any[]>([]);
+  const [loadingSimilar, setLoadingSimilar] = useState(false);
+  const episodeRequestRef = useRef(0);
+  const similarRequestedIdRef = useRef<number | null>(null);
   const [lastWatched, setLastWatched] = useState<any>(null);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [episodes, setEpisodes] = useState<TMDBEpisode[]>([]);
@@ -428,15 +460,6 @@ const DetailPage = () => {
         const progress = await getProgress(movie.id);
         if (!isActive) return;
         setLastWatched(progress);
-        if (progress && movie.media_type === 'tv') {
-          setSelectedSeason((prev) => {
-            if (prev !== progress.lastSeason) {
-              fetchEpisodes(progress.lastSeason);
-              return progress.lastSeason;
-            }
-            return prev;
-          });
-        }
       };
       const cancelScheduledCheck = scheduleAfterInteractions(checkProgress);
       return () => {
@@ -452,10 +475,6 @@ const DetailPage = () => {
     try {
       checkIfInWatchlist();
       checkIfWatched();
-      const actualMediaType = initialMovie.media_type || (initialMovie.first_air_date ? 'tv' : 'movie');
-      
-      const similarData = await getSimilarMedia(initialMovie.id, actualMediaType);
-      
       const detailData = initialMovie as any;
       setGenres(detailData.genres || []);
       
@@ -484,39 +503,16 @@ const DetailPage = () => {
         }
       });
 
-      // 2. Stagger the heavy array updates across multiple frames to keep UI butter smooth
+      // Apply related detail data together to avoid multiple list updates.
       requestAnimationFrame(() => {
         setDirectors(merged);
-        
-        requestAnimationFrame(() => {
-          setSimilarMovies(similarData);
-          
-          requestAnimationFrame(() => {
-            setExternalIds(detailData.external_ids || {});
-          });
-        });
+        setExternalIds(detailData.external_ids || {});
       });
 
       if (detailData.belongs_to_collection) {
         getCollectionDetails(detailData.belongs_to_collection.id).then(col => {
           setCollectionData(col);
         }).catch(() => {});
-      }
-
-      if (
-        initialMovie.media_type === 'tv' &&
-        Array.isArray(detailData.seasons) &&
-        detailData.seasons.length > 0
-      ) {
-        const storedProgress = await getProgress(initialMovie.id);
-        let seasonToLoad = 1;
-        if (storedProgress) seasonToLoad = storedProgress.lastSeason;
-        else {
-          const valid = detailData.seasons.filter((s: any) => s.season_number > 0);
-          seasonToLoad = valid.length > 0 ? valid[0].season_number : detailData.seasons[0].season_number;
-        }
-        setSelectedSeason(seasonToLoad);
-        fetchEpisodes(seasonToLoad);
       }
 
       // Fetch trailers for the YouTube button
@@ -535,15 +531,43 @@ const DetailPage = () => {
   const fetchEpisodes = async (seasonNumber: number) => {
     const targetId = movie?.id || initialMovie?.id;
     if (!targetId) return;
+    const requestId = ++episodeRequestRef.current;
+    setEpisodes([]);
     setLoadingEpisodes(true);
     try {
       const data = await getSeasonEpisodes(targetId, seasonNumber);
-      setEpisodes(data);
+      if (requestId === episodeRequestRef.current) setEpisodes(data);
     } catch {}
     finally {
-      setLoadingEpisodes(false);
+      if (requestId === episodeRequestRef.current) setLoadingEpisodes(false);
     }
   };
+
+  const loadSimilarMovies = useCallback(async () => {
+    const targetId = movie?.id || initialMovie?.id;
+    if (!targetId || similarRequestedIdRef.current === targetId) return;
+    similarRequestedIdRef.current = targetId;
+    setLoadingSimilar(true);
+    try {
+      const mediaType = movie?.media_type || (initialMovie?.first_air_date ? 'tv' : 'movie');
+      const recommendations = await getSimilarMedia(targetId, mediaType);
+      if (similarRequestedIdRef.current === targetId) setSimilarMovies(recommendations);
+    } catch {
+      if (similarRequestedIdRef.current === targetId) setSimilarMovies([]);
+    } finally {
+      if (similarRequestedIdRef.current === targetId) setLoadingSimilar(false);
+    }
+  }, [initialMovie?.first_air_date, initialMovie?.id, movie?.id, movie?.media_type]);
+
+  useEffect(() => {
+    similarRequestedIdRef.current = null;
+    setSimilarMovies([]);
+    setLoadingSimilar(false);
+    setSelectedSeason(null);
+    setEpisodes([]);
+    setLoadingEpisodes(false);
+    episodeRequestRef.current += 1;
+  }, [movie?.id]);
 
   const handlePlay = useCallback((episode?: TMDBEpisode) => {
     if (sourceStatus === 'unavailable') {
@@ -700,6 +724,10 @@ const DetailPage = () => {
   const displayTitle = movie?.title || movie?.name;
   const rawDate = movie?.release_date || movie?.first_air_date;
   const releaseYear = rawDate ? dayjs(rawDate).format('MMM YYYY') : '';
+  const heroImageSource = useMemo(
+    () => movie?.poster_path ? { uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) } : undefined,
+    [movie?.poster_path],
+  );
 
   const getPlayLabel = () => {
     if (sourceStatus === 'checking') return 'Finding stream';
@@ -740,26 +768,42 @@ const DetailPage = () => {
     <MemoizedSimilarCard item={item} index={index} cardWidth={similarCardWidth} onPress={handleMoviePress} />
   ), [similarCardWidth, handleMoviePress]);
 
+  const detailRows = useMemo(() => {
+    const rows: DetailListItem[] = [];
+    if (!movie) return rows;
+
+    if (deferRender) {
+      if (movie.belongs_to_collection) rows.push({ key: 'collection', type: 'collection' });
+      if (movie.images?.length) rows.push({ key: 'gallery', type: 'gallery' });
+      rows.push({ key: 'ai', type: 'ai' });
+      if (loadingDetails || directors.length > 0) rows.push({ key: 'directors', type: 'directors' });
+      if (loadingDetails || movie.cast?.length) rows.push({ key: 'cast', type: 'cast' });
+      if (movie.media_type === 'tv' && movie.seasons?.length) rows.push({ key: 'seasons', type: 'seasons' });
+      rows.push({ key: 'similar', type: 'similar' });
+    }
+
+    if (movie.media_type === 'tv' && selectedSeason !== null && !loadingEpisodes) {
+      episodes.forEach(episode => rows.push({
+        key: `episode-${episode.id || `${episode.season_number}-${episode.episode_number}`}`,
+        type: 'episode',
+        episode,
+      }));
+    }
+
+    return rows;
+  }, [deferRender, movie, loadingDetails, directors.length, loadingEpisodes, episodes, selectedSeason]);
+
+  const onDetailViewableItemsChanged = useCallback(({ viewableItems }: any) => {
+    if (viewableItems.some(({ item }: any) => item.type === 'similar')) {
+      void loadSimilarMovies();
+    }
+  }, [loadSimilarMovies]);
+
 
   // --- LIST HEADER COMPONENT (Everything above episodes) ---
-  const renderHeader = () => (
+  const renderHeader = (section: string = 'core') => (
     <>
-      <View style={{ height: HEADER_HEIGHT, overflow: 'hidden', backgroundColor: '#000' }}>
-        <Image
-          source={{ uri: getImageUrl(movie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-        />
-        
-        <LinearGradient
-          colors={['rgba(10,10,11,0.15)', 'transparent', 'rgba(10,10,11,0.6)', C.bg]}
-          locations={[0, 0.35, 0.75, 1]}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-
-      </View>
-
+      {section === 'core' && (
       <View style={styles.cardTop}>
         {releaseYear ? (
           <Text style={styles.heroEyebrow}>
@@ -843,7 +887,6 @@ const DetailPage = () => {
           style={[styles.playBtn, sourceStatus === 'unavailable' && styles.playBtnDisabled]}
           onPress={() => handlePlay()}
           disabled={sourceStatus !== 'available'}
-          activeOpacity={0.95}
         >
           <Ionicons name={lastWatched ? 'play-skip-forward' : 'play'} size={20} color="#000" />
           <Text style={styles.playBtnText}>{getPlayLabel()}</Text>
@@ -883,16 +926,15 @@ const DetailPage = () => {
             )}
           </View>
         ) : null}
+      </View>
+      )}
 
-        {deferRender && (
-        <>
-        {movie.belongs_to_collection && (
+        {deferRender && section === 'collection' && movie.belongs_to_collection && (
           <TouchableOpacity activeOpacity={0.95}
             style={styles.collectionBanner}
             onPress={() =>
               router.push(`/collection/${movie.belongs_to_collection.id}?name=${encodeURIComponent(movie.belongs_to_collection.name)}`)
             }
-            activeOpacity={0.95}
           >
             <Image
               source={{ uri: getImageUrl(movie.belongs_to_collection.backdrop_path, 'w780') }}
@@ -917,7 +959,7 @@ const DetailPage = () => {
             </View>
           </TouchableOpacity>
         )}
-        {movie.images && movie.images.length > 0 && (
+        {deferRender && section === 'gallery' && movie.images && movie.images.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Gallery</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
@@ -934,6 +976,7 @@ const DetailPage = () => {
           </View>
         )}
 
+        {deferRender && section === 'ai' && (
         <View style={styles.aiPanel}>
           <View style={styles.aiHeader}>
             <View style={styles.aiHeaderLeft}>
@@ -1027,7 +1070,6 @@ const DetailPage = () => {
                   keyExtractor={keyExtractorId}
                   contentContainerStyle={{ paddingTop: 4, paddingHorizontal: 20 }}
                   renderItem={renderAiItem}
-                  estimatedItemSize={similarCardWidth + 12}
                   ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
                 />
               ) : (
@@ -1039,8 +1081,9 @@ const DetailPage = () => {
             </View>
           )}
         </View>
+        )}
 
-        {loadingDetails ? (
+        {deferRender && section === 'directors' && (loadingDetails ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{movie.media_type === 'tv' ? 'Created by' : 'Directed by'}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20 }}>
@@ -1062,13 +1105,12 @@ const DetailPage = () => {
               keyExtractor={keyExtractorId}
               contentContainerStyle={{ paddingHorizontal: 20 }}
               renderItem={renderDirectorItem}
-              estimatedItemSize={similarCardWidth + 12}
               ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
             />
           </View>
-        )}
+        ))}
 
-        {loadingDetails ? (
+        {deferRender && section === 'cast' && (loadingDetails ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Cast</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20 }}>
@@ -1088,13 +1130,12 @@ const DetailPage = () => {
               keyExtractor={keyExtractorId}
               contentContainerStyle={{ paddingHorizontal: 20, paddingRight: 32 }}
               renderItem={renderCastItem}
-              estimatedItemSize={castCardWidth + 12}
               ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
             />
           </View>
-        )}
+        ))}
 
-        {movie.media_type === 'tv' && movie.seasons && (
+        {deferRender && section === 'seasons' && movie.media_type === 'tv' && movie.seasons && (
           <View style={{ marginBottom: 14 }}>
             <Text style={styles.sectionTitle}>Episodes</Text>
             <ScrollView 
@@ -1125,16 +1166,13 @@ const DetailPage = () => {
             )}
           </View>
         )}
-        </>
-        )}
-      </View>
     </>
   );
 
   // --- LIST FOOTER COMPONENT (Everything below episodes) ---
   const renderFooter = () => (
     <View style={styles.listBody}>
-      {loadingDetails ? (
+      {loadingSimilar || similarRequestedIdRef.current !== movie?.id ? (
         <View style={[styles.section, { marginTop: 24 }]}>
           <Text style={styles.sectionTitle}>More like this</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20 }}>
@@ -1154,7 +1192,6 @@ const DetailPage = () => {
             keyExtractor={keyExtractorId}
             contentContainerStyle={{ paddingHorizontal: 20 }}
             renderItem={renderSimilarMovieItem}
-            estimatedItemSize={similarCardWidth + 12}
             ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
           />
         </View>
@@ -1178,7 +1215,17 @@ const DetailPage = () => {
     );
   }, [lastWatched, episodeThumbWidth, handlePlay]);
 
+  const renderDetailItem = ({ item, index }: any) => {
+    if (item.type === 'episode' && item.episode) {
+      return renderEpisodeItem({ item: item.episode, index });
+    }
+    if (item.type === 'similar') return renderFooter();
+    return <View style={styles.listBody}>{renderHeader(item.type)}</View>;
+  };
+
   if (!initialMovie || !movie) {
+    if (!detailsError) return <MovieDetailSkeleton />;
+
     return (
       <View style={[styles.root, styles.detailsLoading]}>
         <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
@@ -1193,6 +1240,21 @@ const DetailPage = () => {
   return (
     <View style={styles.root}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.heroContainer, { height: HEADER_HEIGHT }, heroHeaderStyle]}
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, heroImageStyle]}>
+          <Image source={heroImageSource} style={StyleSheet.absoluteFill} contentFit="cover" />
+          <LinearGradient
+            colors={['rgba(10,10,11,0.15)', 'transparent', 'rgba(10,10,11,0.6)', C.bg]}
+            locations={[0, 0.35, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+        </Animated.View>
+      </Animated.View>
 
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
         <TouchableOpacity 
@@ -1218,30 +1280,35 @@ const DetailPage = () => {
             }
           }} 
           style={styles.glassBtn} 
-          activeOpacity={0.95}
         >
           <Feather name="youtube" size={20} color={C.white} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <AnimatedFlashList
+        data={detailRows}
+        renderItem={renderDetailItem}
+        keyExtractor={item => item.key}
+        getItemType={item => item.type}
+        onViewableItemsChanged={onDetailViewableItemsChanged}
+        ListHeaderComponent={(
+          <Animated.View>
+            <View style={{ height: HEADER_HEIGHT + 25 }} />
+            {renderHeader()}
+          </Animated.View>
+        )}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 140 }}
-      >
-        {renderHeader()}
-        {movie.media_type === 'tv' && !loadingEpisodes && episodes.map((item: any, index: number) => 
-          <React.Fragment key={item.id || index}>
-            {renderEpisodeItem({ item, index })}
-          </React.Fragment>
-        )}
-        {renderFooter()}
-      </ScrollView>
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
+  heroContainer: { position: 'absolute', top: 0, left: 0, right: 0, overflow: 'hidden', backgroundColor: '#000' },
   detailsLoading: {
     alignItems: 'center',
     justifyContent: 'center',

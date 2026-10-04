@@ -94,7 +94,7 @@ export async function flushCloudOutbox(): Promise<void> {
         });
         await AsyncStorage.setItem(key, JSON.stringify(outbox.slice(1)));
         retryAfter = 0;
-        retryDelay = 1000;
+        if (cachedLibrary && revision > 0) {
       } catch (error: any) {
         // Keep the same operation ID on retry. A 409 means the API exhausted
         // its bounded compare-and-swap retries during concurrent edits; do not
@@ -142,9 +142,12 @@ export async function prepareCloudSessionOnStartup(): Promise<void> {
     setCloudOnlyMode(true, cachedLibrary);
     await applyNsfwPreference(cachedLibrary.preferences?.nsfwFilterEnabled);
   }
-  // The in-memory watchlist was intentionally cleared. Do not let a saved
-  // cursor make a failed snapshot look current on the next polling pass.
-  await AsyncStorage.removeItem('cloud_sync_revision');
+  const revision = Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0);
+  if (revision > 0) {
+    await pollCloudChanges();
+    return;
+  }
+
   if (pollInFlight) return;
   pollInFlight = true;
   void (async () => {

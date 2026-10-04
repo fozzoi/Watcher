@@ -121,7 +121,7 @@ export default function RootLayout() {
     const syncIfActive = () => {
       if (AppState.currentState === 'active') pollCloudChanges();
     };
-    const syncTimer = setInterval(syncIfActive, 2000);
+    const syncTimer = setInterval(syncIfActive, 150000);
     const appStateSubscription = AppState.addEventListener('change', state => {
       if (state === 'active') pollCloudChanges();
     });
