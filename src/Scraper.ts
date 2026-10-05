@@ -66,7 +66,7 @@ export const searchTorrents = async (query: string): Promise<TorrentResult[]> =>
       console.log('⚠️ Vercel Cloud Fetch Error:', err.message);
       // Do not turn a failed API request into a valid empty search result.
       // The search screen can now show its fetch-error state instead.
-      throw err;
+      throw new Error(err.response?.data?.message || err.message);
     }
   };
 
