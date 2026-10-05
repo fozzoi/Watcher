@@ -94,7 +94,6 @@ export async function flushCloudOutbox(): Promise<void> {
         });
         await AsyncStorage.setItem(key, JSON.stringify(outbox.slice(1)));
         retryAfter = 0;
-        if (cachedLibrary && revision > 0) {
       } catch (error: any) {
         // Keep the same operation ID on retry. A 409 means the API exhausted
         // its bounded compare-and-swap retries during concurrent edits; do not

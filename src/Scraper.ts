@@ -46,7 +46,7 @@ export const searchTorrents = async (query: string): Promise<TorrentResult[]> =>
     try {
       const response = await axios.get(`${BASE_URL}/api/torrent`, {
         params: { q: cleaned },
-        timeout: 12000, 
+        timeout: 25000,
       });
 
       if (response.data?.status === 'success' && Array.isArray(response.data.results)) {
@@ -64,6 +64,9 @@ export const searchTorrents = async (query: string): Promise<TorrentResult[]> =>
       }
     } catch (err: any) {
       console.log('⚠️ Vercel Cloud Fetch Error:', err.message);
+      // Do not turn a failed API request into a valid empty search result.
+      // The search screen can now show its fetch-error state instead.
+      throw err;
     }
   };
 
