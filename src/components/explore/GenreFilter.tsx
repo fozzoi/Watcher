@@ -39,6 +39,6 @@ const styles = StyleSheet.create({
   genreChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 22, backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.15)' },
   genreChipActive: { backgroundColor: '#E50914', borderColor: '#E50914' },
   genreChipIcon: { fontSize: 16, marginRight: 8 },
-  genreChipText: { color: '#AAA', fontSize: 14, fontFamily: 'GoogleSansFlex-Regular' },
-  genreChipTextActive: { color: '#FFFFFF', fontFamily: 'GoogleSansFlex-Bold' },
+  genreChipText: { color: '#AAA', fontSize: 14, fontWeight: '400' },
+  genreChipTextActive: { color: '#FFFFFF', fontWeight: '700' },
 });

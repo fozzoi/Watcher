@@ -1,8 +1,8 @@
-// Font configuration for Google Sans Flex
+// Font configuration for device default fonts
 export const fonts = {
-  regular: 'GoogleSansFlex-Regular',
-  medium: 'GoogleSansFlex-Medium',
-  bold: 'GoogleSansFlex-Bold',
+  regular: undefined,
+  medium: undefined,
+  bold: undefined,
 };
 
 export const fontSizes = {
@@ -22,13 +22,13 @@ export const fontWeights = {
   bold: '700',
 } as const;
 
-// Helper function to create text styles
+// Helper function to create text styles using device default fonts
 export const createTextStyle = (
   fontSize: number = fontSizes.base,
   fontWeight: 'regular' | 'medium' | 'bold' = 'regular',
   lineHeight?: number
 ) => ({
-  fontFamily: fonts[fontWeight],
+  fontWeight: fontWeights[fontWeight],
   fontSize,
   lineHeight: lineHeight || fontSize * 1.5,
 });

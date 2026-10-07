@@ -240,13 +240,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: '#fff',
     fontSize: 20,
-    fontFamily: 'GoogleSansFlex-Bold',
+    fontWeight: '700',
     letterSpacing: 0.2,
   },
   countLabel: {
     color: '#555',
     fontSize: 12,
-    fontFamily: 'GoogleSansFlex-Medium',
+    fontWeight: '500',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
   typeBadgeText: {
     color: '#ccc',
     fontSize: 9,
-    fontFamily: 'GoogleSansFlex-Bold',
+    fontWeight: '700',
     letterSpacing: 1,
   },
 
@@ -341,7 +341,7 @@ const styles = StyleSheet.create({
   title: {
     color: '#f0f0f0',
     fontSize: 14,
-    fontFamily: 'GoogleSansFlex-Medium',
+    fontWeight: '500',
   },
   metaRow: {
     flexDirection: 'row',
@@ -359,18 +359,18 @@ const styles = StyleSheet.create({
   epText: {
     color: '#E50914',
     fontSize: 10,
-    fontFamily: 'GoogleSansFlex-Bold',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   dateText: {
     color: '#555',
     fontSize: 10,
-    fontFamily: 'GoogleSansFlex-Medium',
+    fontWeight: '500',
   },
   progressLabel: {
     color: '#444',
     fontSize: 10,
-    fontFamily: 'GoogleSansFlex-Medium',
+    fontWeight: '500',
   },
 
   /* Remove button */

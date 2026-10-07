@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 18,
-    fontFamily: 'GoogleSansFlex-Bold',
+    fontWeight: '700',
     color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 4,
@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
   modalVersionTag: {
     fontSize: 13,
     color: '#E50914',
-    fontFamily: 'GoogleSansFlex-Medium',
+    fontWeight: '500',
     marginBottom: 14,
   },
   modalSubtitle: {
@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: 20,
-    fontFamily: 'GoogleSansFlex-Regular',
+    fontWeight: '400',
   },
   modalNotesScroll: {
     maxHeight: 140,
@@ -194,14 +194,14 @@ const styles = StyleSheet.create({
   modalNotesHeader: {
     fontSize: 12,
     color: '#FFFFFF',
-    fontFamily: 'GoogleSansFlex-Medium',
+    fontWeight: '500',
     marginBottom: 6,
   },
   modalNotesText: {
     fontSize: 12,
     color: '#BBBBBB',
     lineHeight: 18,
-    fontFamily: 'GoogleSansFlex-Regular',
+    fontWeight: '400',
   },
   progressContainer: {
     width: '100%',
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#8E8E93',
     textAlign: 'center',
-    fontFamily: 'GoogleSansFlex-Regular',
+    fontWeight: '400',
   },
   modalBtnRow: {
     flexDirection: 'row',
@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
   modalCancelText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontFamily: 'GoogleSansFlex-Medium',
+    fontWeight: '500',
   },
   modalConfirmBtn: {
     flex: 2,
@@ -256,6 +256,6 @@ const styles = StyleSheet.create({
   modalConfirmText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontFamily: 'GoogleSansFlex-Bold',
+    fontWeight: '700',
   },
 });

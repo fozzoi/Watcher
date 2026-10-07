@@ -228,7 +228,7 @@ const MONO = Platform.select({ ios: 'Menlo', default: 'monospace' });
 
 const styles = StyleSheet.create({
   wrap: { gap: 6, flexShrink: 1 },
-  bold: { fontWeight: '700', fontFamily: 'GoogleSansFlex-Bold' },
+  bold: { fontWeight: '700' },
   italic: { fontStyle: 'italic' },
   strike: { textDecorationLine: 'line-through' },
   link: { textDecorationLine: 'underline' },

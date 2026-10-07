@@ -104,11 +104,11 @@ export default SearchResultsList;
 const styles = StyleSheet.create({
   absoluteContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'transparent', zIndex: 20 },
   searchScrollContent: { paddingTop: 100, paddingBottom: 80, paddingHorizontal: HORIZONTAL_MARGIN },
-  searchHeading: { color: '#FFFFFF', fontSize: 20, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 16, marginLeft: 4 },
+  searchHeading: { color: '#FFFFFF', fontSize: 20, fontWeight: '700', marginBottom: 16, marginLeft: 4 },
   searchResultsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   personItem: { width: 90, marginRight: 16, alignItems: 'center' },
   personImage: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#222', marginBottom: 8 },
-  personName: { color: '#FFFFFF', fontSize: 13, fontFamily: 'GoogleSansFlex-Regular', textAlign: 'center' },
+  personName: { color: '#FFFFFF', fontSize: 13, fontWeight: '400', textAlign: 'center' },
   collectionChip: { 
     width: 160, 
     flexDirection: 'row', 
@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
     flex: 1, 
     color: '#E0E0E0', 
     fontSize: 13, 
-    fontFamily: 'GoogleSansFlex-Medium', 
+    fontWeight: '500', 
     marginLeft: 10 
   },
 });

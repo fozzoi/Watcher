@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
   title: {
     color: '#FFFFFF',
     fontSize: 25,
-    fontFamily: 'GoogleSansFlex-Bold',
+    fontWeight: '700',
     letterSpacing: -0.4,
     lineHeight: 30,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
@@ -433,12 +433,12 @@ const styles = StyleSheet.create({
   ratingText: {
     color: '#FFFFFF',
     fontSize: 12.5,
-    fontFamily: 'GoogleSansFlex-Bold',
+    fontWeight: '700',
   },
   year: {
     color: '#D0D0D0',
     fontSize: 13.5,
-    fontFamily: 'GoogleSansFlex-Medium',
+    fontWeight: '500',
   },
   indicatorWrapper: {
     position: 'absolute',

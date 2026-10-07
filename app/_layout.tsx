@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Platform, LogBox, View, ActivityIndicator, AppState } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Brightness from 'expo-brightness';
 
@@ -25,13 +24,7 @@ LogBox.ignoreLogs([
   'Clipboard has been extracted',
   'PushNotificationIOS has been extracted',
 ]);
-
-import { enableFreeze } from 'react-native-screens';
-
 SplashScreen.preventAutoHideAsync();
-
-// Globally freeze inactive screens across the entire app for massive performance boosts
-enableFreeze(true);
 
 const performAiBackgroundSync = async () => {
   try {
@@ -77,12 +70,6 @@ const performAiBackgroundSync = async () => {
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
-
-  const [fontsLoaded] = useFonts({
-    'GoogleSansFlex-Regular': require('../assets/fonts/GoogleSansFlex-Regular.ttf'),
-    'GoogleSansFlex-Medium': require('../assets/fonts/GoogleSansFlex-Medium.ttf'),
-    'GoogleSansFlex-Bold': require('../assets/fonts/GoogleSansFlex-Bold.ttf'),
-  });
 
   const [isReady, setIsReady] = useState(false);
   const [databaseReady, setDatabaseReady] = useState(false);
@@ -175,7 +162,7 @@ export default function RootLayout() {
 
   // Check for app updates on launch
   useEffect(() => {
-    if (!isReady || !fontsLoaded) return;
+    if (!isReady) return;
     const checkUpdates = async () => {
       try {
         const update = await checkAndNotifyUpdate();
@@ -188,7 +175,7 @@ export default function RootLayout() {
       }
     };
     checkUpdates();
-  }, [isReady, fontsLoaded]);
+  }, [isReady]);
 
   useEffect(() => {
     (async () => {
@@ -231,23 +218,23 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (fontsLoaded && isReady) {
+    if (isReady) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, isReady]);
+  }, [isReady]);
 
   // Initial routing for first-time onboarding (only on cold start)
   const initialRedirectDone = React.useRef(false);
   useEffect(() => {
-    if (!isReady || !fontsLoaded || initialRedirectDone.current) return;
+    if (!isReady || initialRedirectDone.current) return;
     initialRedirectDone.current = true;
 
     if (needsOnboarding) {
       router.replace('/onboarding');
     }
-  }, [needsOnboarding, isReady, fontsLoaded]);
+  }, [needsOnboarding, isReady]);
 
-  if (!fontsLoaded || !isReady) {
+  if (!isReady) {
     return (
       <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#E50914" />
