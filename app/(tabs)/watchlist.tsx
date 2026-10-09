@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
-  FlatList,
   TouchableOpacity,
   Dimensions,
   StyleSheet,
   Text,
-  Platform,
   StatusBar,
   Modal,
   TextInput,
@@ -16,17 +14,22 @@ import {
   Pressable,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { Image } from 'expo-image'; // Highly optimized image rendering
+import { Image } from 'expo-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, insertAiEmbedding, getAiEmbedding, subscribeToSavedItemsChanges } from '../../src/database';
-import { getImageUrl, searchTMDB, GLOBAL_CONFIG, fetchEmbedding, setGlobalConfig } from '../../src/tmdb';
+import {
+  getSavedItems,
+  addSavedItem,
+  removeSavedItem,
+  clearSavedItems,
+  subscribeToSavedItemsChanges,
+} from '../../src/database';
+import { getImageUrl, searchTMDB, GLOBAL_CONFIG, setGlobalConfig } from '../../src/tmdb';
 import { isAdultContent } from '../../src/contentSafety';
 import { GENRE_OPTIONS } from '../../src/userPreferences';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons, Feather } from '@expo/vector-icons';
 import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
-import { BlurView, BlurTargetView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue,
@@ -39,9 +42,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 
-
 const { width } = Dimensions.get('window');
-// Recalculated width to account for FlashList padding (2 columns)
 const CARD_WIDTH = (width - 48) / 2;
 const TAB_WIDTH = width - 148;
 const TAB_ITEM_WIDTH = (TAB_WIDTH - 4) / 3;
@@ -49,24 +50,31 @@ const TAB_ITEM_WIDTH = (TAB_WIDTH - 4) / 3;
 type SortOption = 'default' | 'rating' | 'year' | 'title';
 type FilterMediaType = 'all' | 'movie' | 'tv' | 'collection';
 
-const WatchlistCard = React.memo(({ item, activeTab, onRemove, onPress }: { item: any, activeTab: number, onRemove: (id: number, type: 'watchlist' | 'artist' | 'history') => void, onPress: (item: any) => void }) => {
+const WatchlistCard = React.memo(({
+  item,
+  activeTab,
+  onRemove,
+  onPress,
+}: {
+  item: any;
+  activeTab: number;
+  onRemove: (id: number, type: 'watchlist' | 'artist' | 'history') => void;
+  onPress: (item: any) => void;
+}) => {
   const isArtist = activeTab === 1;
   const imageUrl = !isArtist
     ? getImageUrl(item.poster_path, 'w342')
     : getImageUrl(item.profile_path, 'w342');
 
-  const title = !isArtist ? (item.title || item.name) : item.name;
-  const subtitle = !isArtist
-    ? ''
-    : (item.known_for_department || 'Artist');
-
+  const title = !isArtist ? item.title || item.name : item.name;
+  const subtitle = !isArtist ? '' : item.known_for_department || 'Artist';
   const itemType = activeTab === 0 ? 'watchlist' : activeTab === 1 ? 'artist' : 'history';
 
   return (
     <View style={styles.cardWrapper}>
       <Pressable
         onPress={() => onPress(item)}
-        style={({ pressed }) => [styles.cardContainer, pressed && { opacity: 0.8 }]}
+        style={({ pressed }) => [styles.cardContainer, pressed && { opacity: 0.85 }]}
       >
         <Image
           source={{ uri: imageUrl }}
@@ -75,10 +83,10 @@ const WatchlistCard = React.memo(({ item, activeTab, onRemove, onPress }: { item
           recyclingKey={imageUrl}
           cachePolicy="memory-disk"
         />
-        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.cardGradient} />
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.92)']} style={styles.cardGradient} />
         <View style={styles.cardContent}>
           <Text style={styles.cardTitle} numberOfLines={2}>{title}</Text>
-          <Text style={styles.cardSubtitle} numberOfLines={1}>{subtitle}</Text>
+          {subtitle ? <Text style={styles.cardSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
         </View>
 
         <Pressable
@@ -86,21 +94,19 @@ const WatchlistCard = React.memo(({ item, activeTab, onRemove, onPress }: { item
           onPress={() => onRemove(item.id, itemType)}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <View style={[styles.unsaveBlur, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
-            <Ionicons name="close" size={16} color="#FFF" />
+          <View style={styles.unsaveCircle}>
+            <Ionicons name="close" size={15} color="#FFF" />
           </View>
         </Pressable>
       </Pressable>
     </View>
   );
 }, (prevProps, nextProps) => {
-  return prevProps.item.id === nextProps.item.id &&
-    prevProps.activeTab === nextProps.activeTab;
+  return prevProps.item.id === nextProps.item.id && prevProps.activeTab === nextProps.activeTab;
 });
 
 const WatchListPage = () => {
   const insets = useSafeAreaInsets();
-  const targetRef = useRef(null);
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState(0);
@@ -118,12 +124,10 @@ const WatchListPage = () => {
   const headerTranslateYAnim = useSharedValue(0);
   const headerOpacityAnim = useSharedValue(1);
 
-  const animatedHeaderStyle = useAnimatedStyle(() => {
-    return {
-      opacity: headerOpacityAnim.value,
-      transform: [{ translateY: headerTranslateYAnim.value }],
-    };
-  });
+  const animatedHeaderStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacityAnim.value,
+    transform: [{ translateY: headerTranslateYAnim.value }],
+  }));
 
   const [sortBy, setSortBy] = useState<SortOption>('default');
   const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
@@ -143,21 +147,6 @@ const WatchListPage = () => {
     existing: number;
     missed: string[];
   }>({ visible: false, total: 0, added: 0, existing: 0, missed: [] });
-
-  const [aiSearchLoading, setAiSearchLoading] = useState(false);
-  const [semanticSearchVector, setSemanticSearchVector] = useState<number[] | null>(null);
-
-  const cosineSimilarity = (vecA: number[], vecB: number[]) => {
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-    for (let i = 0; i < vecA.length; i++) {
-      dotProduct += vecA[i] * vecB[i];
-      normA += vecA[i] * vecA[i];
-      normB += vecB[i] * vecB[i];
-    }
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-  };
 
   const [dialogConfig, setDialogConfig] = useState<{
     visible: boolean;
@@ -193,7 +182,6 @@ const WatchListPage = () => {
   }));
 
   const flatListRef = useRef<FlashList<any>>(null);
-  const horizontalScrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     let active = true;
@@ -216,7 +204,6 @@ const WatchListPage = () => {
       setWatchlist(getSavedItems('watchlist'));
       setArtists(getSavedItems('artist'));
       setWatched(getSavedItems('history'));
-
       runDailyAutoSync();
     } catch (error) {
       console.error('Failed to load library data', error);
@@ -241,15 +228,13 @@ const WatchListPage = () => {
     try {
       const url = await AsyncStorage.getItem('sync_url');
       if (!url) return;
-
       const lastSync = await AsyncStorage.getItem('last_sync_date');
       const today = new Date().toDateString();
-
       if (lastSync !== today) {
         await triggerExtraction('extract_url', { url }, true);
         await AsyncStorage.setItem('last_sync_date', today);
       }
-    } catch (e) { }
+    } catch (e) {}
   };
 
   const handleSyncMovies = async (titles: { title: string, year: string | null }[]) => {
@@ -290,13 +275,13 @@ const WatchListPage = () => {
     setIsImportModalOpen(false);
     if (!silent) {
       setSyncing(true);
-      setSyncProgress('Extracting with AI...');
+      setSyncProgress('Extracting titles...');
     }
     try {
       const response = await axios.post('https://watcher-api-rho.vercel.app/api/gemini', {
         action,
         ...payload,
-        customApiKey: GLOBAL_CONFIG.customApiKey
+        customApiKey: GLOBAL_CONFIG.customApiKey,
       });
 
       if (response.data.results && response.data.results.length > 0) {
@@ -307,11 +292,11 @@ const WatchListPage = () => {
             total: response.data.results.length,
             added: addedCount,
             existing: existingCount,
-            missed: missedTitles
+            missed: missedTitles,
           });
         }
       } else {
-        if (!silent) showDialog({ title: "No movies found", message: "The AI couldn't find any movie titles in the provided source.", type: "warning" });
+        if (!silent) showDialog({ title: "No movies found", message: "Could not find any readable titles.", type: "warning" });
       }
     } catch (e: any) {
       if (!silent) showDialog({ title: "Sync Failed", message: e.response?.data?.error || e.message || "Failed to sync movies.", type: "danger" });
@@ -328,7 +313,7 @@ const WatchListPage = () => {
     try {
       const savedUrl = await AsyncStorage.getItem('sync_url');
       setSyncLinkInput(savedUrl || '');
-    } catch (e) { }
+    } catch (e) {}
     setIsLinkModalVisible(true);
   };
 
@@ -342,7 +327,7 @@ const WatchListPage = () => {
     try {
       await AsyncStorage.setItem('sync_url', trimmedUrl);
       triggerExtraction('extract_url', { url: trimmedUrl });
-    } catch (e) { }
+    } catch (e) {}
   };
 
   const extractMoviesFromText = (text: string) => {
@@ -375,7 +360,7 @@ const WatchListPage = () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: '*/*',
-        copyToCacheDirectory: true
+        copyToCacheDirectory: true,
       });
 
       if (result.canceled || !result.assets || result.assets.length === 0) return;
@@ -396,17 +381,17 @@ const WatchListPage = () => {
         if (Array.isArray(parsedJson)) {
           extractedMovies = parsedJson.map((item: any) => ({
             title: typeof item === 'string' ? item : item.title || item.name || '',
-            year: item.year ? String(item.year) : null
+            year: item.year ? String(item.year) : null,
           })).filter((item: any) => item.title !== '');
         } else if (parsedJson.watchlist && Array.isArray(parsedJson.watchlist)) {
           extractedMovies = parsedJson.watchlist.map((item: any) => ({
             title: typeof item === 'string' ? item : item.title || item.name || '',
-            year: item.year ? String(item.year) : null
+            year: item.year ? String(item.year) : null,
           })).filter((item: any) => item.title !== '');
         } else if (parsedJson.title || parsedJson.name) {
           extractedMovies = [{
             title: parsedJson.title || parsedJson.name,
-            year: parsedJson.year ? String(parsedJson.year) : null
+            year: parsedJson.year ? String(parsedJson.year) : null,
           }];
         }
       } catch (jsonError) {
@@ -415,7 +400,7 @@ const WatchListPage = () => {
 
       if (extractedMovies.length === 0) {
         setSyncing(false);
-        showDialog({ title: "No movies found", message: "Could not find any readable movie titles in the selected file.", type: "warning" });
+        showDialog({ title: "No movies found", message: "Could not find readable movie titles.", type: "warning" });
         return;
       }
 
@@ -460,23 +445,13 @@ const WatchListPage = () => {
           total: extractedMovies.length,
           added: addedCount,
           existing: existingCount,
-          missed: missedTitles
+          missed: missedTitles,
         });
-        if (addedCount > 0) {
-          runAiEmbeddingSync(true);
-        } else {
-          setSyncing(false);
-          setSyncProgress('');
-        }
-      } else {
-        showDialog({ title: "No movies found", message: "Could not detect any valid movie titles.", type: "warning" });
-        setSyncing(false);
-        setSyncProgress('');
       }
-
+      setSyncing(false);
+      setSyncProgress('');
     } catch (e: any) {
-      showDialog({ title: "Error Details", message: e.message || "Unknown error occurred while reading the file.", type: "danger" });
-      console.error(e);
+      showDialog({ title: "Error Details", message: e.message || "Unknown error occurred.", type: "danger" });
       setSyncing(false);
       setSyncProgress('');
     }
@@ -488,14 +463,14 @@ const WatchListPage = () => {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         base64: true,
-        quality: 0.8
+        quality: 0.8,
       });
 
       if (result.canceled || !result.assets[0] || !result.assets[0].base64) return;
 
       triggerExtraction('extract_image', {
         imageBase64: result.assets[0].base64,
-        mimeType: result.assets[0].mimeType || 'image/jpeg'
+        mimeType: result.assets[0].mimeType || 'image/jpeg',
       });
     } catch (e) {
       showDialog({ title: "Error", message: "Failed to read image.", type: "danger" });
@@ -506,11 +481,12 @@ const WatchListPage = () => {
     if (activeTab === index) return;
     setActiveTab(index);
     tabPosition.value = withSpring(index * TAB_ITEM_WIDTH, { damping: 15, stiffness: 120 });
-    horizontalScrollRef.current?.scrollTo({ x: index * width, animated: true });
+    // Instantly resets scroll position to top on tab switch
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
   };
 
   const animatedTabStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: tabPosition.value }]
+    transform: [{ translateX: tabPosition.value }],
   }));
 
   const handleRemove = useCallback((id: number, type: 'watchlist' | 'artist' | 'history') => {
@@ -551,100 +527,18 @@ const WatchListPage = () => {
             if (activeTab === 0) { setWatchlist([]); clearSavedItems('watchlist'); }
             if (activeTab === 1) { setArtists([]); clearSavedItems('artist'); }
             if (activeTab === 2) { setWatched([]); clearSavedItems('history'); }
-          }
-        }
-      ]
+          },
+        },
+      ],
     });
   };
 
-  const runAiEmbeddingSync = async (silentMode: boolean = false) => {
-    setSyncing(true);
-    try {
-      const currentWatchlist = getSavedItems('watchlist');
-      const missingItems = [];
-      
-      for (let i = 0; i < currentWatchlist.length; i++) {
-        if (!getAiEmbedding(currentWatchlist[i].id)) {
-          missingItems.push(currentWatchlist[i]);
-        }
-      }
-
-      let syncedCount = 0;
-      const chunkSize = 100;
-      
-      for (let i = 0; i < missingItems.length; i += chunkSize) {
-        setSyncProgress(`Generating AI Data [${Math.min(i + chunkSize, missingItems.length)}/${missingItems.length}]...`);
-        
-        const chunk = missingItems.slice(i, i + chunkSize);
-        const textsToEmbed = chunk.map((item: any) => {
-          const title = item.title || item.name || '';
-          const type = item.media_type || (item.first_air_date ? 'tv' : 'movie');
-          let text = `Title: ${title}\nType: ${type}`;
-          if (item.overview) text += `\nOverview: ${item.overview}`;
-          return text;
-        });
-
-        const embeddings = await fetchEmbeddingsBatch(textsToEmbed);
-        if (embeddings && embeddings.length === chunk.length) {
-          chunk.forEach((item, index) => {
-            insertAiEmbedding(item.id, embeddings[index]);
-            syncedCount++;
-          });
-        }
-        
-        if (i + chunkSize < missingItems.length) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
-
-      if (!silentMode && syncedCount > 0) {
-        showDialog({ title: "Sync Complete", message: `Generated embeddings for ${syncedCount} new titles!`, type: "success" });
-      }
-    } catch (error: any) {
-      if (!silentMode) {
-        showDialog({ title: "Sync Failed", message: error.message, type: "danger" });
-      }
-    } finally {
-      setSyncing(false);
-      setSyncProgress('');
-    }
-  };
-
-  const handleSyncAiEmbeddings = async () => {
-    setIsOptionsMenuOpen(false);
-    showDialog({
-      title: "Sync AI Watchlist",
-      message: "This will generate AI embeddings for all missing movies in your watchlist so the AI can search them. It may take a minute.",
-      type: "info",
-      buttons: [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Start Sync",
-          style: "default",
-          onPress: () => runAiEmbeddingSync(false)
-        }
-      ]
-    });
-  };
-
-  const getListForTab = useCallback((tabIndex: number) => {
-    let list = tabIndex === 0
+  const filteredCurrentList = useMemo(() => {
+    let list = activeTab === 0
       ? (nsfwFilterEnabled ? watchlist.filter(item => !isAdultContent(item)) : watchlist)
-      : tabIndex === 1 ? artists : watched;
+      : activeTab === 1 ? artists : watched;
 
-    if (semanticSearchVector && tabIndex !== 1) {
-      list = [...list]
-        .map((item: any) => {
-          const existing = getAiEmbedding(item.id);
-          if (existing) {
-            const score = cosineSimilarity(semanticSearchVector, existing);
-            return { ...item, _aiScore: score };
-          }
-          return { ...item, _aiScore: -1 };
-        })
-        .filter(item => item._aiScore > 0.3) // Only keep mildly relevant items
-        .sort((a, b) => b._aiScore - a._aiScore);
-    } else if (searchQuery.trim()) {
+    if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       list = list.filter((item: any) => {
         const title = (item.title || item.name || '').toLowerCase();
@@ -652,7 +546,7 @@ const WatchListPage = () => {
       });
     }
 
-    if (tabIndex === 0 || tabIndex === 2) {
+    if (activeTab === 0 || activeTab === 2) {
       if (selectedMediaType === 'movie') {
         list = list.filter((item: any) => item.media_type === 'movie' || (!item.first_air_date && item.media_type !== 'collection' && item.media_type !== 'tv'));
       } else if (selectedMediaType === 'tv') {
@@ -662,7 +556,7 @@ const WatchListPage = () => {
       }
     }
 
-    if (selectedGenreIds.length > 0 && (tabIndex === 0 || tabIndex === 2)) {
+    if (selectedGenreIds.length > 0 && (activeTab === 0 || activeTab === 2)) {
       list = list.filter(item => {
         if (item.genre_ids && Array.isArray(item.genre_ids)) {
           return selectedGenreIds.some(id => item.genre_ids.includes(id));
@@ -696,25 +590,10 @@ const WatchListPage = () => {
       }
       return 0;
     });
-  }, [watchlist, artists, watched, nsfwFilterEnabled, searchQuery, semanticSearchVector, selectedMediaType, selectedGenreIds, sortBy, sortDirection]);
+  }, [activeTab, watchlist, artists, watched, nsfwFilterEnabled, searchQuery, selectedMediaType, selectedGenreIds, sortBy, sortDirection]);
 
-  const handleAiSearch = async () => {
-    if (!searchQuery.trim()) return;
-    setAiSearchLoading(true);
-    try {
-      const vec = await fetchEmbedding(searchQuery.trim());
-      if (vec) {
-        setSemanticSearchVector(vec);
-      }
-    } catch (e) {
-      console.error("AI Search Failed:", e);
-    } finally {
-      setAiSearchLoading(false);
-    }
-  };
-
-  const handleCardPress = useCallback((item: any, tabIndex?: number) => {
-    if (tabIndex === 1 || item.profile_path !== undefined || item.known_for_department) {
+  const handleCardPress = useCallback((item: any) => {
+    if (activeTab === 1 || item.profile_path !== undefined || item.known_for_department) {
       router.push(`/cast/${item.id}`);
     } else if (item.media_type === 'collection') {
       router.push(`/collection/${item.id}?name=${encodeURIComponent(item.name)}`);
@@ -722,18 +601,18 @@ const WatchListPage = () => {
       const mType = item.media_type || (item.first_air_date || item.number_of_seasons ? 'tv' : 'movie');
       router.push(`/movie/${item.id}?media_type=${mType}`);
     }
-  }, [router]);
+  }, [router, activeTab]);
 
-  const renderCard = useCallback(({ item, extraData }: { item: any, extraData?: number }) => {
+  const renderCard = useCallback(({ item }: { item: any }) => {
     return (
       <WatchlistCard
         item={item}
-        activeTab={extraData || 0}
+        activeTab={activeTab}
         onRemove={handleRemove}
-        onPress={(clickedItem) => handleCardPress(clickedItem, extraData || 0)}
+        onPress={handleCardPress}
       />
     );
-  }, [handleRemove, handleCardPress]);
+  }, [activeTab, handleRemove, handleCardPress]);
 
   return (
     <View style={styles.container}>
@@ -749,153 +628,120 @@ const WatchListPage = () => {
         </View>
       )}
 
-      {/* ── MAIN CONTENT (Wrapped in BlurTargetView) ── */}
-      <BlurTargetView ref={targetRef} style={{ flex: 1, backgroundColor: '#141414' }} collapsable={false}>
-        <ScrollView
-          ref={horizontalScrollRef}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          scrollEventThrottle={32}
-          onMomentumScrollEnd={(e) => {
-            const newIndex = Math.round(e.nativeEvent.contentOffset.x / width);
-            if (activeTab !== newIndex) {
-              setActiveTab(newIndex);
-              tabPosition.value = withSpring(newIndex * TAB_ITEM_WIDTH, { damping: 15, stiffness: 120 });
+      {/* ── SINGLE HIGH-PERFORMANCE VIRTUALIZED FLASHLIST ── */}
+      {loading && !syncing ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator animating={true} size="large" color="#E50914" />
+        </View>
+      ) : !syncing && filteredCurrentList.length === 0 ? (
+        <View style={[styles.emptyContainer, { paddingTop: insets.top + 130 }]}>
+          <View style={styles.emptyIconCircle}>
+            {activeTab === 0 ? (
+              <MaterialIcons name="movie-filter" size={38} color="#E50914" />
+            ) : activeTab === 1 ? (
+              <Ionicons name="people" size={38} color="#E50914" />
+            ) : (
+              <Feather name="check-circle" size={38} color="#E50914" />
+            )}
+          </View>
+          <Text style={styles.emptyText}>
+            {searchQuery || selectedGenreIds.length > 0 || selectedMediaType !== 'all'
+              ? "No matching items found"
+              : activeTab === 0
+                ? "Watchlist Empty"
+                : activeTab === 1
+                  ? "No Favorite Artists"
+                  : "Nothing Watched Yet"
+            }
+          </Text>
+          <Text style={styles.emptySubtext}>
+            {searchQuery || selectedGenreIds.length > 0 || selectedMediaType !== 'all'
+              ? "Try adjusting your search or clearing active filters."
+              : activeTab === 0
+                ? "Tap the bookmark icon on any movie or TV show to save it here."
+                : activeTab === 1
+                  ? "Favorite cast & directors to easily track their filmographies."
+                  : "Titles you finish or mark as watched will appear in this history."
+            }
+          </Text>
+          {activeTab === 0 && !searchQuery && (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.emptyActionButton}
+              onPress={() => setIsImportModalOpen(true)}
+            >
+              <Feather name="download-cloud" size={16} color="#FFF" />
+              <Text style={styles.emptyActionText}>Import Existing Watchlist</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : (
+        <FlashList
+          ref={flatListRef}
+          data={filteredCurrentList}
+          extraData={activeTab}
+          keyExtractor={(item) => `${activeTab}-${item.id}`}
+          renderItem={renderCard}
+          numColumns={2}
+          estimatedItemSize={CARD_WIDTH * 1.5 + 16}
+          contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 115 }]}
+          showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            DeviceEventEmitter.emit('exploreScroll', y);
+
+            if (y <= 0 && headerOpacityAnim.value !== 1) {
+              headerTranslateYAnim.value = withTiming(0, { duration: 150 });
+              headerOpacityAnim.value = withTiming(1, { duration: 150 });
+            } else if (y > 20 && headerOpacityAnim.value !== 0) {
+              headerTranslateYAnim.value = withTiming(-10, { duration: 250 });
+              headerOpacityAnim.value = withTiming(0, { duration: 250 });
+            }
+
+            if (y > 30) {
+              if (filterTranslateY.value !== 60) {
+                filterTranslateY.value = withTiming(60, { duration: 250 });
+                filterOpacity.value = withTiming(0, { duration: 250 });
+                filterScale.value = withTiming(0.9, { duration: 250 });
+              }
+              if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+              scrollTimeout.current = setTimeout(() => {
+                filterTranslateY.value = withTiming(0, { duration: 250 });
+                filterOpacity.value = withTiming(1, { duration: 250 });
+                filterScale.value = withTiming(1, { duration: 250 });
+              }, 1500);
+            } else {
+              if (filterTranslateY.value !== 0) {
+                filterTranslateY.value = withTiming(0, { duration: 200 });
+                filterOpacity.value = withTiming(1, { duration: 200 });
+                filterScale.value = withTiming(1, { duration: 200 });
+              }
+              if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
             }
           }}
-        >
-          {[0, 1, 2].map((tabIndex) => {
-            const list = getListForTab(tabIndex);
-            const isTabActive = activeTab === tabIndex;
-            return (
-              <View key={tabIndex} style={{ width, height: '100%' }}>
-                {loading && !syncing ? (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator animating={true} size="large" color="#E50914" />
-                  </View>
-                ) : !syncing && list.length === 0 ? (
-                  <View style={[styles.emptyContainer, { paddingTop: tabIndex === 1 ? insets.top + 95 : insets.top + 140 }]}>
-                    <View style={styles.emptyIconCircle}>
-                      {tabIndex === 0 ? (
-                        <MaterialIcons name="movie-filter" size={42} color="#E50914" />
-                      ) : tabIndex === 1 ? (
-                        <Ionicons name="people" size={42} color="#E50914" />
-                      ) : (
-                        <Feather name="check-circle" size={42} color="#E50914" />
-                      )}
-                    </View>
-                    <Text style={styles.emptyText}>
-                      {searchQuery || selectedGenreIds.length > 0 || selectedMediaType !== 'all'
-                        ? "No matching items found"
-                        : tabIndex === 0
-                          ? "Watchlist Empty"
-                          : tabIndex === 1
-                            ? "No Favorite Artists"
-                            : "Nothing Watched Yet"
-                      }
-                    </Text>
-                    <Text style={styles.emptySubtext}>
-                      {searchQuery || selectedGenreIds.length > 0 || selectedMediaType !== 'all'
-                        ? "Try adjusting your search or clearing active filters."
-                        : tabIndex === 0
-                          ? "Tap the bookmark icon on any movie or TV show to save it here."
-                          : tabIndex === 1
-                            ? "Favorite cast & directors to easily track their filmographies."
-                            : "Titles you finish or mark as watched will appear in this history."
-                      }
-                    </Text>
-                    {tabIndex === 0 && !searchQuery && (
-                      <TouchableOpacity
-                        activeOpacity={0.85}
-                        style={styles.emptyActionButton}
-                        onPress={() => setIsImportModalOpen(true)}
-                      >
-                        <Feather name="download-cloud" size={16} color="#FFF" />
-                        <Text style={styles.emptyActionText}>Import Existing Watchlist</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ) : (
-                  <FlashList
-                    ref={isTabActive ? flatListRef as any : null}
-                    data={list}
-                    extraData={tabIndex}
-                    keyExtractor={(item) => `${tabIndex}-${item.id}`}
-                    renderItem={renderCard}
-                    numColumns={2}
-                    estimatedItemSize={CARD_WIDTH * 1.5 + 16}
-                    contentContainerStyle={[styles.listContent, {
-                      paddingTop: insets.top + 115
-                    }]}
-                    showsVerticalScrollIndicator={false}
-                    scrollEventThrottle={32}
-                    onScroll={(e) => {
-                      if (!isTabActive) return; // Only process scrolling for active tab
-                      const y = e.nativeEvent.contentOffset.y;
-                      DeviceEventEmitter.emit('exploreScroll', y);
+        />
+      )}
 
-                      if (y <= 0 && headerOpacityAnim.value !== 1) {
-                        headerTranslateYAnim.value = withTiming(0, { duration: 150 });
-                        headerOpacityAnim.value = withTiming(1, { duration: 150 });
-                      } else if (y > 20 && headerOpacityAnim.value !== 0) {
-                        headerTranslateYAnim.value = withTiming(-10, { duration: 250 });
-                        headerOpacityAnim.value = withTiming(0, { duration: 250 });
-                      }
-
-                      if (y > 30) {
-                        if (filterTranslateY.value !== 60) {
-                          filterTranslateY.value = withTiming(60, { duration: 250 });
-                          filterOpacity.value = withTiming(0, { duration: 250 });
-                          filterScale.value = withTiming(0.9, { duration: 250 });
-                        }
-                        if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
-                        scrollTimeout.current = setTimeout(() => {
-                          filterTranslateY.value = withTiming(0, { duration: 250 });
-                          filterOpacity.value = withTiming(1, { duration: 250 });
-                          filterScale.value = withTiming(1, { duration: 250 });
-                        }, 1500);
-                      } else {
-                        if (filterTranslateY.value !== 0) {
-                          filterTranslateY.value = withTiming(0, { duration: 200 });
-                          filterOpacity.value = withTiming(1, { duration: 200 });
-                          filterScale.value = withTiming(1, { duration: 200 });
-                        }
-                        if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
-                      }
-                    }}
-                  />
-                )}
-              </View>
-            );
-          })}
-        </ScrollView>
-      </BlurTargetView>
-
-      {/* ── TOP HEADER OVERLAY ── */}
+      {/* ── TOP HEADER OVERLAY (SOLID FLAT DESIGN) ── */}
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top + 2, zIndex: 100 }} pointerEvents="box-none">
-
-        {/* Subtle top-to-bottom gradient so it blends into the background nicely */}
         <LinearGradient
-          colors={['rgba(18, 18, 18, 1)', 'rgba(18, 18, 18, 0.7)', 'transparent']}
+          colors={['#121212', 'rgba(18, 18, 18, 0.85)', 'transparent']}
           style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 160 }}
           pointerEvents="none"
         />
 
         <Animated.View style={[styles.headerContainer, animatedHeaderStyle]} pointerEvents="box-none">
           <View style={styles.headerTitleRow}>
-            <Text style={styles.header}>
-              My Library
-            </Text>
+            <Text style={styles.header}>My Library</Text>
             <View style={styles.countBadge}>
-              <Text style={styles.countBadgeText}>{getListForTab(activeTab).length}</Text>
+              <Text style={styles.countBadgeText}>{filteredCurrentList.length}</Text>
             </View>
           </View>
         </Animated.View>
 
-        {/* ── MAIN TABS ── */}
+        {/* ── SOLID BORDERLESS TABS ── */}
         <View style={styles.tabWrapper}>
-          {/* Search Toggle Button */}
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => {
@@ -904,21 +750,11 @@ const WatchListPage = () => {
             }}
             style={[styles.headerIconButton, isSearchOpen && styles.headerIconButtonActive]}
           >
-            <View style={styles.blurContainer}>
-              {/* <BlurView intensity={Platform.OS === 'android' ? 20 : 50} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" /> */}
-              <View style={{ ...StyleSheet.absoluteFill, backgroundColor: isSearchOpen ? '#FF000D' : 'rgba(15,15,15,0.7)' }} pointerEvents="none" />
-            </View>
             <Ionicons name={isSearchOpen ? "close" : "search"} size={18} color="#FFF" />
           </TouchableOpacity>
 
           <View style={styles.tabContainer}>
-            <View style={styles.blurContainer}>
-              <BlurView intensity={Platform.OS === 'android' ? 20 : 50} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
-              <View style={{ ...StyleSheet.absoluteFill, backgroundColor: 'rgba(15,15,15,0.7)' }} />
-            </View>
-
             <Animated.View style={[styles.activePill, animatedTabStyle]} />
-
             <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => handleTabChange(0)}>
               <Text style={[styles.tabText, activeTab === 0 && styles.activeTabText]}>Watchlist</Text>
             </TouchableOpacity>
@@ -932,70 +768,46 @@ const WatchListPage = () => {
             </TouchableOpacity>
           </View>
 
-          {/* Menu / Options Button */}
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => setIsOptionsMenuOpen(true)}
             style={styles.headerIconButton}
           >
-            <View style={styles.blurContainer}>
-              {/* <BlurView intensity={Platform.OS === 'android' ? 20 : 50} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" /> */}
-              <View style={{ ...StyleSheet.absoluteFill, backgroundColor: 'rgba(15,15,15,0.7)' }} pointerEvents="none" />
-            </View>
             <Feather name="more-vertical" size={20} color="#FFF" />
           </TouchableOpacity>
         </View>
 
-        {/* ── INLINE SEARCH BAR (when active) ── */}
+        {/* ── SOLID BORDERLESS SEARCH BAR ── */}
         {isSearchOpen && (
           <Animated.View entering={FadeInDown.duration(200)} style={styles.searchBarContainer}>
-            <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(20, 20, 20, 0.4)' }]} pointerEvents="none" />
-            <Ionicons name="search" size={16} color="#777" style={{ marginLeft: 12 }} />
+            <Ionicons name="search" size={16} color="#888" style={{ marginLeft: 14 }} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search or Ask AI (e.g. 'space thriller')"
+              placeholder="Search library..."
               placeholderTextColor="#777"
               value={searchQuery}
-              onChangeText={(t) => {
-                setSearchQuery(t);
-                if (semanticSearchVector) setSemanticSearchVector(null);
-              }}
-              onSubmitEditing={handleAiSearch}
+              onChangeText={setSearchQuery}
               returnKeyType="search"
               autoFocus
               autoCapitalize="none"
               autoCorrect={false}
             />
             {searchQuery ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {aiSearchLoading ? (
-                  <ActivityIndicator size="small" color="#A855F7" style={{ padding: 8 }} />
-                ) : (
-                  <TouchableOpacity onPress={handleAiSearch} style={{ padding: 8 }}>
-                    <Feather name="cpu" size={18} color={semanticSearchVector ? "#A855F7" : "#999"} />
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity onPress={() => { setSearchQuery(''); setSemanticSearchVector(null); }} style={{ padding: 8 }}>
-                  <Ionicons name="close-circle" size={18} color="#999" />
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 8, marginRight: 4 }}>
+                <Ionicons name="close-circle" size={18} color="#999" />
+              </TouchableOpacity>
             ) : null}
           </Animated.View>
         )}
-
       </View>
 
-      {/* ── SUB-TABS & FILTERS (Moved to Bottom for 1-Handed Use) ── */}
+      {/* ── SOLID BOTTOM FILTER DOCK ── */}
       {(activeTab === 0 || activeTab === 2) && (
         <Animated.View style={[styles.filterSection, { bottom: insets.bottom + 95 }, animatedFilterStyle]} collapsable={false}>
-          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(25,25,25,0.6)' }]} pointerEvents="none" />
-
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={{ marginHorizontal: 16 }}
+            style={{ marginHorizontal: 12 }}
             contentContainerStyle={styles.filterScrollContent}
           >
             <TouchableOpacity
@@ -1009,8 +821,7 @@ const WatchListPage = () => {
               </Text>
             </TouchableOpacity>
 
-            {/* Subtle Divider */}
-            <View style={{ width: 1, height: 16, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: 2 }} />
+            <View style={styles.chipDivider} />
 
             <TouchableOpacity
               activeOpacity={0.8}
@@ -1025,7 +836,7 @@ const WatchListPage = () => {
               style={[styles.filterChip, selectedMediaType === 'movie' && styles.filterChipActive]}
               onPress={() => setSelectedMediaType(selectedMediaType === 'movie' ? 'all' : 'movie')}
             >
-              <Ionicons name="film-outline" size={15} color={selectedMediaType === 'movie' ? "#FFF" : "#A0A0A0"} />
+              <Ionicons name="film-outline" size={14} color={selectedMediaType === 'movie' ? "#FFF" : "#A0A0A0"} />
               <Text style={[styles.filterChipText, selectedMediaType === 'movie' && styles.filterChipTextActive]}>Movies</Text>
             </TouchableOpacity>
 
@@ -1034,7 +845,7 @@ const WatchListPage = () => {
               style={[styles.filterChip, selectedMediaType === 'tv' && styles.filterChipActive]}
               onPress={() => setSelectedMediaType(selectedMediaType === 'tv' ? 'all' : 'tv')}
             >
-              <Ionicons name="tv-outline" size={15} color={selectedMediaType === 'tv' ? "#FFF" : "#A0A0A0"} />
+              <Ionicons name="tv-outline" size={14} color={selectedMediaType === 'tv' ? "#FFF" : "#A0A0A0"} />
               <Text style={[styles.filterChipText, selectedMediaType === 'tv' && styles.filterChipTextActive]}>Series</Text>
             </TouchableOpacity>
 
@@ -1043,11 +854,11 @@ const WatchListPage = () => {
               style={[styles.filterChip, selectedMediaType === 'collection' && styles.filterChipActive]}
               onPress={() => setSelectedMediaType(selectedMediaType === 'collection' ? 'all' : 'collection')}
             >
-              <Ionicons name="albums-outline" size={15} color={selectedMediaType === 'collection' ? "#FFF" : "#A0A0A0"} />
+              <Ionicons name="albums-outline" size={14} color={selectedMediaType === 'collection' ? "#FFF" : "#A0A0A0"} />
               <Text style={[styles.filterChipText, selectedMediaType === 'collection' && styles.filterChipTextActive]}>Collections</Text>
             </TouchableOpacity>
 
-            <View style={{ width: 1, height: 16, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: 2 }} />
+            <View style={styles.chipDivider} />
 
             {GENRE_OPTIONS.map(g => {
               const isSelected = selectedGenreIds.includes(g.id);
@@ -1074,7 +885,7 @@ const WatchListPage = () => {
         </Animated.View>
       )}
 
-      {/* ── OPTIONS / SETTINGS MODAL ── */}
+      {/* ── OPTIONS MODAL ── */}
       <Modal visible={isOptionsMenuOpen} transparent={true} animationType="fade" onRequestClose={() => setIsOptionsMenuOpen(false)}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsOptionsMenuOpen(false)} />
@@ -1159,22 +970,6 @@ const WatchListPage = () => {
             <TouchableOpacity
               activeOpacity={0.8}
               style={styles.sheetItem}
-              onPress={handleSyncAiEmbeddings}
-            >
-              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(168,85,247,0.15)' }]}>
-                <Feather name="cpu" size={18} color="#A855F7" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sheetItemTitle}>Sync AI Data</Text>
-                <Text style={styles.sheetItemSub}>Generate search data for missing titles</Text>
-              </View>
-            </TouchableOpacity>
-
-            <View style={styles.sheetDivider} />
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.sheetItem}
               onPress={handleClearAll}
             >
               <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(255,69,58,0.15)' }]}>
@@ -1227,7 +1022,6 @@ const WatchListPage = () => {
 
             <View style={styles.sheetDivider} />
 
-            {/* Direction Toggle */}
             <View style={styles.directionRow}>
               <Text style={styles.directionLabel}>Sort Order:</Text>
               <View style={styles.directionButtons}>
@@ -1312,14 +1106,19 @@ const WatchListPage = () => {
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={0.95} onPress={() => setIsLinkModalVisible(false)} />
           <View style={styles.modalContentContainer}>
-            <BlurView intensity={Platform.OS === 'android' ? 25 : 60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
-            <View style={{ ...StyleSheet.absoluteFill, backgroundColor: 'rgba(30,30,30,0.65)' }} />
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Google Watchlist Link</Text>
               <Text style={styles.modalSubtitle}>Paste your public Google Collection/Watchlist URL to sync daily:</Text>
               <TextInput
-                style={styles.modalInput} placeholder="Paste URL here..." placeholderTextColor="#777"
-                value={syncLinkInput} onChangeText={setSyncLinkInput} autoFocus={true} keyboardType="url" autoCapitalize="none" autoCorrect={false}
+                style={styles.modalInput}
+                placeholder="Paste URL here..."
+                placeholderTextColor="#777"
+                value={syncLinkInput}
+                onChangeText={setSyncLinkInput}
+                autoFocus={true}
+                keyboardType="url"
+                autoCapitalize="none"
+                autoCorrect={false}
               />
               <View style={styles.modalButtonsRow}>
                 <TouchableOpacity activeOpacity={0.95} style={[styles.modalButton, styles.modalCancelButton]} onPress={() => setIsLinkModalVisible(false)}>
@@ -1334,12 +1133,10 @@ const WatchListPage = () => {
         </View>
       </Modal>
 
-      {/* CUSTOM THEMED IMPORT RESULTS MODAL */}
+      {/* IMPORT RESULTS MODAL */}
       <Modal visible={importSummary.visible} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContentContainer}>
-            <BlurView intensity={Platform.OS === 'android' ? 25 : 60} tint="dark" style={StyleSheet.absoluteFill} blurTarget={targetRef} blurMethod="dimezisBlurView" />
-            <View style={{ ...StyleSheet.absoluteFill, backgroundColor: 'rgba(30,30,30,0.85)' }} />
             <View style={styles.modalContent}>
               <View style={styles.resultsHeaderRow}>
                 <Feather name="check-circle" size={24} color="#4CAF50" />
@@ -1363,7 +1160,8 @@ const WatchListPage = () => {
                 </View>
               )}
 
-              <TouchableOpacity activeOpacity={0.95}
+              <TouchableOpacity
+                activeOpacity={0.95}
                 style={[styles.modalButton, styles.modalSyncButton, { width: '100%', marginTop: 20 }]}
                 onPress={() => setImportSummary({ ...importSummary, visible: false })}
               >
@@ -1374,7 +1172,7 @@ const WatchListPage = () => {
         </View>
       </Modal>
 
-      {/* ── Themed Confirmation & Alerts ── */}
+      {/* Confirmation & Alerts */}
       <ThemedDialog
         visible={dialogConfig.visible}
         title={dialogConfig.title}
@@ -1395,38 +1193,33 @@ const styles = StyleSheet.create({
   headerContainer: {
     paddingHorizontal: 16,
     paddingBottom: 4,
-    overflow: 'hidden'
+    overflow: 'hidden',
   },
   headerTitleRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginBottom: 8 },
   header: { color: '#FFF', fontSize: 26, fontFamily: 'GoogleSansFlex-Bold', letterSpacing: -0.5 },
-  countBadge: { backgroundColor: '#222', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  countBadge: { backgroundColor: '#1C1C1E', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   countBadgeText: { color: '#888', fontSize: 13, fontFamily: 'GoogleSansFlex-Bold' },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerIconButton: {
-    width: 52,
+    width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'transparent',
+    backgroundColor: '#1C1C1E',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    overflow: 'hidden'
   },
   headerIconButtonActive: {
-    borderColor: 'rgba(229,9,20,0.5)',
+    backgroundColor: '#E50914',
   },
 
-  // Search Bar
+  // Search Bar (Solid & Borderless)
   searchBarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    overflow: 'hidden',
+    marginBottom: 8,
+    borderRadius: 22,
+    backgroundColor: '#1C1C1E',
+    height: 44,
   },
   searchInput: {
     flex: 1,
@@ -1437,77 +1230,132 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
 
-  // Tabs
-  tabWrapper: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginBottom: 4, gap: 6 },
-  tabContainer: { flexDirection: 'row', width: TAB_WIDTH, height: 44, borderRadius: 22, position: 'relative', overflow: 'hidden', borderColor: 'rgba(255,255,255,0.08)', borderWidth: 1 },
-  blurContainer: { ...StyleSheet.absoluteFill, borderRadius: 22, overflow: 'hidden' },
-  activePill: { position: 'absolute', width: TAB_ITEM_WIDTH, top: 2, bottom: 2, left: 2, backgroundColor: '#E50914', borderRadius: 20 },
+  // Tabs (Solid & Borderless)
+  tabWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginBottom: 6,
+    gap: 8,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    width: TAB_WIDTH,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#1C1C1E',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  activePill: {
+    position: 'absolute',
+    width: TAB_ITEM_WIDTH,
+    top: 2,
+    bottom: 2,
+    left: 2,
+    backgroundColor: '#E50914',
+    borderRadius: 20,
+  },
   tabButton: { flex: 1, justifyContent: 'center', alignItems: 'center', zIndex: 1 },
   tabText: { color: '#888', fontFamily: 'GoogleSansFlex-Medium', fontSize: 13 },
   activeTabText: { color: '#FFF', fontFamily: 'GoogleSansFlex-Bold' },
 
-  // Filters (Modernized)
+  // Filters (Solid Dock, Borderless)
   filterSection: {
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 44,  // Slightly taller for modern padding
+    height: 44,
     marginHorizontal: 16,
     borderRadius: 22,
-    overflow: 'hidden',
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: '#1C1C1E',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    justifyContent: 'center',
   },
-  filterScrollContent: { alignItems: 'center', gap: 6 }, // Tighter gap for borderless chips
+  filterScrollContent: { alignItems: 'center', gap: 6 },
   filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'transparent', // Clean transparent background
+    backgroundColor: 'transparent',
     paddingHorizontal: 14,
-    paddingVertical: 8, // Thicker touch target
+    paddingVertical: 8,
     borderRadius: 20,
   },
   filterChipActive: {
-    backgroundColor: '#E50914', // Solid brand color when active
-    shadowColor: '#E50914',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 3,
+    backgroundColor: '#E50914',
   },
   filterChipText: {
-    color: '#A0A0A0', // Softer inactive color
+    color: '#A0A0A0',
     fontSize: 13,
     fontFamily: 'GoogleSansFlex-Medium',
   },
   filterChipTextActive: {
-    color: '#FFF', // Inverse solid text
+    color: '#FFF',
     fontFamily: 'GoogleSansFlex-Bold',
+  },
+  chipDivider: {
+    width: 1,
+    height: 16,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginHorizontal: 2,
   },
 
   // Sync Progress
   syncHubContainer: { paddingHorizontal: 16, marginBottom: 15 },
-  syncingOverlay: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#2A2A2A', paddingVertical: 10, borderRadius: 10, gap: 10 },
+  syncingOverlay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1C1C1E',
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 10,
+  },
   syncingText: { color: '#FFF', fontSize: 13, fontFamily: 'GoogleSansFlex-Medium' },
 
   // Grid
-  listContent: { paddingHorizontal: 16, paddingBottom: 100 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 110 },
   cardWrapper: { width: CARD_WIDTH, marginBottom: 16, marginHorizontal: 5 },
-  cardContainer: { borderRadius: 12, backgroundColor: '#1C1C1E', overflow: 'hidden', height: CARD_WIDTH * 1.5, position: 'relative', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  cardContainer: {
+    borderRadius: 12,
+    backgroundColor: '#1C1C1E',
+    overflow: 'hidden',
+    height: CARD_WIDTH * 1.5,
+    position: 'relative',
+  },
   cardImage: { width: '100%', height: '100%', backgroundColor: '#222' },
   cardGradient: { position: 'absolute', left: 0, right: 0, bottom: -2, height: '55%', zIndex: 1 },
   cardContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 8, zIndex: 2 },
   cardTitle: { color: '#FFF', fontSize: 11.5, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 2 },
   cardSubtitle: { color: '#FFD700', fontSize: 10, fontFamily: 'GoogleSansFlex-Medium' },
-  unsaveButton: { position: 'absolute', top: 6, right: 6, zIndex: 10, borderRadius: 15, overflow: 'hidden' },
-  unsaveBlur: { width: 26, height: 26, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
+  unsaveButton: { position: 'absolute', top: 6, right: 6, zIndex: 10, borderRadius: 15 },
+  unsaveCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
 
   // Empty State
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, marginTop: 40 },
-  emptyIconCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(229,9,20,0.08)', justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: 'rgba(229,9,20,0.2)' },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+  emptyIconCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: 'rgba(229,9,20,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   emptyText: { color: '#FFF', fontSize: 18, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 6, textAlign: 'center' },
   emptySubtext: { color: '#777', fontSize: 13, fontFamily: 'GoogleSansFlex-Regular', textAlign: 'center', lineHeight: 18, marginBottom: 20 },
   emptyActionButton: {
@@ -1521,23 +1369,18 @@ const styles = StyleSheet.create({
   },
   emptyActionText: { color: '#FFF', fontSize: 13, fontFamily: 'GoogleSansFlex-Bold' },
 
-  // Modals & Bottom Sheets
+  // Bottom Sheets & Modals (Borderless)
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 0, 0, 0.75)' },
   modalOverlayDismiss: { ...StyleSheet.absoluteFill },
   optionsSheetContainer: {
-    backgroundColor: '#121212', // Minimal, sleek dark background
-    borderTopLeftRadius: 28, // Rounder, more modern corners
+    backgroundColor: '#1C1C1E',
+    borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)', // Subtle edge
-    borderColor: 'rgba(255,255,255,0.08)',
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 36,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
   },
-  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#444', alignSelf: 'center', marginBottom: 16 },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#333', alignSelf: 'center', marginBottom: 16 },
   sheetTitle: { color: '#FFF', fontSize: 18, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 16 },
   sheetItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12 },
   sheetIconCircle: { width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center' },
@@ -1554,22 +1397,40 @@ const styles = StyleSheet.create({
   directionBtnTextActive: { color: '#FFF', fontFamily: 'GoogleSansFlex-Bold' },
 
   // Link & Summary Modal
-  modalContentContainer: { width: '88%', alignSelf: 'center', marginBottom: 'auto', marginTop: 'auto', borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' },
-  modalContent: { padding: 24, alignItems: 'center', zIndex: 1 },
+  modalContentContainer: {
+    width: '88%',
+    alignSelf: 'center',
+    marginBottom: 'auto',
+    marginTop: 'auto',
+    borderRadius: 20,
+    backgroundColor: '#1C1C1E',
+    overflow: 'hidden',
+  },
+  modalContent: { padding: 24, alignItems: 'center' },
   modalTitle: { color: '#FFF', fontSize: 18, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 8 },
   modalSubtitle: { color: '#AAA', fontSize: 13, fontFamily: 'GoogleSansFlex-Regular', textAlign: 'center', marginBottom: 20, lineHeight: 18 },
-  modalInput: { width: '100%', backgroundColor: '#141414', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 12, color: '#FFF', fontSize: 14, fontFamily: 'GoogleSansFlex-Regular', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', marginBottom: 20 },
+  modalInput: {
+    width: '100%',
+    backgroundColor: '#121212',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    color: '#FFF',
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex-Regular',
+    marginBottom: 20,
+  },
   modalButtonsRow: { flexDirection: 'row', width: '100%', gap: 12 },
-  modalButton: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  modalButton: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   modalCancelButton: { backgroundColor: '#2A2A2A' },
   modalCancelButtonText: { color: '#AAA', fontSize: 14, fontFamily: 'GoogleSansFlex-Medium' },
   modalSyncButton: { backgroundColor: '#E50914' },
   modalSyncButtonText: { color: '#FFF', fontSize: 14, fontFamily: 'GoogleSansFlex-Medium' },
 
   resultsHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 15 },
-  statsContainer: { width: '100%', backgroundColor: '#141414', borderRadius: 10, padding: 15, marginBottom: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  statsContainer: { width: '100%', backgroundColor: '#121212', borderRadius: 12, padding: 15, marginBottom: 15 },
   statText: { color: '#888', fontSize: 14, fontFamily: 'GoogleSansFlex-Medium', marginBottom: 4 },
-  missedContainer: { width: '100%', backgroundColor: 'rgba(229, 9, 20, 0.1)', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: 'rgba(229, 9, 20, 0.2)' },
+  missedContainer: { width: '100%', backgroundColor: 'rgba(229, 9, 20, 0.1)', borderRadius: 12, padding: 12 },
   missedTitle: { color: '#E50914', fontSize: 13, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 8 },
   missedScroll: { maxHeight: 120 },
   missedText: { color: '#CCC', fontSize: 12, fontFamily: 'GoogleSansFlex-Regular', marginBottom: 4 },

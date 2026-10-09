@@ -181,6 +181,7 @@ export interface TMDBResult {
   external_ids?: TMDBExternalIds; 
   videos?: TMDBVideo[]; 
   images?: TMDBImage[];
+  posters?: TMDBImage[];
    
   production_companies?: TMDBProductionCompany[];
   belongs_to_collection?: TMDBCollection | null;
@@ -679,10 +680,26 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
       external_ids: data.external_ids, 
       videos: data.videos?.results || [],
       images: data.images?.backdrops || [],
+      posters: data.images?.posters || [],
       production_companies: data.production_companies || [],
       belongs_to_collection: data.belongs_to_collection || null,
     };
   } catch (error) { return item; }
+};
+
+export const getMediaImages = async (
+  id: number,
+  mediaType: "movie" | "tv" = "movie"
+): Promise<{ backdrops: TMDBImage[]; posters: TMDBImage[] }> => {
+  try {
+    const data = await fetchWithCache(`/${mediaType}/${id}/images`);
+    return {
+      backdrops: data.backdrops || [],
+      posters: data.posters || [],
+    };
+  } catch (error) {
+    return { backdrops: [], posters: [] };
+  }
 };
 
 export const getMediaDetails = async (id: number, mediaType: "movie" | "tv"): Promise<TMDBResult> => {

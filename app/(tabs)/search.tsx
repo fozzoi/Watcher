@@ -3,7 +3,8 @@ import {
   View, StyleSheet, Linking, StatusBar, 
   ScrollView, TouchableOpacity, TextInput, 
   Keyboard, ActivityIndicator, Text, BackHandler,
-  LayoutAnimation, Platform, UIManager, Dimensions
+  LayoutAnimation, Platform, UIManager, Dimensions,
+  ToastAndroid
 } from "react-native";
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 // Legacy import for Expo 50+ (fixes deprecation warning)
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing"; 
+import * as Clipboard from "expo-clipboard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { searchTorrents } from '../../src/Scraper';
@@ -49,6 +51,7 @@ export default function Index() {
   const [showMore, setShowMore] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [downloadingFile, setDownloadingFile] = useState(false);
+  const [downloadingHash, setDownloadingHash] = useState<string | null>(null);
 
   // Themed Dialog State
   const [dialogConfig, setDialogConfig] = useState<{
@@ -87,12 +90,50 @@ export default function Index() {
   }, [router]);
 
   // --- HELPERS ---
-  const getQualityInfo = (name: string): { label: string; color: string } => {
-    const lowerName = name.toLowerCase();
-    if (lowerName.includes('2160p') || lowerName.includes('4k')) return { label: '4K', color: '#00ff08' };
-    if (lowerName.includes('1080p')) return { label: '1080p', color: '#1500ff' };
-    if (lowerName.includes('720p')) return { label: '720p', color: '#ff6e00' };
-    return { label: 'SD', color: '#666' };
+  const getQualityInfo = (name: string): { label: string; color: string; bg: string } => {
+    const lower = name.toLowerCase();
+    if (lower.includes('2160p') || lower.includes('4k')) {
+      return { label: '4K UHD', color: '#22C55E', bg: 'rgba(34, 197, 94, 0.15)' };
+    }
+    if (lower.includes('1080p')) {
+      return { label: '1080p FHD', color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.15)' };
+    }
+    if (lower.includes('720p')) {
+      return { label: '720p HD', color: '#F97316', bg: 'rgba(249, 115, 22, 0.15)' };
+    }
+    return { label: 'SD', color: '#9CA3AF', bg: 'rgba(156, 163, 175, 0.15)' };
+  };
+
+  const handleCopyMagnet = async (magnetUrl: string) => {
+    await Clipboard.setStringAsync(magnetUrl);
+    if (Platform.OS === 'android') {
+      ToastAndroid.show('Magnet link copied to clipboard!', ToastAndroid.SHORT);
+    } else {
+      showDialog({ title: 'Copied', message: 'Magnet link copied to clipboard!', type: 'success' });
+    }
+  };
+
+  const handleOpenMagnet = async (magnetUrl: string) => {
+    try {
+      const supported = await Linking.canOpenURL(magnetUrl);
+      if (supported) {
+        await Linking.openURL(magnetUrl);
+      } else {
+        await Clipboard.setStringAsync(magnetUrl);
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Magnet copied! Please install a torrent client like Flud.', ToastAndroid.LONG);
+        } else {
+          showDialog({
+            title: 'No App Found',
+            message: 'Please install a torrent client like Flud or LibreTorrent to open magnet links.',
+            type: 'warning',
+          });
+        }
+      }
+    } catch {
+      await Clipboard.setStringAsync(magnetUrl);
+      showDialog({ title: 'Copied', message: 'Magnet link copied to clipboard!', type: 'success' });
+    }
   };
 
   useEffect(() => {
@@ -153,9 +194,6 @@ export default function Index() {
 
   // --- SMART FILE DOWNLOADER (.torrent) ---
   const handleShareAsFile = async (url: string, fileName: string) => {
-  setDownloadingFile(true);
-  try {
-    // Extract hash from magnet link
     const match = url.match(/urn:btih:([a-fA-F0-9]{40})/i);
     if (!match) {
       showDialog({ title: "Error", message: "No valid hash found in this magnet link.", type: "danger" });
@@ -163,45 +201,50 @@ export default function Index() {
     }
 
     const hash = match[1].toUpperCase();
-    const cleanName = fileName.replace(/[^a-z0-9]/gi, '_').substring(0, 60);
-    const fileUri = FileSystem.documentDirectory + cleanName + '.torrent';
+    setDownloadingHash(hash);
+    setDownloadingFile(true);
+    try {
+      const cleanName = fileName.replace(/[^a-z0-9]/gi, '_').substring(0, 60);
+      const FS = FileSystem as any;
+      const fileUri = `${FS.documentDirectory || FS.cacheDirectory}${cleanName}.torrent`;
 
-    // Hit YOUR Vercel backend — it handles the cache fetching server-side
-    const torrentUrl = `https://watcher-api-rho.vercel.app/api/torrent-file?hash=${hash}`;
+      // Hit YOUR Vercel backend — it handles the cache fetching server-side
+      const torrentUrl = `https://watcher-api-rho.vercel.app/api/torrent-file?hash=${hash}`;
 
-    const downloadRes = await FileSystem.downloadAsync(torrentUrl, fileUri);
+      const downloadRes = await FS.downloadAsync(torrentUrl, fileUri);
 
-    // Validate: real .torrent must be > 40 bytes
-    const fileInfo = await FileSystem.getInfoAsync(fileUri);
-    const fileSize = fileInfo.exists ? (fileInfo as any).size ?? 0 : 0;
+      // Validate: real .torrent must be > 40 bytes
+      const fileInfo = await FS.getInfoAsync(fileUri);
+      const fileSize = fileInfo.exists ? (fileInfo as any).size ?? 0 : 0;
 
-    if (downloadRes.status !== 200 || fileSize < 40) {
-      await FileSystem.deleteAsync(fileUri, { idempotent: true });
-      showDialog({
-        title: "Not in Cache",
-        message: "This torrent isn't cached yet. Tap 'Open Magnet' to open directly in your torrent client.",
-        type: "warning",
-      });
-      return;
+      if (downloadRes.status !== 200 || fileSize < 40) {
+        await FS.deleteAsync(fileUri, { idempotent: true });
+        showDialog({
+          title: "Not in Cache",
+          message: "This torrent isn't cached yet. Tap 'Magnet' to open directly in your torrent client.",
+          type: "warning",
+        });
+        return;
+      }
+
+      // Share the real .torrent file
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/x-bittorrent',
+          dialogTitle: 'Share .torrent file',
+          UTI: 'com.bittorrent.torrent',
+        });
+      } else {
+        showDialog({ title: "Saved", message: `Torrent saved to: ${fileUri}`, type: "success" });
+      }
+
+    } catch (error) {
+      showDialog({ title: "Error", message: "Failed to fetch torrent file. Try 'Magnet' instead.", type: "danger" });
+    } finally {
+      setDownloadingHash(null);
+      setDownloadingFile(false);
     }
-
-    // Share the real .torrent file
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(fileUri, {
-        mimeType: 'application/x-bittorrent',
-        dialogTitle: 'Share .torrent file',
-        UTI: 'com.bittorrent.torrent',
-      });
-    } else {
-      showDialog({ title: "Saved", message: `Torrent saved to: ${fileUri}`, type: "success" });
-    }
-
-  } catch (error) {
-    showDialog({ title: "Error", message: "Failed to fetch torrent file. Try 'Open Magnet' instead.", type: "danger" });
-  } finally {
-    setDownloadingFile(false);
-  }
-};
+  };
 
   const renderResults = () => {
     const visibleResults = showMore ? results : results.slice(0, 5);
@@ -209,63 +252,90 @@ export default function Index() {
     return visibleResults.map((item, index) => {
       const quality = getQualityInfo(item.name);
       const seedsCount = item.seeds || 0;
-      let healthColor = '#EF4444'; 
-      if (seedsCount > 50) healthColor = '#22C55E'; 
-      else if (seedsCount > 10) healthColor = '#EAB308'; 
+      let seedColor = '#E50914'; 
+      if (seedsCount > 40) seedColor = '#30D158'; 
+      else if (seedsCount > 10) seedColor = '#FFD60A'; 
+
+      const match = item.url.match(/urn:btih:([a-fA-F0-9]{40})/i);
+      const hash = match ? match[1].toUpperCase() : null;
+      const isDownloadingThis = downloadingHash === hash;
 
       return (
-        <Animated.View key={index} entering={FadeInUp.delay(index * 100).springify()} style={styles.card}>
-          <View style={styles.cardInner}>
-            <View style={styles.iconContainer}>
-               <MaterialCommunityIcons name="file-video" size={30} color="#E50914" />
+        <Animated.View key={index} entering={FadeInUp.delay(index * 60).springify()} style={styles.card}>
+          {/* Top Row: Quality badge & Source */}
+          <View style={styles.cardHeader}>
+            <View style={[styles.qualityBadge, { backgroundColor: quality.bg, borderColor: quality.color + '40' }]}>
+              <Text style={[styles.qualityText, { color: quality.color }]}>{quality.label}</Text>
             </View>
-            <View style={styles.cardContent}>
-                <Text style={styles.cardTitle} numberOfLines={2}>{item.name}</Text>
-                
-                <View style={styles.statsContainer}>
-                    <View style={styles.statPill}>
-                         <Feather name="arrow-up" size={12} color={healthColor} />
-                         <Text style={[styles.statText, { color: healthColor, fontWeight: '700' }]}>{item.seeds}</Text>
-                    </View>
-                    <View style={styles.statPill}>
-                         <Feather name="arrow-down" size={12} color="#888" />
-                         <Text style={styles.statText}>{item.peers}</Text>
-                    </View>
-                    <View style={styles.dot} />
-                    <Text style={styles.sizeText}>{item.size}</Text>
-                </View>
+            {item.source ? (
+              <View style={styles.sourceBadge}>
+                <Text style={styles.sourceText}>{item.source}</Text>
+              </View>
+            ) : null}
+          </View>
 
-                <View style={styles.tagsRow}>
-                    <View style={[styles.tag, { backgroundColor: quality.color + '20', borderColor: quality.color + '50' }]}>
-                        <Text style={[styles.tagText, { color: quality.color }]}>{quality.label}</Text>
-                    </View>
-                    <View style={styles.tagSource}>
-                        <Text style={styles.tagSourceText}>{item.source}</Text>
-                    </View>
-                </View>
+          {/* Torrent Title */}
+          <Text style={styles.cardTitle} numberOfLines={2}>
+            {item.name}
+          </Text>
+
+          {/* Stats Row */}
+          <View style={styles.statsRow}>
+            <View style={styles.statPill}>
+              <Feather name="arrow-up" size={12} color={seedColor} />
+              <Text style={[styles.statValue, { color: seedColor }]}>{seedsCount} Seeds</Text>
+            </View>
+
+            <View style={styles.statPill}>
+              <Feather name="arrow-down" size={12} color="#888" />
+              <Text style={styles.statValue}>{item.peers || 0} Peers</Text>
+            </View>
+
+            <View style={styles.dotSeparator} />
+
+            <View style={styles.statPill}>
+              <MaterialCommunityIcons name="harddisk" size={12} color="#A8A8B6" />
+              <Text style={styles.sizeText}>{item.size}</Text>
             </View>
           </View>
-          
-          <View style={styles.actionRow}>
-                <TouchableOpacity activeOpacity={0.95} 
-                    style={styles.shareBtn} 
-                    onPress={() => handleShareAsFile(item.url, item.name)}
-                    disabled={downloadingFile}
-                >
-                    {downloadingFile ? <ActivityIndicator size="small" color="#AAA" /> : <Feather name="download" size={18} color="#AAA" />}
-                </TouchableOpacity>
 
-                <TouchableOpacity activeOpacity={0.95} 
-                    style={styles.downloadBtn} 
-                    onPress={async () => {
-                         const supported = await Linking.canOpenURL(item.url);
-                         if(supported) await Linking.openURL(item.url);
-                         else showDialog({ title: "No App Found", message: "Please install a torrent client like Flud or LibreTorrent to open magnet links.", type: "warning" });
-                    }}
-                >
-                    <MaterialCommunityIcons name="magnet" size={18} color="#FFF" />
-                    <Text style={styles.downloadText}>Magnet Link</Text>
-                </TouchableOpacity>
+          {/* Action Buttons Row */}
+          <View style={styles.cardActionsRow}>
+            {/* Share .torrent file button */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.shareFileBtn}
+              onPress={() => handleShareAsFile(item.url, item.name)}
+              disabled={isDownloadingThis}
+            >
+              {isDownloadingThis ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <>
+                  <Feather name="share-2" size={15} color="#E5E5EB" style={{ marginRight: 6 }} />
+                  <Text style={styles.shareFileText}>Share .torrent</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {/* Copy Magnet Link Icon Button */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.copyMagnetBtn}
+              onPress={() => handleCopyMagnet(item.url)}
+            >
+              <Feather name="copy" size={15} color="#A8A8B6" />
+            </TouchableOpacity>
+
+            {/* Primary Open Magnet Button */}
+            <TouchableOpacity
+              activeOpacity={0.88}
+              style={styles.openMagnetBtn}
+              onPress={() => handleOpenMagnet(item.url)}
+            >
+              <MaterialCommunityIcons name="magnet" size={17} color="#FFF" style={{ marginRight: 6 }} />
+              <Text style={styles.openMagnetText}>Magnet</Text>
+            </TouchableOpacity>
           </View>
         </Animated.View>
       );
@@ -414,37 +484,123 @@ const styles = StyleSheet.create({
   },
   resultsTitle: { color: 'white', fontSize: 18, fontFamily: 'GoogleSansFlex-Bold' },
   historyIconBtn: { padding: 4 },
-  card: { 
-      backgroundColor: 'rgba(28, 28, 30, 0.6)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)',
-      marginBottom: 16, overflow: 'hidden'
+  card: {
+    backgroundColor: '#151518',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#282832',
+    marginBottom: 14,
   },
-  cardInner: { flexDirection: 'row', padding: 16, alignItems: 'center' },
-  iconContainer: {
-      width: 48, height: 48, borderRadius: 12, backgroundColor: 'rgba(229, 9, 20, 0.1)', 
-      justifyContent: 'center', alignItems: 'center', marginRight: 16, borderWidth: 1, borderColor: 'rgba(229, 9, 20, 0.2)'
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
-  cardContent: { flex: 1 },
-  cardTitle: { color: 'white', fontSize: 15, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 8, lineHeight: 20 },
-  statsContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  statPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  statText: { color: '#AAA', fontSize: 12, fontFamily: 'GoogleSansFlex-Medium' },
-  dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#555' },
-  sizeText: { color: '#AAA', fontSize: 12, fontFamily: 'GoogleSansFlex-Medium' },
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
-  tagText: { fontSize: 10, fontFamily: 'GoogleSansFlex-Bold' },
-  tagSource: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  tagSourceText: { color: '#CCC', fontSize: 10, fontFamily: 'GoogleSansFlex-Medium' },
-  actionRow: {
-      flexDirection: 'row', backgroundColor: 'rgba(0, 0, 0, 0.2)', padding: 12,
-      borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.05)', justifyContent: 'space-between', alignItems: 'center'
+  qualityBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
   },
-  shareBtn: { padding: 10, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.05)', width: 44, alignItems: 'center' },
-  downloadBtn: {
-      flex: 1, marginLeft: 12, backgroundColor: '#E50914', borderRadius: 10,
-      flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 10, gap: 8
+  qualityText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
-  downloadText: { color: 'white', fontFamily: 'GoogleSansFlex-Bold', fontSize: 14 },
+  sourceBadge: {
+    backgroundColor: '#1E1E24',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  sourceText: {
+    color: '#A8A8B6',
+    fontSize: 10.5,
+    fontWeight: '600',
+  },
+  cardTitle: {
+    color: '#FAFAFA',
+    fontSize: 13.5,
+    fontWeight: '600',
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+    gap: 8,
+  },
+  statPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statValue: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#A8A8B6',
+  },
+  dotSeparator: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#555',
+  },
+  sizeText: {
+    color: '#FAFAFA',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  cardActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  shareFileBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1E1E24',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#282832',
+  },
+  shareFileText: {
+    color: '#E5E5EB',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  copyMagnetBtn: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1E1E24',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#282832',
+  },
+  openMagnetBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E50914',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  openMagnetText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   loaderContainer: { marginTop: 50, alignItems: 'center' },
   loadingText: { color: '#666', marginTop: 16 },
   emptyState: { alignItems: 'center', marginTop: 50 },

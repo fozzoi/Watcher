@@ -16,7 +16,9 @@
         "backgroundColor": "#000000"
       },
       "package": "com.thewatcher.dev",
-      "runtimeVersion": "1.0.1",
+      "runtimeVersion": {
+        "policy": "appVersion"
+      },
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",

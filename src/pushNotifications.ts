@@ -220,7 +220,6 @@ export async function sendTestRemotePushNotification(): Promise<RemotePushTestRe
     'https://exp.host/--/api/v2/push/send',
     {
       to: token,
-      sound: 'default',
       title: 'Watcher Remote Push Test 🍿',
       body: 'Remote push notifications are connected! You will now receive alerts when closed.',
       data: { mediaId: 27205, mediaType: 'movie' },

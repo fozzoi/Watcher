@@ -1,469 +1,283 @@
-import React, { memo, useState, useCallback, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  Dimensions, 
-  Platform, 
-  ImageSourcePropType 
-} from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, Animated, AppState, Easing, PanResponder, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  useAnimatedScrollHandler,
-  interpolate, 
-  Extrapolation,
-  runOnJS,
-  SharedValue
-} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
-import { getImageUrl, TMDBResult } from '../../tmdb';
+import { getImageUrl, type TMDBResult } from '../../tmdb';
 import QuickAddButton from '../shared/QuickAddButton';
 import { HERO_HEIGHT, HORIZONTAL_MARGIN } from './ExploreConstants';
 
-const { width } = Dimensions.get('window');
-const CARD_WIDTH = width - HORIZONTAL_MARGIN * 2;
-const PARALLAX_FACTOR = 0.22;
-const AUTOPLAY_INTERVAL = 4500;
+const MAX_SLIDES = 8;
+const AUTOPLAY_MS = 5000;
+const C = {
+  base: '#0C0D0F',
+  text: '#F5F5F5',
+  muted: 'rgba(245,245,245,0.7)',
+  accent: '#E50914',
+  idle: 'rgba(245,245,245,0.3)',
+  glass: 'rgba(255,255,255,0.14)',
+};
+const PAD = 22; // one left/right inset for everything
+const RADIUS = 24;
 
-// ── Single Hero Slide with Parallax ──────────────────────────────────────────
-interface HeroSlideProps {
-  item: TMDBResult;
-  index: number;
-  scrollX: SharedValue<number>;
-  cardWidth: number;
-  cardHeight: number;
-  isAdded: boolean;
-  onToggleWatchlist: (item: TMDBResult) => void;
-  onPress: (item: TMDBResult) => void;
-}
+// Liquid indicator geometry
+const DOT = 6;
+const PITCH = 16; // distance between dot origins
+const ACTIVE_W = 14; // resting width of the red blob
+const BLOB_INSET = (PITCH - ACTIVE_W) / 2; // centres the blob in its slot, same as the dot
+const HIT_H = 32;
 
-const HeroSlide = memo(({
-  item,
+type Props = {
+  items: TMDBResult[];
+  savedIds: Set<number>;
+  toggleWatchlist: (item: TMDBResult) => void;
+  isLoading?: boolean;
+};
+
+// ── Liquid indicator ─────────────────────────────────────────────────────────
+// One red blob slides over idle dots. Its two edges are separate springs:
+// the leading edge shoots ahead, the trailing edge lags, so the blob stretches
+// and then snaps back like a droplet. Width/left are layout props, so JS driver.
+const LiquidIndicator = memo(function LiquidIndicator({
+  items,
   index,
-  scrollX,
-  cardWidth,
-  cardHeight,
-  isAdded,
-  onToggleWatchlist,
-  onPress,
-}: HeroSlideProps) => {
-  const inputRange = [
-    (index - 1) * cardWidth,
-    index * cardWidth,
-    (index + 1) * cardWidth,
-  ];
-
-  // Fluid parallax image translation
-  const imageAnimatedStyle = useAnimatedStyle(() => {
-    const translateX = interpolate(
-      scrollX.value,
-      inputRange,
-      [-cardWidth * PARALLAX_FACTOR, 0, cardWidth * PARALLAX_FACTOR],
-      Extrapolation.CLAMP
-    );
-    const scale = interpolate(
-      scrollX.value,
-      inputRange,
-      [1.08, 1, 1.08],
-      Extrapolation.CLAMP
-    );
-    return {
-      transform: [{ translateX }, { scale }],
-    };
-  });
-
-  const title = item.title || item.name || '';
-  const year = (item.release_date || item.first_air_date || '').substring(0, 4);
-  const rating = item.vote_average ? item.vote_average.toFixed(1) : 'N/A';
-  const posterUri = getImageUrl(item.poster_path, 'w780');
-
-  return (
-    <View style={[styles.slideContainer, { width: cardWidth, height: cardHeight }]}>
-      {/* Background Image with Parallax Mask */}
-      <View style={[styles.imageMask, { width: cardWidth, height: cardHeight }]}>
-        <Animated.Image
-          source={{ uri: posterUri }}
-          style={[
-            styles.parallaxImage,
-            {
-              width: cardWidth * (1 + PARALLAX_FACTOR * 2),
-              height: cardHeight,
-            },
-            imageAnimatedStyle,
-          ]}
-          contentFit="cover"
-        />
-      </View>
-
-      {/* Interactive Overlay */}
-      <TouchableOpacity
-        activeOpacity={0.95}
-        onPress={() => onPress(item)}
-        style={StyleSheet.absoluteFill}
-      >
-        {/* Quick Add Button */}
-        <View style={styles.addBtn}>
-          <QuickAddButton isAdded={isAdded} onPress={() => onToggleWatchlist(item)} />
-        </View>
-
-        {/* Cinematic Bottom Gradient + Text Details */}
-        <LinearGradient
-          colors={['transparent', 'rgba(10,10,10,0.45)', 'rgba(10,10,10,0.96)']}
-          locations={[0, 0.45, 1]}
-          style={styles.gradient}
-        >
-          <Text style={styles.title} numberOfLines={2}>{title}</Text>
-          <View style={styles.metaRow}>
-            <View style={styles.ratingBadge}>
-              <Ionicons name="star" size={13} color="#FFD700" />
-              <Text style={styles.ratingText}>{rating}</Text>
-            </View>
-            {year ? <Text style={styles.year}>{year}</Text> : null}
-          </View>
-        </LinearGradient>
-      </TouchableOpacity>
-    </View>
-  );
-});
-
-// ── Fluid Continuous Dynamic Indicator Dots ──────────────────────────────────
-interface IndicatorDotProps {
+  reduceMotion,
+  onSelect,
+}: {
+  items: TMDBResult[];
   index: number;
-  scrollX: SharedValue<number>;
-  cardWidth: number;
-  onPress: (index: number) => void;
-}
+  reduceMotion: boolean;
+  onSelect: (i: number) => void;
+}) {
+  const left = useRef(new Animated.Value(index * PITCH + BLOB_INSET)).current;
+  const right = useRef(new Animated.Value(index * PITCH + BLOB_INSET + ACTIVE_W)).current;
+  const prev = useRef(index);
 
-const IndicatorDot = memo(({ index, scrollX, cardWidth, onPress }: IndicatorDotProps) => {
-  const dotAnimatedStyle = useAnimatedStyle(() => {
-    const inputRange = [
-      (index - 1) * cardWidth,
-      index * cardWidth,
-      (index + 1) * cardWidth,
-    ];
+  useEffect(() => {
+    const from = prev.current;
+    prev.current = index;
+    const toL = index * PITCH + BLOB_INSET;
+    const toR = toL + ACTIVE_W;
+    left.stopAnimation();
+    right.stopAnimation();
+    if (reduceMotion || from === index) {
+      left.setValue(toL);
+      right.setValue(toR);
+      return;
+    }
+    const forward = index > from;
+    const fast = { stiffness: 320, damping: 24, mass: 0.7 };
+    const slow = { stiffness: 130, damping: 19, mass: 0.9 };
+    Animated.parallel([
+      Animated.spring(right, { toValue: toR, ...(forward ? fast : slow), useNativeDriver: false }),
+      Animated.spring(left, { toValue: toL, ...(forward ? slow : fast), useNativeDriver: false }),
+    ]).start();
+  }, [index, reduceMotion, left, right]);
 
-    const widthVal = interpolate(
-      scrollX.value,
-      inputRange,
-      [6, 22, 6],
-      Extrapolation.CLAMP
-    );
-
-    const opacity = interpolate(
-      scrollX.value,
-      inputRange,
-      [0.35, 1, 0.35],
-      Extrapolation.CLAMP
-    );
-
-    return {
-      width: widthVal,
-      opacity,
-      backgroundColor: widthVal > 10 ? '#E50914' : 'rgba(255, 255, 255, 0.65)',
-    };
-  });
+  const width = useMemo(() => Animated.subtract(right, left), [left, right]);
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.7}
-      onPress={() => onPress(index)}
-      hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
-      style={styles.dotTouchable}
-    >
-      <Animated.View style={[styles.dot, dotAnimatedStyle]} />
-    </TouchableOpacity>
-  );
-});
-
-interface FluidIndicatorProps {
-  count: number;
-  scrollX: SharedValue<number>;
-  cardWidth: number;
-  onSelect: (index: number) => void;
-}
-
-const FluidIndicator = memo(({ count, scrollX, cardWidth, onSelect }: FluidIndicatorProps) => {
-  return (
-    <View style={styles.indicatorWrapper} pointerEvents="box-none">
-      <View style={styles.indicatorPill}>
-        {Array.from({ length: count }).map((_, i) => (
-          <IndicatorDot
-            key={i}
-            index={i}
-            scrollX={scrollX}
-            cardWidth={cardWidth}
-            onPress={onSelect}
-          />
+    <View style={{ width: items.length * PITCH, height: HIT_H }}>
+      <View style={styles.dotRow}>
+        {items.map((item, i) => (
+          <Pressable
+            key={`${item.id}-${i}`}
+            style={styles.dotHit}
+            onPress={() => onSelect(i)}
+            accessibilityRole="button"
+            accessibilityLabel={`Show ${item.title || item.name}`}
+            accessibilityState={{ selected: i === index }}
+          >
+            <View style={styles.dot} />
+          </Pressable>
         ))}
       </View>
+      <Animated.View pointerEvents="none" style={[styles.blob, { left, width }]} />
     </View>
   );
 });
 
-// ── Main Hero Section Component ──────────────────────────────────────────────
-interface HeroSectionProps {
-  items: TMDBResult[];
-  toggleWatchlist: (item: TMDBResult) => void;
-  savedIds: Set<number>;
-}
+// ── Slide ────────────────────────────────────────────────────────────────────
+const FilmLayer = memo(function FilmLayer({ item, active, reduceMotion, width, height, isAdded, onToggle, onPress }: {
+  item: TMDBResult; active: boolean; reduceMotion: boolean; width: number; height: number; isAdded: boolean;
+  onToggle: (item: TMDBResult) => void; onPress: (item: TMDBResult) => void;
+}) {
+  const opacity = useRef(new Animated.Value(active ? 1 : 0)).current;
+  const zoom = useRef(new Animated.Value(1.08)).current;
+  const reveal = useRef(new Animated.Value(active ? 1 : 0)).current;
 
-const HeroSection = memo(({ items, toggleWatchlist, savedIds }: HeroSectionProps) => {
-  const router = useRouter();
-  const scrollX = useSharedValue(0);
-  const flatListRef = useRef<Animated.FlatList<any>>(null);
-  const autoplayTimer = useRef<NodeJS.Timeout | null>(null);
-  const autoplayRestartTimer = useRef<NodeJS.Timeout | null>(null);
-  const currentIndexRef = useRef(0);
-
-  const slicedItems = items && items.length > 0 ? items.slice(0, 8) : [];
-  const itemCount = slicedItems.length;
-
-  const triggerHaptic = useCallback(() => {
-    if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  useEffect(() => {
+    opacity.stopAnimation(); zoom.stopAnimation(); reveal.stopAnimation();
+    if (reduceMotion) { opacity.setValue(active ? 1 : 0); zoom.setValue(1); reveal.setValue(active ? 1 : 0); return; }
+    if (active) {
+      zoom.setValue(1.08); reveal.setValue(0);
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 1, duration: 850, useNativeDriver: true }),
+        Animated.timing(zoom, { toValue: 1, duration: AUTOPLAY_MS + 1200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.sequence([
+          Animated.delay(180),
+          Animated.timing(reveal, { toValue: 1, duration: 650, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        ]),
+      ]).start();
+    } else {
+      Animated.timing(opacity, { toValue: 0, duration: 650, useNativeDriver: true }).start();
     }
-  }, []);
+    return () => { opacity.stopAnimation(); zoom.stopAnimation(); reveal.stopAnimation(); };
+  }, [active, reduceMotion, opacity, zoom, reveal]);
 
-  const updateCurrentIndex = (idx: number) => {
-    currentIndexRef.current = idx;
-  };
-
-  // Continuous real-time scroll handler
-  const onScroll = useAnimatedScrollHandler({
-    onScroll: (event) => {
-      scrollX.value = event.contentOffset.x;
-    },
-    onMomentumEnd: (event) => {
-      const idx = Math.round(event.contentOffset.x / CARD_WIDTH);
-      runOnJS(updateCurrentIndex)(idx);
-    },
-  });
-
-  // Autoplay controls
-  const stopAutoplay = useCallback(() => {
-    if (autoplayTimer.current) {
-      clearInterval(autoplayTimer.current);
-      autoplayTimer.current = null;
-    }
-    if (autoplayRestartTimer.current) {
-      clearTimeout(autoplayRestartTimer.current);
-      autoplayRestartTimer.current = null;
-    }
-  }, []);
-
-  const startAutoplay = useCallback(() => {
-    stopAutoplay();
-    if (itemCount <= 1) return;
-
-    autoplayTimer.current = setInterval(() => {
-      const nextIndex = (currentIndexRef.current + 1) % itemCount;
-      currentIndexRef.current = nextIndex;
-      flatListRef.current?.scrollToOffset({
-        offset: nextIndex * CARD_WIDTH,
-        animated: true,
-      });
-    }, AUTOPLAY_INTERVAL);
-  }, [itemCount, stopAutoplay]);
-
-  const restartAutoplayAfter = useCallback((delay: number) => {
-    if (autoplayRestartTimer.current) clearTimeout(autoplayRestartTimer.current);
-    autoplayRestartTimer.current = setTimeout(() => {
-      autoplayRestartTimer.current = null;
-      startAutoplay();
-    }, delay);
-  }, [startAutoplay]);
-
-  // Restart autoplay after user interaction
-  const handleScrollBeginDrag = useCallback(() => {
-    stopAutoplay();
-  }, [stopAutoplay]);
-
-  const handleScrollEndDrag = useCallback(() => {
-    stopAutoplay();
-    restartAutoplayAfter(1500);
-  }, [restartAutoplayAfter, stopAutoplay]);
-
-  const handleMomentumScrollEnd = useCallback((e: any) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
-    currentIndexRef.current = idx;
-    stopAutoplay();
-    restartAutoplayAfter(2000);
-  }, [restartAutoplayAfter, stopAutoplay]);
-
-  useFocusEffect(useCallback(() => {
-    startAutoplay();
-    return () => stopAutoplay();
-  }, [startAutoplay, stopAutoplay]));
-
-  const handleSlideSelect = useCallback((index: number) => {
-    stopAutoplay();
-    triggerHaptic();
-    currentIndexRef.current = index;
-    flatListRef.current?.scrollToOffset({
-      offset: index * CARD_WIDTH,
-      animated: true,
-    });
-    restartAutoplayAfter(3000);
-  }, [restartAutoplayAfter, stopAutoplay, triggerHaptic]);
-
-  const handleMoviePress = useCallback((item: TMDBResult) => {
-    const mType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
-    router.push(`/movie/${item.id}?media_type=${mType}`);
-  }, [router]);
-
-  if (itemCount === 0) return null;
+  const title = item.title || item.name || '';
+  const year = (item.release_date || item.first_air_date || '').slice(0, 4);
+  const rating = item.vote_average ? item.vote_average.toFixed(1) : null;
+  const kind = item.media_type === 'tv' || item.first_air_date ? 'Series' : 'Film';
 
   return (
-    <View style={[styles.root, { marginHorizontal: HORIZONTAL_MARGIN }]}>
-      <Animated.FlatList
-        ref={flatListRef}
-        data={slicedItems}
-        keyExtractor={(item) => `hero-${item.id}`}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        snapToInterval={CARD_WIDTH}
-        snapToAlignment="center"
-        decelerationRate={Platform.OS === 'ios' ? 'fast' : 0.92}
-        disableIntervalMomentum={true}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        onScrollBeginDrag={handleScrollBeginDrag}
-        onScrollEndDrag={handleScrollEndDrag}
-        onMomentumScrollEnd={handleMomentumScrollEnd}
-        renderItem={({ item, index }) => (
-          <HeroSlide
-            item={item}
-            index={index}
-            scrollX={scrollX}
-            cardWidth={CARD_WIDTH}
-            cardHeight={HERO_HEIGHT}
-            isAdded={savedIds.has(item.id)}
-            onToggleWatchlist={toggleWatchlist}
-            onPress={handleMoviePress}
-          />
-        )}
-      />
+    <Animated.View
+      pointerEvents={active ? 'auto' : 'none'}
+      accessibilityElementsHidden={!active}
+      importantForAccessibility={active ? 'auto' : 'no-hide-descendants'}
+      style={[StyleSheet.absoluteFill, { opacity }]}
+    >
+      <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ scale: zoom }] }]}>
+        <Image source={{ uri: getImageUrl(item.poster_path, 'w780') }} contentFit="cover" cachePolicy="memory-disk" style={{ width, height }} accessible={false} />
+      </Animated.View>
 
-      {/* Fluid Real-time Dot Indicator */}
-      <FluidIndicator
-        count={itemCount}
-        scrollX={scrollX}
-        cardWidth={CARD_WIDTH}
-        onSelect={handleSlideSelect}
+      <LinearGradient
+        colors={['transparent', 'rgba(12,13,15,0.55)', C.base]}
+        locations={[0.2, 0.62, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
       />
+      <Pressable style={StyleSheet.absoluteFill} onPress={() => onPress(item)} accessibilityRole="button" accessibilityLabel={`Open ${title}`} />
+
+      <Animated.View
+        pointerEvents="box-none"
+        style={[styles.copy, { opacity: reveal, transform: [{ translateY: reveal.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }]}
+      >
+        <View style={styles.titleRow}>
+          <Text style={styles.title} numberOfLines={2}>{title}</Text>
+          <QuickAddButton isAdded={isAdded} onPress={() => onToggle(item)} />
+        </View>
+        <View style={styles.meta}>
+          {rating ? (
+            <View style={styles.rating}>
+              <Ionicons name="star" size={12} color={C.text} />
+              <Text style={styles.metaText}>{rating}</Text>
+            </View>
+          ) : null}
+          {year ? <Text style={styles.metaText}>{year}</Text> : null}
+          <Text style={styles.metaText}>{kind}</Text>
+        </View>
+      </Animated.View>
+    </Animated.View>
+  );
+});
+
+// ── Section ──────────────────────────────────────────────────────────────────
+export default memo(function HeroSection({ items, savedIds, toggleWatchlist, isLoading = false }: Props) {
+  const router = useRouter();
+  const { width: screenWidth } = useWindowDimensions();
+  const width = Math.max(1, screenWidth - HORIZONTAL_MARGIN * 2);
+  const slides = useMemo(() => items.slice(0, MAX_SLIDES), [items]);
+  const [index, setIndex] = useState(0);
+  const [userPaused, setUserPaused] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  const [reduceMotion, setReduceMotion] = useState(true);
+  const paused = userPaused || dragging;
+  const activeIndex = slides.length ? Math.min(index, slides.length - 1) : 0;
+
+  useEffect(() => { setIndex((p) => Math.min(p, Math.max(0, slides.length - 1))); }, [slides.length]);
+
+  useEffect(() => {
+    let alive = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((v) => { if (alive) setReduceMotion(v); }).catch(() => {});
+    const motion = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    const state = AppState.addEventListener('change', (v) => setForeground(v === 'active'));
+    return () => { alive = false; motion.remove(); state.remove(); };
+  }, []);
+
+  useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
+
+  useEffect(() => {
+    if (!focused || !foreground || paused || reduceMotion || isLoading || slides.length < 2) return;
+    const t = setTimeout(() => setIndex((p) => (p + 1) % slides.length), AUTOPLAY_MS);
+    return () => clearTimeout(t);
+  }, [focused, foreground, paused, reduceMotion, isLoading, slides.length, index]);
+
+  const move = useCallback((d: number) => {
+    if (slides.length > 1) setIndex((p) => (p + d + slides.length) % slides.length);
+  }, [slides.length]);
+
+  const pan = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 15 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onPanResponderGrant: () => setDragging(true),
+    onPanResponderRelease: (_, g) => { if (Math.abs(g.dx) > 40) move(g.dx < 0 ? 1 : -1); setDragging(false); },
+    onPanResponderTerminate: () => setDragging(false),
+  }), [move]);
+
+  const open = useCallback((item: TMDBResult) => {
+    const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+    router.push(`/movie/${item.id}?media_type=${mediaType}`);
+  }, [router]);
+
+  if (isLoading) return <View style={[styles.root, styles.skeleton, { width, height: HERO_HEIGHT }]} accessibilityLabel="Loading featured films" />;
+  if (!slides.length) return null;
+
+  return (
+    <View style={[styles.root, { width, height: HERO_HEIGHT }]} {...pan.panHandlers}>
+      {slides.map((item, i) => (
+        <FilmLayer
+          key={`${item.media_type || 'movie'}-${item.id}`}
+          item={item}
+          active={i === activeIndex}
+          reduceMotion={reduceMotion || !focused || !foreground}
+          width={width}
+          height={HERO_HEIGHT}
+          isAdded={savedIds.has(item.id)}
+          onToggle={toggleWatchlist}
+          onPress={open}
+        />
+      ))}
+
+      <View style={styles.controls}>
+        <View style={styles.indicatorSlot}>
+          <LiquidIndicator items={slides} index={activeIndex} reduceMotion={reduceMotion} onSelect={setIndex} />
+        </View>
+        <Pressable
+          style={styles.pause}
+          onPress={() => setUserPaused((v) => !v)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={userPaused ? 'Resume autoplay' : 'Pause autoplay'}
+        >
+          <Ionicons name={userPaused ? 'play' : 'pause'} size={14} color={C.text} />
+        </Pressable>
+      </View>
     </View>
   );
 });
 
-export default HeroSection;
-
 const styles = StyleSheet.create({
-  root: {
-    marginBottom: 12,
-    borderRadius: 22,
-    overflow: 'hidden',
-    position: 'relative',
-    backgroundColor: '#0A0A0A',
-  },
-  slideContainer: {
-    borderRadius: 22,
-    overflow: 'hidden',
-    position: 'relative',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  imageMask: {
-    borderRadius: 22,
-    overflow: 'hidden',
-    backgroundColor: '#141414',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  parallaxImage: {
-    backgroundColor: '#141414',
-  },
-  addBtn: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    zIndex: 15,
-  },
-  gradient: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '60%',
-    justifyContent: 'flex-end',
-    paddingHorizontal: 20,
-    paddingBottom: 34,
-    gap: 8,
-  },
-  title: {
-    color: '#FFFFFF',
-    fontSize: 25,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-    lineHeight: 30,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  ratingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 14,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  ratingText: {
-    color: '#FFFFFF',
-    fontSize: 12.5,
-    fontWeight: '700',
-  },
-  year: {
-    color: '#D0D0D0',
-    fontSize: 13.5,
-    fontWeight: '500',
-  },
-  indicatorWrapper: {
-    position: 'absolute',
-    bottom: 12,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 20,
-  },
-  indicatorPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(10, 10, 14, 0.65)',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    gap: 5,
-  },
-  dotTouchable: {
-    paddingVertical: 3,
-  },
-  dot: {
-    height: 4.5,
-    borderRadius: 3,
-  },
+  root: { marginHorizontal: HORIZONTAL_MARGIN, overflow: 'hidden', borderRadius: RADIUS, backgroundColor: C.base },
+  skeleton: { opacity: 0.7 },
+
+  // Overlay: one left edge, one rhythm (title, meta, actions, controls)
+  copy: { position: 'absolute', left: PAD, right: PAD, bottom: 60, alignItems: 'flex-start', gap: 8 },
+  titleRow: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 },
+  title: { flex: 1, color: C.text, fontSize: 22, lineHeight: 27, fontWeight: '700', letterSpacing: -0.4 },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  metaText: { color: C.muted, fontSize: 13, fontWeight: '500', fontVariant: ['tabular-nums'] },
+  rating: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+
+  controls: { position: 'absolute', left: PAD, right: PAD, bottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  indicatorSlot: { flex: 1, alignItems: 'flex-start' },
+  pause: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: C.glass },
+
+  // Liquid indicator
+  dotRow: { flexDirection: 'row' },
+  dotHit: { width: PITCH, height: HIT_H, justifyContent: 'center', alignItems: 'center' },
+  dot: { width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: C.idle },
+  blob: { position: 'absolute', top: (HIT_H - DOT) / 2, height: DOT, borderRadius: DOT / 2, backgroundColor: C.accent },
 });
