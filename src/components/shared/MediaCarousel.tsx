@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
@@ -15,7 +15,7 @@ const C = {
 
 interface MediaCarouselProps {
   title: string;
-  type?: string; // ✅ FIX 1: Added type to the interface
+  type?: string;
   data: any[];
   savedIds: Set<number>;
   toggleWatchlist: (item: any) => void;
@@ -42,11 +42,16 @@ const CarouselMovieCard = memo(({ item, isAdded, toggleWatchlist }: {
   );
 });
 
-// ✅ FIX 2: Destructured 'type' from the props
 const MediaCarousel = memo(({ title, type, data, savedIds, toggleWatchlist }: MediaCarouselProps) => {
   const router = useRouter();
 
-  if (!data || data.length === 0) return null;
+  // Filter out any null, corrupted, or poster-less items so no empty gaps appear between cards
+  const validData = useMemo(() => {
+    if (!Array.isArray(data)) return [];
+    return data.filter((item: any) => Boolean(item && item.id && (item.poster_path || item.backdrop_path)));
+  }, [data]);
+
+  if (!validData || validData.length === 0) return null;
 
   const SNAP_INTERVAL = EXPLORE_CARD_WIDTH + GAP_SIZE;
 
@@ -55,18 +60,17 @@ const MediaCarousel = memo(({ title, type, data, savedIds, toggleWatchlist }: Me
       <View style={[styles.sectionHeader, { paddingHorizontal: HORIZONTAL_MARGIN }]}>
         <Text style={styles.sectionTitle}>{title}</Text>
 
-        {/* ✅ FIX 3: Passed 'type' into the ViewAll navigation params */}
-        <TouchableOpacity activeOpacity={0.95} onPress={() => router.push(`/viewall?title=${encodeURIComponent(title)}&type=${encodeURIComponent(type)}`)}>
+        <TouchableOpacity activeOpacity={0.95} onPress={() => router.push(`/viewall?title=${encodeURIComponent(title)}&type=${encodeURIComponent(type || '')}`)}>
           <MaterialIcons name="chevron-right" size={24} color={C.mutedSoft} />
         </TouchableOpacity>
       </View>
       <FlashList
         horizontal
-        data={data}
+        data={validData}
         showsHorizontalScrollIndicator={false}
         bounces={true}
         contentContainerStyle={{ paddingHorizontal: HORIZONTAL_MARGIN }}
-        removeClippedSubviews={true}
+        removeClippedSubviews={false}
         keyExtractor={(item, index) => `${item.id}-${index}`}
         snapToInterval={SNAP_INTERVAL}
         snapToAlignment="start"

@@ -3,7 +3,6 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   StatusBar,
   TouchableOpacity,
@@ -14,7 +13,9 @@ import {
   Platform,
   ToastAndroid,
   Alert } from 'react-native';
+import { Image } from 'expo-image';
 import { hasSavedItem, addSavedItem, removeSavedItem } from '../../src/database';
+import { logTasteEvent, TASTE_WEIGHTS } from '../../src/services/tasteProfile';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
@@ -129,6 +130,15 @@ export default function CastDetails() {
       setPerson(personData);
       setPersonImages(imagesData);
 
+      if (personData?.id) {
+        logTasteEvent({
+          entity_type: 'cast',
+          entity_id: personData.id,
+          entity_name: personData.name,
+          weight: TASTE_WEIGHTS.VISIT_CAST_PAGE,
+        });
+      }
+
       const uniqueCredits = creditsData
         .filter((v, i, a) => a.findIndex((t) => t.id === v.id) === i)
         .sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
@@ -161,6 +171,12 @@ export default function CastDetails() {
           popularity: person.popularity,
         };
         addSavedItem(artistToSave, 'artist');
+        logTasteEvent({
+          entity_type: 'cast',
+          entity_id: person.id,
+          entity_name: person.name,
+          weight: TASTE_WEIGHTS.FAVORITE_ARTIST,
+        });
       } else {
         removeSavedItem(person.id, 'artist');
       }

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getForYouCachedShelves } from './database';
 
 // ==========================================
 // 1. GLOBAL CONFIGURATION & SETUP
@@ -449,6 +450,31 @@ export const getLanguageTV = async (language: string, page: number = 1, genreId?
     return data.results.map((item: any) => ({ ...formatBasicItemData(item), media_type: "tv" }));
   } catch (error) { return []; }
 };
+
+export const discoverMovies = async (params: Record<string, any> = {}, page: number = 1): Promise<TMDBResult[]> => {
+  try {
+    const data = await fetchWithCache("/discover/movie", { ...params, page });
+    return (data.results || []).map((item: any) => ({
+      ...formatBasicItemData(item),
+      media_type: "movie" as const,
+    }));
+  } catch (error) {
+    return [];
+  }
+};
+
+export const discoverTV = async (params: Record<string, any> = {}, page: number = 1): Promise<TMDBResult[]> => {
+  try {
+    const data = await fetchWithCache("/discover/tv", { ...params, page });
+    return (data.results || []).map((item: any) => ({
+      ...formatBasicItemData(item),
+      media_type: "tv" as const,
+    }));
+  } catch (error) {
+    return [];
+  }
+};
+
 
 const ANIME_GENRE_ID = 16;
 const ANIME_KEYWORD_ID = 210024;
@@ -967,7 +993,7 @@ const fetchFreshPersonalisedContent = async (
     });
     const heroMovies = releasedTrending.length >= 5 
       ? releasedTrending.slice(0, 10) 
-      : base[0].filter((m: any) => m.release_date && m.release_date <= todayStr).slice(0, 10);
+      : base[0].filter((m: any) => m.release_date && m.release_date <= todayStr && m.poster_path).slice(0, 10);
 
     let personalizedTrending = [...base[0]];
     if (langSlice.length > 0) {
@@ -1016,6 +1042,29 @@ export const fetchMoreContentByType = async (type: string, page: number = 1): Pr
       const credits = await getPersonCombinedCredits(actorId);
       return credits.filter((item: any) => item.poster_path);
     } catch { return []; }
+  }
+  if (type.startsWith('foryou-person-')) {
+    const personId = parseInt(type.replace('foryou-person-', ''));
+    try {
+      const credits = await getPersonCombinedCredits(personId);
+      return credits.filter((item: any) => item.poster_path);
+    } catch { return []; }
+  }
+  if (type === 'foryou-saga-all') {
+    try {
+      const cached = getForYouCachedShelves();
+      const sagaShelf = cached.find((s) => s.shelfId === 'saga-all');
+      return sagaShelf?.items || [];
+    } catch { return []; }
+  }
+  if (type.startsWith('foryou-saga-')) {
+    const colId = parseInt(type.replace('foryou-saga-', ''));
+    if (!isNaN(colId)) {
+      try {
+        const col = await getCollectionDetails(colId);
+        return col?.parts || [];
+      } catch { return []; }
+    }
   }
 
   switch (type.toLowerCase()) {

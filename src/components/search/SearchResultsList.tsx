@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { getImageUrl } from '../../tmdb';
 import MovieCard from '../shared/MovieCard';
 import { HORIZONTAL_MARGIN } from '../explore/ExploreConstants';
+import { logTasteEvent, TASTE_WEIGHTS } from '../../services/tasteProfile';
 
 interface SearchResultsListProps {
   peopleResults: any[];
@@ -42,7 +43,19 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
               contentContainerStyle={{ paddingHorizontal: 4 }}
               keyboardDismissMode="on-drag"
               renderItem={({ item }) => (
-                <TouchableOpacity activeOpacity={0.95} style={styles.personItem} onPress={() => router.push(`/cast/${item.id}`)}>
+                <TouchableOpacity
+                  activeOpacity={0.95}
+                  style={styles.personItem}
+                  onPress={() => {
+                    logTasteEvent({
+                      entity_type: 'cast',
+                      entity_id: item.id,
+                      entity_name: item.name,
+                      weight: TASTE_WEIGHTS.SEARCH_CLICK,
+                    });
+                    router.push(`/cast/${item.id}`);
+                  }}
+                >
                   <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.personImage} />
                   <Text style={styles.personName} numberOfLines={1}>{item.name}</Text>
                 </TouchableOpacity>
@@ -87,6 +100,13 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
                   key={result.id} item={result} isSearchMode={true} isAdded={savedIds.has(result.id)} toggleWatchlist={toggleWatchlist}
                   onPress={() => {
                     const mType = result.media_type || (result.first_air_date ? 'tv' : 'movie');
+                    logTasteEvent({
+                      entity_type: mType,
+                      entity_id: result.id,
+                      entity_name: result.title || result.name,
+                      genres: result.genre_ids,
+                      weight: TASTE_WEIGHTS.SEARCH_CLICK,
+                    });
                     router.push(`/movie/${result.id}?media_type=${mType}`);
                   }}
                 />

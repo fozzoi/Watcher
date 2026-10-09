@@ -32,6 +32,15 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSavedItems, addSavedItem, removeSavedItem, hasSavedItem } from '../../src/database';
 import {
+  getForYouShelvesSync,
+  subscribeToForYouShelves,
+  refreshForYouShelvesIfNeeded,
+  ForYouShelf,
+  logTasteEvent,
+  TASTE_WEIGHTS,
+  isMediaReleased,
+} from '../../src/services/tasteProfile';
+import {
   fetchPersonalisedDiscoveryContent,
   getSimilarForHistory,
   searchTMDB,
@@ -67,8 +76,11 @@ const SkeletonCarousel = () => (
 );
 
 const filterWatched = (list: any[], wIds: Set<number>) => {
-  if (!list) return [];
-  return list.filter((item: any) => !wIds.has(item.id));
+  if (!list || !Array.isArray(list)) return [];
+  return list.filter(
+    (item: any) =>
+      Boolean(item && item.id && (item.poster_path || item.backdrop_path) && !wIds.has(item.id))
+  );
 };
 
 type ExploreSection = { key: string; title: string; type: string; data: any[] };
@@ -91,6 +103,20 @@ const ExplorePage = () => {
 
   const [rawContent, setRawContent] = useState<any>(null);
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
+
+  // Instant <5ms synchronous read from SQLite for_you_cache
+  const [forYouShelves, setForYouShelves] = useState<ForYouShelf[]>(() => {
+    return getForYouShelvesSync();
+  });
+
+  useEffect(() => {
+    const unsubscribe = subscribeToForYouShelves((updatedShelves) => {
+      setForYouShelves(updatedShelves);
+    });
+    // Silent idle background refresh if stale (> 12h) or empty
+    refreshForYouShelvesIfNeeded();
+    return () => unsubscribe();
+  }, []);
 
   // Pagination states
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -217,6 +243,22 @@ const ExplorePage = () => {
         removeSavedItem(item.id, type);
       } else {
         addSavedItem(item, type);
+        if (isPerson) {
+          logTasteEvent({
+            entity_type: 'cast',
+            entity_id: item.id,
+            entity_name: item.name,
+            weight: TASTE_WEIGHTS.FAVORITE_ARTIST,
+          });
+        } else {
+          logTasteEvent({
+            entity_type: item.media_type || (item.first_air_date ? 'tv' : 'movie'),
+            entity_id: item.id,
+            entity_name: item.title || item.name,
+            genres: item.genre_ids,
+            weight: TASTE_WEIGHTS.WATCHLIST_ADD,
+          });
+        }
       }
       setSavedIds((prev) => {
         const n = new Set(prev);
@@ -236,7 +278,10 @@ const ExplorePage = () => {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchContent(selectedGenre, true);
+      await Promise.all([
+        fetchContent(selectedGenre, true),
+        refreshForYouShelvesIfNeeded(true),
+      ]);
     } finally {
       setRefreshing(false);
     }
@@ -302,14 +347,43 @@ const ExplorePage = () => {
     [becauseYouWatched, watchedIds]
   );
 
+  const filteredForYouSections = useMemo(
+    () => {
+      const todayStr = new Date().toISOString().split('T')[0];
+      return forYouShelves
+        .map((shelf) => ({
+          key: `foryou-${shelf.shelfId}`,
+          title: shelf.title,
+          type: `foryou-${shelf.shelfId}`,
+          data: filterWatched(shelf.items, watchedIds).filter((item: any) => isMediaReleased(item, todayStr)),
+        }))
+        .filter((section) => section.data.length > 0);
+    },
+    [forYouShelves, watchedIds]
+  );
+
   const exploreSections = useMemo(() => {
-    const sections: ExploreSection[] = [
-      { key: 'trending-movies', title: 'Trending Movies', type: 'trendingmovies', data: allContent.trendingMovies },
+    const sections: ExploreSection[] = [];
+
+    const sagaShelves = filteredForYouSections.filter((s) => s.key.startsWith('foryou-saga'));
+    const otherForYouShelves = filteredForYouSections.filter((s) => !s.key.startsWith('foryou-saga'));
+
+    // 1. Franchise continuation rails ("Continue The Sagas", plus individual franchise spotlights)
+    sagaShelves.forEach((shelf) => sections.push(shelf));
+
+    // 2. Trending Movies
+    sections.push({ key: 'trending-movies', title: 'Trending Movies', type: 'trendingmovies', data: allContent.trendingMovies });
+
+    // 3. Personalized For You rails ("Your Sweet Spot", "Because You Follow [Person]", "Top Picks For You")
+    otherForYouShelves.forEach((shelf) => sections.push(shelf));
+
+    // 4. Curated explore rails
+    sections.push(
       { key: 'upcoming', title: 'Coming Soon', type: 'upcoming', data: allContent.upcoming },
       { key: 'trending-tv', title: 'Trending TV Shows', type: 'trendingtv', data: allContent.trendingTV },
       { key: 'top-rated', title: 'Top Rated Movies', type: 'toprated', data: allContent.topRated },
       { key: 'hidden-gems', title: 'Hidden Gems', type: 'hiddengems', data: allContent.hiddenGems },
-    ];
+    );
 
     Object.entries(allContent.langData || {}).forEach(([langCode, languageData]: [string, any]) => {
       const language = LANGUAGE_OPTIONS.find((option) => option.code === langCode);
@@ -343,7 +417,7 @@ const ExplorePage = () => {
 
     filteredBecauseYouWatched.forEach((section) => sections.push(section));
     return sections.filter((section) => section.data.length > 0);
-  }, [allContent, filteredBecauseYouWatched]);
+  }, [allContent, filteredBecauseYouWatched, filteredForYouSections]);
 
   const paginatedSections = useMemo(() => {
     return exploreSections.slice(0, visibleCount);
@@ -494,7 +568,6 @@ const ExplorePage = () => {
         data={contentLoading ? [] : paginatedSections}
         renderItem={renderExploreSection}
         keyExtractor={(item) => item.key}
-        estimatedItemSize={280}
         overrideItemLayout={overrideItemLayout}
         drawDistance={Math.max(SCREEN_HEIGHT * 2.5, 1800)}
         removeClippedSubviews={false}

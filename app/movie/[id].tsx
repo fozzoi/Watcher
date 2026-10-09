@@ -40,6 +40,7 @@ import {
   hasSavedItem,
   subscribeToSavedItemsChanges,
 } from '../../src/database';
+import { logTasteEvent, TASTE_WEIGHTS } from '../../src/services/tasteProfile';
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -548,6 +549,13 @@ export default function DetailPage() {
       removeSavedItem(movie.id, 'watchlist');
     } else {
       addSavedItem(movie, 'watchlist');
+      logTasteEvent({
+        entity_type: movie.media_type === 'tv' ? 'tv' : 'movie',
+        entity_id: movie.id,
+        entity_name: movie.title || movie.name,
+        genres: movie.genres,
+        weight: TASTE_WEIGHTS.WATCHLIST_ADD,
+      });
     }
     setIsInWatchlist(!exists);
     if (Platform.OS === 'android') {
@@ -564,6 +572,13 @@ export default function DetailPage() {
       setIsWatched(false);
     } else {
       addSavedItem(movie, 'history');
+      logTasteEvent({
+        entity_type: movie.media_type === 'tv' ? 'tv' : 'movie',
+        entity_id: movie.id,
+        entity_name: movie.title || movie.name,
+        genres: movie.genres,
+        weight: TASTE_WEIGHTS.COMPLETED_WATCH,
+      });
       setIsWatched(true);
 
       // Automatically un-toggle Watchlist
@@ -1186,6 +1201,8 @@ export default function DetailPage() {
         title={movie?.title || movie?.name || ''}
         year={(movie?.release_date || movie?.first_air_date)?.slice(0, 4)}
         mediaType={movie?.media_type}
+        tmdbId={movie?.id}
+        genres={movie?.genres}
       />
     </View>
   );

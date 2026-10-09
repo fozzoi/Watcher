@@ -18,6 +18,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { searchTorrents, TorrentResult } from '../../Scraper';
+import { logTasteEvent, TASTE_WEIGHTS } from '../../services/tasteProfile';
 
 interface MovieTorrentModalProps {
   visible: boolean;
@@ -25,6 +26,8 @@ interface MovieTorrentModalProps {
   title: string;
   year?: string;
   mediaType?: string;
+  tmdbId?: number;
+  genres?: any[];
 }
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -63,6 +66,8 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
   onClose,
   title,
   year,
+  tmdbId,
+  genres,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<TorrentResult[]>([]);
@@ -107,6 +112,15 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
   }, [visible, title, year, runSearch]);
 
   const handleOpenMagnet = useCallback(async (magnetUrl: string) => {
+    if (tmdbId) {
+      logTasteEvent({
+        entity_type: 'download',
+        entity_id: tmdbId,
+        entity_name: title,
+        genres,
+        weight: TASTE_WEIGHTS.TORRENT_DOWNLOAD,
+      });
+    }
     try {
       const supported = await Linking.canOpenURL(magnetUrl);
       if (supported) {
@@ -119,7 +133,7 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
       await Clipboard.setStringAsync(magnetUrl);
       showToast('Magnet link copied to clipboard!');
     }
-  }, [showToast]);
+  }, [showToast, tmdbId, title, genres]);
 
   const handleCopyMagnet = useCallback(async (magnetUrl: string) => {
     await Clipboard.setStringAsync(magnetUrl);
@@ -127,6 +141,15 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
   }, [showToast]);
 
   const handleShareAsFile = useCallback(async (url: string, fileName: string) => {
+    if (tmdbId) {
+      logTasteEvent({
+        entity_type: 'download',
+        entity_id: tmdbId,
+        entity_name: title,
+        genres,
+        weight: TASTE_WEIGHTS.TORRENT_DOWNLOAD,
+      });
+    }
     const match = url.match(/urn:btih:([a-fA-F0-9]{40})/i);
     if (!match) {
       showToast('No valid hash found in magnet link.');
