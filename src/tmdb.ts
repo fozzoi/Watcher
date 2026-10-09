@@ -283,8 +283,15 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
     requestCache.delete(cacheKey);
   }
    
+  const MAX_REQUEST_CACHE_ENTRIES = 60;
+
   try {
     const response = await tmdbApi.get(endpoint, { params });
+    // Enforce LRU cap so memory stays under ~2MB
+    if (requestCache.size >= MAX_REQUEST_CACHE_ENTRIES) {
+      const oldestKey = requestCache.keys().next().value;
+      if (oldestKey) requestCache.delete(oldestKey);
+    }
     requestCache.set(cacheKey, { data: response.data, timestamp: Date.now() });
     return response.data;
   } catch (error) {
@@ -308,11 +315,24 @@ const fetchDoublePage = async (endpoint: string, params: any = {}, mediaType: "m
 
 export const getImageUrl = (path: string | null, size: string = "w500"): string => {
   if (!path) return "https://via.placeholder.com/500x750?text=No+Image";
+
+  // 1. Small cards & thumbnails are PROTECTED from memory inflation:
+  // w185, w154, w92, and card-size w342 are locked to prevent huge bitmap RAM usage
+  if (size === "w185" || size === "w154" || size === "w92" || size === "w342") {
+    return `https://image.tmdb.org/t/p/${size}${path}`;
+  }
+
+  // 2. Explicit zoom requests always receive the fullest resolution
+  if (size === "original") {
+    return `https://image.tmdb.org/t/p/original${path}`;
+  }
+
   let finalSize = size;
+  // 3. Hi-Res applies ONLY to featured headers, backdrops, and hero banners
   if (GLOBAL_CONFIG.hiRes) {
-    if (size === "w500") finalSize = "original"; 
-    if (size === "w780") finalSize = "original"; 
-    if (size === "w185") finalSize = "w500";      
+    if (size === "w500") finalSize = "w780";
+    else if (size === "w780") finalSize = "w1280";
+    else if (size === "h632") finalSize = "original";
   }
   return `https://image.tmdb.org/t/p/${finalSize}${path}`;
 };
@@ -625,6 +645,20 @@ const fetchFreshDiscoveryContent = async (gId: number | undefined, cacheKey: str
 // ==========================================
 // 6. DETAILS & OTHERS
 // ==========================================
+
+/**
+ * Lightweight collection lookup for telemetry & franchise detection.
+ * Calls bare GET /movie/{id} without append_to_response (no images, credits, videos).
+ * Consumes < 2KB instead of 150KB.
+ */
+export const getMovieCollectionId = async (movieId: number): Promise<number | null> => {
+  try {
+    const data = await fetchWithCache(`/movie/${movieId}`);
+    return data?.belongs_to_collection?.id ? Number(data.belongs_to_collection.id) : null;
+  } catch {
+    return null;
+  }
+};
 
 export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
   try {

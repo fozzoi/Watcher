@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Switch, Platform, StyleSheet, DeviceEventEmitter } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Switch, Platform, StyleSheet, DeviceEventEmitter, ToastAndroid } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -7,7 +7,14 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing'; 
 import * as DocumentPicker from 'expo-document-picker'; 
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
-import { getSavedItems, addSavedItem } from '../src/database'; 
+import {
+  getSavedItems,
+  addSavedItem,
+  getRecentTasteEvents,
+  restoreTasteEvents,
+  getForYouCachedShelves,
+  saveForYouShelves,
+} from '../src/database'; 
 
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { setGlobalConfig } from '../src/tmdb';
@@ -23,6 +30,7 @@ import { clearUserMemory, getUserMemory } from '../src/chatStorage';
 import { DEFAULT_PLAYER_PREFERENCES, getPlayerPreferences, PlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
 import { cloudSync, MobileUserProfile, queueCloudValue } from '../src/cloudSync';
 import { signInWithNativeGoogle } from '../src/nativeGoogleAuth';
+import { notifyForYouListeners } from '../src/services/tasteProfile';
 
 // Google OAuth via expo-auth-session
 import * as WebBrowser from 'expo-web-browser';
@@ -382,7 +390,15 @@ const Settings = () => {
       const fileName = format === 'json' ? `Watcher_Backup_${dateString}.json` : `Watcher_Backup_${dateString}.txt`;
 
       if (format === 'json') {
-        fileContent = JSON.stringify({ watchlist: rawWatchlist, artists: rawArtists, history: rawHistory }, null, 2);
+        const tasteEvents = getRecentTasteEvents(500);
+        const forYouShelves = getForYouCachedShelves();
+        fileContent = JSON.stringify({
+          watchlist: rawWatchlist,
+          artists: rawArtists,
+          history: rawHistory,
+          tasteEvents,
+          forYouShelves,
+        }, null, 2);
       } else {
         fileContent += "movies\n";
         rawWatchlist.forEach((i: any, index: number) => {
@@ -403,13 +419,54 @@ const Settings = () => {
       const fileUri = FileSystem.documentDirectory + fileName;
       await FileSystem.writeAsStringAsync(fileUri, fileContent, { encoding: FileSystem.EncodingType.UTF8 });
 
+      // Automatically save directly to Download/Watcher/export/ on Android
+      if (Platform.OS === 'android') {
+        try {
+          const exportDir = 'file:///storage/emulated/0/Download/Watcher/export/';
+          await FileSystem.makeDirectoryAsync(exportDir, { intermediates: true });
+          const targetUri = `${exportDir}${fileName}`;
+          await FileSystem.writeAsStringAsync(targetUri, fileContent, { encoding: FileSystem.EncodingType.UTF8 });
+          ToastAndroid.show(`Saved to Download/Watcher/export/${fileName}`, ToastAndroid.LONG);
+          return;
+        } catch (exportErr) {
+          console.warn('Direct Download/Watcher/export write failed, trying SAF:', exportErr);
+        }
+
+        // StorageAccessFramework for Scoped Storage (Android 11+)
+        const SAF = FileSystem.StorageAccessFramework;
+        if (SAF) {
+          try {
+            const STORAGE_KEY = 'watcher_backup_saf_dir';
+            let targetDirUri = await AsyncStorage.getItem(STORAGE_KEY);
+            if (!targetDirUri) {
+              const initialUri = SAF.getUriForDirectoryInRoot('Download');
+              const perm = await SAF.requestDirectoryPermissionsAsync(initialUri);
+              if (perm.granted && perm.directoryUri) {
+                targetDirUri = perm.directoryUri;
+                await AsyncStorage.setItem(STORAGE_KEY, perm.directoryUri);
+              }
+            }
+
+            if (targetDirUri) {
+              const mimeType = format === 'json' ? 'application/json' : 'text/plain';
+              const safFileUri = await SAF.createFileAsync(targetDirUri, fileName, mimeType);
+              await SAF.writeAsStringAsync(safFileUri, fileContent, { encoding: FileSystem.EncodingType.UTF8 });
+              ToastAndroid.show(`Saved to Download/Watcher/export/${fileName}`, ToastAndroid.LONG);
+              return;
+            }
+          } catch (safErr) {
+            console.warn('SAF export write failed:', safErr);
+          }
+        }
+      }
+
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, { mimeType: format === 'json' ? 'application/json' : 'text/plain', dialogTitle: 'Export Watcher Data' });
       } else {
         showDialog({
-          title: "Error",
-          message: "Sharing is not available on this device.",
-          type: "warning",
+          title: "Backup Saved",
+          message: `Saved to internal storage: ${fileName}`,
+          type: "success",
         });
       }
     } catch (error) {
@@ -444,6 +501,20 @@ const Settings = () => {
       if (backupData.history && Array.isArray(backupData.history)) {
         backupData.history.forEach((i: any) => addSavedItem(i, 'history'));
         restoredTotal += backupData.history.length;
+      }
+      if (backupData.tasteEvents && Array.isArray(backupData.tasteEvents)) {
+        restoreTasteEvents(backupData.tasteEvents);
+        restoredTotal += backupData.tasteEvents.length;
+      } else if (backupData.tasteTelemetry?.events && Array.isArray(backupData.tasteTelemetry.events)) {
+        restoreTasteEvents(backupData.tasteTelemetry.events);
+        restoredTotal += backupData.tasteTelemetry.events.length;
+      }
+      if (backupData.forYouShelves && Array.isArray(backupData.forYouShelves)) {
+        saveForYouShelves(backupData.forYouShelves);
+        notifyForYouListeners(backupData.forYouShelves);
+      } else if (backupData.tasteTelemetry?.cachedShelves && Array.isArray(backupData.tasteTelemetry.cachedShelves)) {
+        saveForYouShelves(backupData.tasteTelemetry.cachedShelves);
+        notifyForYouListeners(backupData.tasteTelemetry.cachedShelves);
       }
 
       if (restoredTotal > 0) {
@@ -543,7 +614,7 @@ const Settings = () => {
                   message: "The AI assistant's learned memory has been reset to a clean slate.",
                   type: "success",
                 });
-              } catch (e) {
+              } catch (e: any) {
                 showDialog({
                   title: "Error",
                   message: e?.message || "Failed to clear AI memory.",
@@ -554,7 +625,7 @@ const Settings = () => {
           },
         ],
       });
-    } catch (e) {
+    } catch (e: any) {
       showDialog({
         title: "Error",
         message: e?.message || "Could not retrieve AI memory.",

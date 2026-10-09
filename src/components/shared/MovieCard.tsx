@@ -26,7 +26,9 @@ const MovieCard = memo(({ item, onPress, isSearchMode = false, isAdded, toggleWa
   const cardWidth = isSearchMode ? SEARCH_CARD_WIDTH : EXPLORE_CARD_WIDTH;
   const cardHeight = cardWidth * 1.5;
 
-  if (!item.poster_path) return <View style={{ width: cardWidth, height: cardHeight, marginRight: GAP_SIZE }} />;
+  if (!item || !item.id) return null;
+
+  const imagePath = item.poster_path || item.backdrop_path;
 
   return (
     <TouchableOpacity
@@ -35,20 +37,31 @@ const MovieCard = memo(({ item, onPress, isSearchMode = false, isAdded, toggleWa
       style={{ width: cardWidth, marginRight: isSearchMode ? 0 : GAP_SIZE, marginBottom: isSearchMode ? 16 : 0 }}
     >
       <View style={styles.cardContainer}>
-        <Image
-          source={{ uri: getImageUrl(item.poster_path, 'w185') }}
-          style={[styles.sectionImage, { width: cardWidth, height: cardHeight }]}
-          contentFit="cover"
-        />
+        {imagePath ? (
+          <Image
+            source={{ uri: getImageUrl(imagePath, 'w342') }}
+            style={[styles.sectionImage, { width: cardWidth, height: cardHeight }]}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={[styles.placeholderCard, { width: cardWidth, height: cardHeight }]}>
+            <Ionicons name="film-outline" size={28} color={C.mutedSoft} />
+            <Text style={styles.placeholderTitle} numberOfLines={2}>
+              {item.title || item.name || 'Untitled'}
+            </Text>
+          </View>
+        )}
         <View style={styles.cardAddButtonOverlay}>
           <QuickAddButton isAdded={isAdded} onPress={() => toggleWatchlist(item)} />
         </View>
-        <View style={styles.cardOverlay}>
-          <View style={styles.ratingBadgeSmall}>
-            <Ionicons name="star" size={10} color={C.gold} />
-            <Text style={styles.ratingTextSmall}>{item.vote_average?.toFixed(1) || 'N/A'}</Text>
+        {item.vote_average ? (
+          <View style={styles.cardOverlay}>
+            <View style={styles.ratingBadgeSmall}>
+              <Ionicons name="star" size={10} color={C.gold} />
+              <Text style={styles.ratingTextSmall}>{item.vote_average.toFixed(1)}</Text>
+            </View>
           </View>
-        </View>
+        ) : null}
       </View>
       {isSearchMode && (
         <Text style={styles.sectionItemTitle} numberOfLines={2}>
@@ -66,6 +79,22 @@ const styles = StyleSheet.create({
   sectionImage: {
     borderRadius: 12,
     backgroundColor: C.surface2,
+  },
+  placeholderCard: {
+    borderRadius: 12,
+    backgroundColor: C.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  placeholderTitle: {
+    color: C.mutedSoft,
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 6,
   },
   cardAddButtonOverlay: {
     position: 'absolute',

@@ -4,6 +4,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Brightness from 'expo-brightness';
+import { Image as ExpoImage } from 'expo-image';
 
 import { isOnboardingComplete } from '@/src/userPreferences';
 import * as Notifications from 'expo-notifications';
@@ -222,6 +223,16 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [isReady]);
+
+  // Release decoded native image cache to Android OS whenever app is backgrounded
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'background') {
+        ExpoImage.clearMemoryCache().catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   // Initial routing for first-time onboarding (only on cold start)
   const initialRedirectDone = React.useRef(false);

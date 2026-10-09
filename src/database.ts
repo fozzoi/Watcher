@@ -42,6 +42,28 @@ export const initDb = () => {
         media_id INTEGER PRIMARY KEY,
         embedding TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS user_taste_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        entity_name TEXT,
+        genres TEXT,
+        keywords TEXT,
+        weight REAL NOT NULL,
+        timestamp INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_taste_timestamp ON user_taste_events(timestamp);
+
+      CREATE TABLE IF NOT EXISTS for_you_cache (
+        shelf_id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        subtitle TEXT,
+        items_json TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_foryou_sort ON for_you_cache(sort_order);
     `);
   } catch (error) {
     console.error('Failed to initialize SQLite database:', error);
@@ -300,3 +322,178 @@ export const getAiEmbedding = (mediaId: number): number[] | null => {
 };
 
 export const insertAiEmbedding = saveAiEmbedding;
+
+// ==========================================
+// USER TASTE EVENTS & FOR-YOU SHELF CACHE
+// ==========================================
+
+export interface TasteEventRecord {
+  id?: number;
+  entity_type: string;
+  entity_id: string;
+  entity_name?: string | null;
+  genres?: string | null;
+  keywords?: string | null;
+  weight: number;
+  timestamp: number;
+}
+
+export interface ForYouShelfRecord {
+  shelf_id: string;
+  title: string;
+  subtitle?: string | null;
+  items_json: string;
+  sort_order: number;
+  updated_at: number;
+}
+
+export const insertTasteEvent = (event: Omit<TasteEventRecord, 'id'>) => {
+  try {
+    db.runSync(
+      'INSERT INTO user_taste_events (entity_type, entity_id, entity_name, genres, keywords, weight, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [
+        event.entity_type,
+        String(event.entity_id),
+        event.entity_name || null,
+        event.genres || null,
+        event.keywords || null,
+        event.weight,
+        event.timestamp || Date.now(),
+      ]
+    );
+  } catch (error) {
+    console.warn('Failed to insert taste event:', error);
+  }
+};
+
+export const getRecentTasteEvents = (limit: number = 300, sinceTimestamp?: number): TasteEventRecord[] => {
+  try {
+    const minTimestamp = sinceTimestamp ?? (Date.now() - 60 * 86400000); // Default to last 60 days
+    const rows = db.getAllSync<TasteEventRecord>(
+      'SELECT id, entity_type, entity_id, entity_name, genres, keywords, weight, timestamp FROM user_taste_events WHERE timestamp >= ? ORDER BY timestamp DESC LIMIT ?',
+      [minTimestamp, limit]
+    );
+    return rows;
+  } catch (error) {
+    console.warn('Failed to get recent taste events:', error);
+    return [];
+  }
+};
+
+export const restoreTasteEvents = (events: TasteEventRecord[]) => {
+  if (!Array.isArray(events) || events.length === 0) return;
+  try {
+    const existing = db.getAllSync<{ entity_type: string; entity_id: string; timestamp: number }>(
+      'SELECT entity_type, entity_id, timestamp FROM user_taste_events ORDER BY timestamp DESC LIMIT 1000'
+    );
+    const existingKeys = new Set(existing.map((e) => `${e.entity_type}:${e.entity_id}:${e.timestamp}`));
+
+    db.withTransactionSync(() => {
+      const stmt = db.prepareSync(
+        'INSERT INTO user_taste_events (entity_type, entity_id, entity_name, genres, keywords, weight, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      );
+      for (const ev of events) {
+        if (!ev || !ev.entity_type || !ev.entity_id) continue;
+        const key = `${ev.entity_type}:${ev.entity_id}:${ev.timestamp}`;
+        if (existingKeys.has(key)) continue;
+        existingKeys.add(key);
+
+        stmt.executeSync([
+          ev.entity_type,
+          String(ev.entity_id),
+          ev.entity_name || null,
+          ev.genres || null,
+          ev.keywords || null,
+          Number(ev.weight) || 1.0,
+          Number(ev.timestamp) || Date.now(),
+        ]);
+      }
+      stmt.finalizeSync();
+    });
+  } catch (error) {
+    console.warn('Failed to restore taste events:', error);
+  }
+};
+
+export const pruneOldTasteEvents = (maxAgeDays: number = 60) => {
+  try {
+    const threshold = Date.now() - (maxAgeDays * 86400000);
+    db.runSync('DELETE FROM user_taste_events WHERE timestamp < ?', [threshold]);
+  } catch (error) {
+    console.warn('Failed to prune old taste events:', error);
+  }
+};
+
+export const saveForYouShelves = (
+  shelves: { shelf_id?: string; shelfId?: string; title: string; subtitle?: string | null; items: any[]; sort_order?: number; sortOrder?: number }[]
+) => {
+  try {
+    const now = Date.now();
+    db.withTransactionSync(() => {
+      db.runSync('DELETE FROM for_you_cache');
+      const stmt = db.prepareSync(
+        'INSERT OR REPLACE INTO for_you_cache (shelf_id, title, subtitle, items_json, sort_order, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+      );
+      shelves.forEach((s, idx) => {
+        const id = s.shelfId || s.shelf_id || `shelf-${idx}`;
+        const order = s.sortOrder ?? s.sort_order ?? idx;
+        stmt.executeSync([
+          id,
+          s.title,
+          s.subtitle || null,
+          JSON.stringify(s.items || []),
+          order,
+          now,
+        ]);
+      });
+      stmt.finalizeSync();
+    });
+  } catch (error) {
+    console.error('Failed to save for_you_cache:', error);
+  }
+};
+
+export const getForYouCachedShelves = (): {
+  shelfId: string;
+  title: string;
+  subtitle?: string | null;
+  items: any[];
+  sortOrder: number;
+  updatedAt: number;
+}[] => {
+  try {
+    const rows = db.getAllSync<ForYouShelfRecord>(
+      'SELECT shelf_id, title, subtitle, items_json, sort_order, updated_at FROM for_you_cache ORDER BY sort_order ASC'
+    );
+    return rows.map((r) => ({
+      shelfId: r.shelf_id,
+      title: r.title,
+      subtitle: r.subtitle,
+      items: JSON.parse(r.items_json || '[]'),
+      sortOrder: r.sort_order,
+      updatedAt: r.updated_at,
+    }));
+  } catch (error) {
+    console.error('Failed to get for_you_cache:', error);
+    return [];
+  }
+};
+
+export const getForYouCacheLastUpdated = (): number => {
+  try {
+    const row = db.getFirstSync<{ max_time: number | null }>(
+      'SELECT MAX(updated_at) AS max_time FROM for_you_cache'
+    );
+    return row?.max_time || 0;
+  } catch {
+    return 0;
+  }
+};
+
+export const clearForYouCache = () => {
+  try {
+    db.runSync('DELETE FROM for_you_cache');
+  } catch (error) {
+    console.error('Failed to clear for_you_cache:', error);
+  }
+};

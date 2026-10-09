@@ -114,7 +114,7 @@ const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => (
       source={{ uri: getImageUrl(item.poster_path, 'w342') }}
       style={[styles.similarImg, { width: cardWidth, height: cardWidth * 1.5 }]}
       contentFit="cover"
-      cachePolicy="memory-disk"
+      cachePolicy="disk"
     />
     <View style={styles.ratingBadge}>
       <Ionicons name="star" size={9} color={C.gold} />
@@ -140,7 +140,7 @@ const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => (
       }}
       style={styles.directorImg}
       contentFit="cover"
-      cachePolicy="memory-disk"
+      cachePolicy="disk"
     />
     <View style={{ maxWidth: 140 }}>
       <Text style={styles.directorName} numberOfLines={1}>
@@ -167,7 +167,7 @@ const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => (
       }}
       style={[styles.castImg, { width: cardWidth, height: cardWidth * 1.35 }]}
       contentFit="cover"
-      cachePolicy="memory-disk"
+      cachePolicy="disk"
     />
     <Text style={styles.castName} numberOfLines={1}>
       {item.name}
@@ -195,7 +195,7 @@ const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay
         }}
         style={[styles.epThumb, { width: episodeThumbWidth, height: episodeThumbWidth * 0.56 }]}
         contentFit="cover"
-        cachePolicy="memory-disk"
+        cachePolicy="disk"
       />
       <View style={styles.epPlayOverlay}>
         <Ionicons name="play" size={16} color="#FFF" />
@@ -696,7 +696,7 @@ export default function DetailPage() {
           source={{ uri: getImageUrl(movie.poster_path, 'w500') }}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
-          cachePolicy="memory-disk"
+          cachePolicy="disk"
           priority="high"
         />
         <LinearGradient
@@ -911,7 +911,7 @@ export default function DetailPage() {
                 source={{ uri: getImageUrl(movie.belongs_to_collection.backdrop_path, 'w500') }}
                 style={styles.collectionBackdrop}
                 contentFit="cover"
-                cachePolicy="memory-disk"
+                cachePolicy="disk"
               />
               <LinearGradient
                 colors={['transparent', 'rgba(10,10,11,0.5)', '#0A0A0A']}

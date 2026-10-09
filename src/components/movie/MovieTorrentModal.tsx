@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { searchTorrents, TorrentResult } from '../../Scraper';

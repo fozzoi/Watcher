@@ -2,12 +2,12 @@ import React, { useEffect, useState } from 'react';
 import {
   View,
   StyleSheet,
-  Image,
   TouchableOpacity,
   StatusBar,
   FlatList,
   ActivityIndicator,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Text } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
@@ -125,6 +125,8 @@ const CollectionDetails = () => {
         <Image
           source={{ uri: getImageUrl(item.poster_path, 'w185') }}
           style={styles.moviePoster}
+          contentFit="cover"
+          cachePolicy="disk"
         />
         <View style={styles.movieInfo}>
           <Text style={styles.movieTitle} numberOfLines={2}>
@@ -164,6 +166,7 @@ const CollectionDetails = () => {
           }}
           style={styles.backdropImage}
           contentFit="cover"
+          cachePolicy="disk"
         />
         <LinearGradient
           colors={[

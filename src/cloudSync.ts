@@ -86,6 +86,12 @@ export async function flushCloudOutbox(): Promise<void> {
     while (true) {
       let outbox: any[] = [];
       try { outbox = JSON.parse((await AsyncStorage.getItem(key)) || '[]'); } catch { outbox = []; }
+      // Immediately purge any unsupported/poison-pill mutations (such as tasteTelemetry) so real-time sync is never blocked
+      const sanitizedOutbox = outbox.filter((op: any) => op && op.type && op.type !== 'tasteTelemetry');
+      if (sanitizedOutbox.length !== outbox.length) {
+        await AsyncStorage.setItem(key, JSON.stringify(sanitizedOutbox));
+        outbox = sanitizedOutbox;
+      }
       const operation = outbox[0];
       if (!operation) { retryAfter = 0; retryDelay = 1000; break; }
       try {
@@ -95,6 +101,12 @@ export async function flushCloudOutbox(): Promise<void> {
         await AsyncStorage.setItem(key, JSON.stringify(outbox.slice(1)));
         retryAfter = 0;
       } catch (error: any) {
+        // If the server rejects the mutation as invalid (e.g. 400 Bad Request), drop it so the rest of the queue can flush immediately
+        if (error?.response?.status === 400) {
+          console.warn('Dropping invalid cloud mutation from queue:', operation?.type, error?.response?.data);
+          await AsyncStorage.setItem(key, JSON.stringify(outbox.slice(1)));
+          continue;
+        }
         // Keep the same operation ID on retry. A 409 means the API exhausted
         // its bounded compare-and-swap retries during concurrent edits; do not
         // spin forever in the foreground while other devices are busy.
@@ -141,6 +153,7 @@ export async function prepareCloudSessionOnStartup(): Promise<void> {
     setCloudOnlyMode(true, cachedLibrary);
     await applyNsfwPreference(cachedLibrary.preferences?.nsfwFilterEnabled);
   }
+
   const revision = Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0);
   if (revision > 0) {
     await pollCloudChanges();

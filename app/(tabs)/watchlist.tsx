@@ -42,7 +42,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 
-const { width } = Dimensions.get('window');
+const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48) / 2;
 const TAB_WIDTH = width - 148;
 const TAB_ITEM_WIDTH = (TAB_WIDTH - 4) / 3;
@@ -81,7 +81,7 @@ const WatchlistCard = React.memo(({
           style={styles.cardImage}
           contentFit="cover"
           recyclingKey={imageUrl}
-          cachePolicy="memory-disk"
+          cachePolicy="disk"
         />
         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.92)']} style={styles.cardGradient} />
         <View style={styles.cardContent}>
@@ -684,6 +684,8 @@ const WatchListPage = () => {
           renderItem={renderCard}
           numColumns={2}
           estimatedItemSize={CARD_WIDTH * 1.5 + 16}
+          removeClippedSubviews={true}
+          drawDistance={SCREEN_HEIGHT}
           contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 115 }]}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}

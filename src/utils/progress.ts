@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { logTasteEvent, TASTE_WEIGHTS } from '../services/tasteProfile';
 
 const PROGRESS_KEY = '@watch_progress';
 
@@ -59,6 +60,23 @@ export const saveProgress = async (progress: WatchProgress & { sourceKey?: strin
         : previous?.progress ?? 0;
       history[key] = { ...previous, ...progress, progress: nextProgress };
       await AsyncStorage.setItem(PROGRESS_KEY, JSON.stringify(history));
+
+      // Silent taste event logging based on completion / drop thresholds
+      if (nextProgress >= 0.75) {
+        logTasteEvent({
+          entity_type: progress.mediaType,
+          entity_id: progress.tmdbId,
+          entity_name: progress.title,
+          weight: TASTE_WEIGHTS.COMPLETED_WATCH,
+        });
+      } else if (progress.position >= 60 && progress.duration > 300 && nextProgress < 0.15) {
+        logTasteEvent({
+          entity_type: progress.mediaType,
+          entity_id: progress.tmdbId,
+          entity_name: progress.title,
+          weight: TASTE_WEIGHTS.DROPPED_EARLY,
+        });
+      }
     } catch (e) {
       console.error("Failed to save progress", e);
     }

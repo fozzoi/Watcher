@@ -188,6 +188,7 @@ const ViewAllPage = () => {
           keyExtractor={(item, index) => `${item.id}-${index}`}
           numColumns={3}
           estimatedItemSize={200}
+          removeClippedSubviews={true}
           contentContainerStyle={styles.listContent}
           onEndReached={loadMoreMovies}
           onEndReachedThreshold={0.5}

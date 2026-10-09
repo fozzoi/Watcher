@@ -15,9 +15,10 @@ import { Text } from 'react-native-paper';
 import { Image } from 'expo-image';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TMDBImage, getImageUrl } from '../../tmdb';
 
 interface MovieMediaGalleryProps {
@@ -102,39 +103,102 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
     try {
       const FS = FileSystem as any;
       const url = selectedImage.url;
-      const ext = url.split('.').pop()?.split('?')[0] || 'jpg';
+      let ext = (url.split('.').pop()?.split('?')[0] || 'jpg').toLowerCase();
+      if (!['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+        ext = 'jpg';
+      }
       const cleanTitle = (title || 'watcher').replace(/[^a-z0-9]/gi, '_').substring(0, 30);
       const filename = `${cleanTitle}_${selectedImage.index + 1}_${Date.now()}.${ext}`;
-      const fileUri = `${FS.cacheDirectory || FS.documentDirectory}${filename}`;
+      const cacheDir = FS.cacheDirectory || FS.documentDirectory || '';
+      const tempFileUri = `${cacheDir}${filename}`;
 
-      const downloadRes = await FS.downloadAsync(url, fileUri);
+      const downloadRes = await FS.downloadAsync(url, tempFileUri);
       if (downloadRes.status !== 200) {
         showToast('Failed to download image.');
         return;
       }
 
-      try {
-        const { status } = await MediaLibrary.requestPermissionsAsync(true);
-        if (status === 'granted') {
-          const ml = MediaLibrary as any;
-          if (ml.saveToLibraryAsync) {
-            await ml.saveToLibraryAsync(fileUri);
-          } else if (ml.createAssetAsync) {
-            await ml.createAssetAsync(fileUri);
-          }
-          showToast('Image saved to Photos / Gallery!');
-          return;
+      let savedDirectly = false;
+      // 1. Save directly into Download/Watcher/image/ on Android
+      if (Platform.OS === 'android') {
+        try {
+          const downloadDir = 'file:///storage/emulated/0/Download/Watcher/image/';
+          await FS.makeDirectoryAsync(downloadDir, { intermediates: true });
+          const targetUri = `${downloadDir}${filename}`;
+          await FS.copyAsync({ from: tempFileUri, to: targetUri });
+          savedDirectly = true;
+        } catch (directErr) {
+          console.warn('Direct save to Download/Watcher/image failed:', directErr);
         }
-      } catch {
-        // Fall back to native share sheet if permission denied or unavailable
       }
 
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri);
-      } else {
-        showToast('Image downloaded!');
+      // 2. Also register into MediaLibrary / Photos under 'Watcher' album (requesting ONLY photo permissions, never audio)
+      let savedToMediaLibrary = false;
+      try {
+        let perm = await MediaLibrary.getPermissionsAsync();
+        if (!perm.granted) {
+          perm = await MediaLibrary.requestPermissionsAsync(false, ['photo']);
+        }
+        if (perm.granted) {
+          const asset = await MediaLibrary.createAssetAsync(tempFileUri);
+          try {
+            const album = await MediaLibrary.getAlbumAsync('Watcher');
+            if (album) {
+              await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+            } else {
+              await MediaLibrary.createAlbumAsync('Watcher', asset, false);
+            }
+          } catch {}
+          savedToMediaLibrary = true;
+        }
+      } catch (mlErr) {
+        console.warn('MediaLibrary save error:', mlErr);
       }
-    } catch {
+
+      if (savedDirectly || savedToMediaLibrary) {
+        showToast('Saved to Download/Watcher/image!');
+        return;
+      }
+
+      // 3. StorageAccessFramework: direct write into user's Download directory
+      const SAF = FS.StorageAccessFramework;
+      if (Platform.OS === 'android' && SAF) {
+        try {
+          const STORAGE_KEY = 'watcher_image_saf_dir';
+          let targetDirUri = await AsyncStorage.getItem(STORAGE_KEY);
+          if (!targetDirUri) {
+            const initialUri = SAF.getUriForDirectoryInRoot('Download');
+            const perm = await SAF.requestDirectoryPermissionsAsync(initialUri);
+            if (perm.granted && perm.directoryUri) {
+              targetDirUri = perm.directoryUri;
+              await AsyncStorage.setItem(STORAGE_KEY, perm.directoryUri);
+            }
+          }
+
+          if (targetDirUri) {
+            const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+            const safFileUri = await SAF.createFileAsync(targetDirUri, filename, mimeType);
+            const base64Data = await FS.readAsStringAsync(tempFileUri, { encoding: FS.EncodingType.Base64 });
+            await SAF.writeAsStringAsync(safFileUri, base64Data, { encoding: FS.EncodingType.Base64 });
+            showToast('Saved to Download/Watcher/image!');
+            return;
+          }
+        } catch (safErr) {
+          console.warn('SAF image write error:', safErr);
+        }
+      }
+
+      // 4. Fallback only if every direct save mechanism is unavailable or cancelled
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(tempFileUri, {
+          mimeType: ext === 'png' ? 'image/png' : 'image/jpeg',
+          dialogTitle: 'Save Image',
+        });
+      } else {
+        showToast('Storage permission needed to save image.');
+      }
+    } catch (error) {
+      console.error('handleDownloadImage failed:', error);
       showToast('Could not save image.');
     } finally {
       setDownloading(false);
@@ -209,10 +273,10 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
                 onPress={() => handleOpenPreview(item.file_path, index, currentList.length)}
               >
                 <Image
-                  source={{ uri: getImageUrl(item.file_path, isScene ? 'w780' : 'w500') }}
+                  source={{ uri: getImageUrl(item.file_path, isScene ? 'w780' : 'w342') }}
                   style={StyleSheet.absoluteFill}
                   contentFit="cover"
-                  cachePolicy="memory-disk"
+                  cachePolicy="disk"
                   transition={200}
                 />
                 <View style={styles.cardGradient} />
@@ -254,7 +318,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
                   source={{ uri: selectedImage.url }}
                   style={styles.modalImage}
                   contentFit="contain"
-                  cachePolicy="memory-disk"
+                  cachePolicy="disk"
                   priority="high"
                 />
               </TouchableOpacity>

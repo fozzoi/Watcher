@@ -99,8 +99,8 @@ const LiquidIndicator = memo(function LiquidIndicator({
 });
 
 // ── Slide ────────────────────────────────────────────────────────────────────
-const FilmLayer = memo(function FilmLayer({ item, active, reduceMotion, width, height, isAdded, onToggle, onPress }: {
-  item: TMDBResult; active: boolean; reduceMotion: boolean; width: number; height: number; isAdded: boolean;
+const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMotion, width, height, isAdded, onToggle, onPress }: {
+  item: TMDBResult; active: boolean; shouldRender: boolean; reduceMotion: boolean; width: number; height: number; isAdded: boolean;
   onToggle: (item: TMDBResult) => void; onPress: (item: TMDBResult) => void;
 }) {
   const opacity = useRef(new Animated.Value(active ? 1 : 0)).current;
@@ -126,6 +126,8 @@ const FilmLayer = memo(function FilmLayer({ item, active, reduceMotion, width, h
     return () => { opacity.stopAnimation(); zoom.stopAnimation(); reveal.stopAnimation(); };
   }, [active, reduceMotion, opacity, zoom, reveal]);
 
+  if (!shouldRender && !active) return null;
+
   const title = item.title || item.name || '';
   const year = (item.release_date || item.first_air_date || '').slice(0, 4);
   const rating = item.vote_average ? item.vote_average.toFixed(1) : null;
@@ -139,7 +141,7 @@ const FilmLayer = memo(function FilmLayer({ item, active, reduceMotion, width, h
       style={[StyleSheet.absoluteFill, { opacity }]}
     >
       <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ scale: zoom }] }]}>
-        <Image source={{ uri: getImageUrl(item.poster_path, 'w780') }} contentFit="cover" cachePolicy="memory-disk" style={{ width, height }} accessible={false} />
+        <Image source={{ uri: getImageUrl(item.poster_path, 'w780') }} contentFit="cover" cachePolicy="disk" style={{ width, height }} accessible={false} />
       </Animated.View>
 
       <LinearGradient
@@ -227,19 +229,23 @@ export default memo(function HeroSection({ items, savedIds, toggleWatchlist, isL
 
   return (
     <View style={[styles.root, { width, height: HERO_HEIGHT }]} {...pan.panHandlers}>
-      {slides.map((item, i) => (
-        <FilmLayer
-          key={`${item.media_type || 'movie'}-${item.id}`}
-          item={item}
-          active={i === activeIndex}
-          reduceMotion={reduceMotion || !focused || !foreground}
-          width={width}
-          height={HERO_HEIGHT}
-          isAdded={savedIds.has(item.id)}
-          onToggle={toggleWatchlist}
-          onPress={open}
-        />
-      ))}
+      {slides.map((item, i) => {
+        const isNearby = Math.abs(i - activeIndex) <= 1 || (activeIndex === 0 && i === slides.length - 1) || (activeIndex === slides.length - 1 && i === 0);
+        return (
+          <FilmLayer
+            key={`${item.media_type || 'movie'}-${item.id}`}
+            item={item}
+            active={i === activeIndex}
+            shouldRender={isNearby}
+            reduceMotion={reduceMotion || !focused || !foreground}
+            width={width}
+            height={HERO_HEIGHT}
+            isAdded={savedIds.has(item.id)}
+            onToggle={toggleWatchlist}
+            onPress={open}
+          />
+        );
+      })}
 
       <View style={styles.controls}>
         <View style={styles.indicatorSlot}>

@@ -249,6 +249,8 @@ export default function CastDetails() {
           <Image
             source={{ uri: getImageUrl(item.poster_path, 'w342') }}
             style={[styles.creditImage, { width: CARD_WIDTH, height: CARD_WIDTH * 1.5 }]}
+            contentFit="cover"
+            cachePolicy="disk"
           />
         </View>
         <Text style={styles.creditTitle} numberOfLines={2}>
@@ -286,7 +288,7 @@ export default function CastDetails() {
             keyExtractor={(_, index) => `header-${index}`}
             renderItem={({ item, index }) => (
               <View style={{ width, height: '100%' }}>
-                <Image source={{ uri: getImageUrl(item.file_path, 'h632') }} style={{ width, height: '100%' }} contentFit="cover" />
+                <Image source={{ uri: getImageUrl(item.file_path, 'h632') }} style={{ width, height: '100%' }} contentFit="cover" cachePolicy="disk" />
               </View>
             )}
           />
@@ -499,10 +501,10 @@ const GalleryModal = React.memo(({
             renderItem={({ item }) => (
               <View style={{ width, height, justifyContent: 'center', alignItems: 'center' }}>
                 <Image
-                  source={{ uri: getImageUrl(item.file_path, 'h632') }}
+                  source={{ uri: getImageUrl(item.file_path, 'original') }}
                   style={{ width: width * 0.9, height: (width * 0.9) * (4 / 3), borderRadius: 16 }}
                   contentFit="cover"
-                  cachePolicy="memory-disk"
+                  cachePolicy="disk"
                 />
               </View>
             )}
@@ -526,7 +528,7 @@ const GalleryModal = React.memo(({
                   }}
                   style={[styles.thumbnailWrapper, currentImageIndex === index && styles.thumbnailActive]}
                 >
-                  <Image source={{ uri: getImageUrl(item.file_path, 'w154') }} style={styles.thumbnailImage} />
+                  <Image source={{ uri: getImageUrl(item.file_path, 'w154') }} style={styles.thumbnailImage} cachePolicy="disk" />
                 </TouchableOpacity>
               )}
             />

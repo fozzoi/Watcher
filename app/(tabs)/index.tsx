@@ -569,8 +569,8 @@ const ExplorePage = () => {
         renderItem={renderExploreSection}
         keyExtractor={(item) => item.key}
         overrideItemLayout={overrideItemLayout}
-        drawDistance={Math.max(SCREEN_HEIGHT * 2.5, 1800)}
-        removeClippedSubviews={false}
+        drawDistance={Math.round(SCREEN_HEIGHT * 1.0)}
+        removeClippedSubviews={true}
         ListHeaderComponent={renderExploreHeader}
         ListFooterComponent={renderFooter}
         onEndReached={loadMoreSections}
