@@ -71,7 +71,6 @@ const MediaCarousel = memo(({ title, type, data, savedIds, toggleWatchlist }: Me
         bounces={true}
         contentContainerStyle={{ paddingHorizontal: HORIZONTAL_MARGIN }}
         removeClippedSubviews={true}
-        estimatedItemSize={EXPLORE_CARD_WIDTH + GAP_SIZE}
         keyExtractor={(item, index) => `${item.id}-${index}`}
         snapToInterval={SNAP_INTERVAL}
         snapToAlignment="start"

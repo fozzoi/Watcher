@@ -683,7 +683,6 @@ const WatchListPage = () => {
           keyExtractor={(item) => `${activeTab}-${item.id}`}
           renderItem={renderCard}
           numColumns={2}
-          estimatedItemSize={CARD_WIDTH * 1.5 + 16}
           removeClippedSubviews={true}
           drawDistance={SCREEN_HEIGHT}
           contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 115 }]}
