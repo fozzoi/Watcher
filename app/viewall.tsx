@@ -187,6 +187,7 @@ const ViewAllPage = () => {
           renderItem={renderMovieCard}
           keyExtractor={(item, index) => `${item.id}-${index}`}
           numColumns={3}
+          recycleItems={true}
           estimatedItemSize={200}
           contentContainerStyle={styles.listContent}
           onEndReached={loadMoreMovies}

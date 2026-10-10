@@ -64,6 +64,12 @@ export const initDb = () => {
         updated_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_foryou_sort ON for_you_cache(sort_order);
+
+      CREATE TABLE IF NOT EXISTS explore_content_cache (
+        genre_id INTEGER PRIMARY KEY,
+        data_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
     `);
   } catch (error) {
     console.error('Failed to initialize SQLite database:', error);
@@ -189,7 +195,7 @@ export const getSavedItems = (type: SavedItemType): any[] => {
 export const hasSavedItem = (mediaId: number, type: SavedItemType): boolean => {
   if (cloudOnlyMode) return cloudItems[type].some(item => Number(item?.id ?? item?.media_id) === Number(mediaId));
   try {
-    const result = db.getAllSync<{ data: string }>('SELECT data FROM saved_items WHERE type = ? AND media_id = ?', [type, mediaId]);
+    const result = db.getAllSync<{ data: string }>('SELECT data FROM saved_items WHERE type = ? AND media_id = ?', [type, Number(mediaId)]);
     return result.length > 0;
   } catch (error) {
     return false;
@@ -232,7 +238,7 @@ export const addSavedItem = (item: any, type: SavedItemType) => {
     const rowId = itemRowId(item, type);
     db.runSync(
       'INSERT OR REPLACE INTO saved_items (id, media_id, type, data, created_at) VALUES (?, ?, ?, ?, ?)',
-      [rowId, item.id, type, JSON.stringify(item), Date.now()]
+      [rowId, Number(item.id), type, JSON.stringify(item), Date.now()]
     );
     notifySavedItemsChanged({ type, action: 'add', item });
   } catch (error) {
@@ -251,7 +257,7 @@ export const removeSavedItem = (mediaId: number, type: SavedItemType, mediaType?
     return;
   }
   try {
-    const existing = db.getAllSync<{ id: string; data: string }>('SELECT id, data FROM saved_items WHERE type = ? AND media_id = ?', [type, mediaId]);
+    const existing = db.getAllSync<{ id: string; data: string }>('SELECT id, data FROM saved_items WHERE type = ? AND media_id = ?', [type, Number(mediaId)]);
     const removed = existing.filter(row => {
       if (type === 'artist' || !mediaType) return true;
       const item = JSON.parse(row.data);
@@ -495,5 +501,58 @@ export const clearForYouCache = () => {
     db.runSync('DELETE FROM for_you_cache');
   } catch (error) {
     console.error('Failed to clear for_you_cache:', error);
+  }
+};
+
+let memoryExploreCache: Record<number, any> = {};
+
+export const saveExploreContentCacheSync = (genreId: number, data: any) => {
+  try {
+    memoryExploreCache[genreId] = data;
+    const now = Date.now();
+    db.runSync(
+      'INSERT OR REPLACE INTO explore_content_cache (genre_id, data_json, updated_at) VALUES (?, ?, ?)',
+      [genreId, JSON.stringify(data), now]
+    );
+  } catch (error) {
+    console.error('Failed to save explore_content_cache:', error);
+  }
+};
+
+export const getExploreContentCacheSync = (genreId: number = 0): any | null => {
+  try {
+    if (memoryExploreCache[genreId]) {
+      return memoryExploreCache[genreId];
+    }
+    // Safety check in case table not yet created
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS explore_content_cache (
+        genre_id INTEGER PRIMARY KEY,
+        data_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+    const row = db.getFirstSync<{ data_json: string }>(
+      'SELECT data_json FROM explore_content_cache WHERE genre_id = ?',
+      [genreId]
+    );
+    if (row?.data_json) {
+      const parsed = JSON.parse(row.data_json);
+      memoryExploreCache[genreId] = parsed;
+      return parsed;
+    }
+    return null;
+  } catch (error) {
+    console.error('Failed to get explore_content_cache:', error);
+    return null;
+  }
+};
+
+export const clearExploreCache = () => {
+  try {
+    memoryExploreCache = {};
+    db.runSync('DELETE FROM explore_content_cache');
+  } catch (error) {
+    console.error('Failed to clear explore_content_cache:', error);
   }
 };

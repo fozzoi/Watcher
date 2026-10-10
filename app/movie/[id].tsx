@@ -984,7 +984,7 @@ export default function DetailPage() {
                   ) : lensInsight ? (
                     <View>
                       <View style={styles.aiVerdictPill}>
-                        <View style={styles.aiVerdictDot} />
+                        {/* <View style={styles.aiVerdictDot} /> */}
                         <Text style={styles.aiVerdictText}>{lensInsight.worthIt}</Text>
                       </View>
                       <Text style={styles.aiFriendVerdict}>"{lensInsight.friendVerdict}"</Text>
@@ -994,6 +994,18 @@ export default function DetailPage() {
                           <Text style={styles.aiFieldValue}>{lensInsight.vibe}</Text>
                         </View>
                       ) : null}
+                      {lensInsight.whatItsActuallyAbout ? (
+                        <View style={styles.aiField}>
+                          <Text style={styles.aiFieldLabel}>Story & Premise</Text>
+                          <Text style={styles.aiFieldValue}>{lensInsight.whatItsActuallyAbout}</Text>
+                        </View>
+                      ) : null}
+                      {(lensInsight.certificationWarning || lensInsight.whatYoullSee) ? (
+                          <View style={styles.aiAdvisory}>
+                            <Text style={styles.aiAdvisoryLabel}>⚠ Content Advisory</Text>
+                            <Text style={styles.aiAdvisoryFieldValue}>{lensInsight.certificationWarning || lensInsight.whatYoullSee}</Text>
+                          </View>
+                        ) : null}
                     </View>
                   ) : (
                     <TouchableOpacity activeOpacity={0.8} onPress={fetchLensInsight} style={styles.aiGenerateBtn}>
@@ -1414,7 +1426,7 @@ const styles = StyleSheet.create({
   aiHeaderTitle: { color: C.white, fontSize: 15, fontWeight: '700' },
   aiTabs: {
     flexDirection: 'row',
-    backgroundColor: '#0A0A0B',
+    backgroundColor: '#0c0c0c',
     borderRadius: 100,
     padding: 2,
   },
@@ -1432,9 +1444,15 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 100,
     marginBottom: 12,
+    paddingBlock:10
   },
   aiVerdictDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.ai },
-  aiVerdictText: { color: C.ai, fontSize: 11.5, fontWeight: '700', letterSpacing: 0.3 },
+  aiVerdictText: { color: C.ai, 
+    fontSize: 11.5, 
+    fontWeight: '700', 
+    letterSpacing: 0.3,
+    paddingStart: 15,
+  },
   aiFriendVerdict: {
     color: C.white,
     fontSize: 15,
@@ -1452,6 +1470,25 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 4,
   },
+  aiAdvisory: {
+    marginTop: 8,
+    padding: 12,
+    backgroundColor: 'rgb(14, 30, 31)',
+    borderRadius: 12,
+    
+    // borderWidth: 1,
+    // borderColor: 'rgba(255, 179, 0, 0.25)',
+  },
+  aiAdvisoryLabel: {
+    color: '#ba0101',
+    fontSize: 10.5,
+    fontStyle: 'italic',
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  aiAdvisoryFieldValue:{ color: "#d4d2d2", fontSize: 12, lineHeight: 15 ,fontStyle: 'italic'},
   aiFieldValue: { color: C.text, fontSize: 13.5, lineHeight: 20 },
   aiErrorText: { color: C.mutedSoft, fontSize: 13, marginBottom: 8 },
   aiRetry: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },

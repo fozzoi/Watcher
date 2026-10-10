@@ -1,6 +1,6 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getForYouCachedShelves } from './database';
+import { getForYouCachedShelves, getExploreContentCacheSync, saveExploreContentCacheSync } from './database';
 
 // ==========================================
 // 1. GLOBAL CONFIGURATION & SETUP
@@ -12,7 +12,7 @@ const GEMINI_MODEL = "gemini-flash-latest";
 export let GLOBAL_CONFIG = {
   hiRes: false,
   nsfwFilterEnabled: true,
-  aiEnabled: true,        
+  aiEnabled: false,        
   customApiKey: ""        
 };
 
@@ -283,7 +283,7 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
     requestCache.delete(cacheKey);
   }
    
-  const MAX_REQUEST_CACHE_ENTRIES = 60;
+  const MAX_REQUEST_CACHE_ENTRIES = 120;
 
   try {
     const response = await tmdbApi.get(endpoint, { params });
@@ -301,13 +301,9 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
 
 const fetchDoublePage = async (endpoint: string, params: any = {}, mediaType: "movie" | "tv") => {
     try {
-        const [page1, page2] = await Promise.all([
-            fetchWithCache(endpoint, { ...params, page: 1 }),
-            fetchWithCache(endpoint, { ...params, page: 2 })
-        ]);
-        const combined = [...(page1.results || []), ...(page2.results || [])];
-        const unique = Array.from(new Map(combined.map((item: any) => [item.id, item])).values());
-        return unique.map((item: any) => ({ ...formatBasicItemData(item), media_type: mediaType }));
+        const page1 = await fetchWithCache(endpoint, { ...params, page: 1 });
+        const results = page1.results || [];
+        return results.map((item: any) => ({ ...formatBasicItemData(item), media_type: mediaType }));
     } catch (error) {
         return [];
     }
@@ -928,16 +924,33 @@ export const fetchPersonalisedDiscoveryContent = async (
 
   if (!forceRefresh) {
     try {
+      // 1. Instant SQLite read (<1ms) - only use if it contains all requested languages
+      const sqliteCached = getExploreContentCacheSync(genreFilterId);
+      if (sqliteCached) {
+        const cachedLangs = sqliteCached.langData ? Object.keys(sqliteCached.langData) : [];
+        const hasAllLangs = languages.length === 0 || languages.every((l) => cachedLangs.includes(l));
+        if (hasAllLangs) {
+          fetchFreshPersonalisedContent(languages, genreIds, favoriteActors, gId, cacheKey, genreFilterId).catch(() => {});
+          return sqliteCached;
+        }
+      }
+
+      // 2. Fallback to AsyncStorage if SQLite is cold
       const saved = await AsyncStorage.getItem(cacheKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        fetchFreshPersonalisedContent(languages, genreIds, favoriteActors, gId, cacheKey);
-        return parsed;
+        const cachedLangs = parsed.langData ? Object.keys(parsed.langData) : [];
+        const hasAllLangs = languages.length === 0 || languages.every((l) => cachedLangs.includes(l));
+        if (hasAllLangs) {
+          saveExploreContentCacheSync(genreFilterId, parsed);
+          fetchFreshPersonalisedContent(languages, genreIds, favoriteActors, gId, cacheKey, genreFilterId).catch(() => {});
+          return parsed;
+        }
       }
     } catch {}
   }
 
-  return fetchFreshPersonalisedContent(languages, genreIds, favoriteActors, gId, cacheKey);
+  return fetchFreshPersonalisedContent(languages, genreIds, favoriteActors, gId, cacheKey, genreFilterId);
 };
 
 const fetchFreshPersonalisedContent = async (
@@ -946,70 +959,73 @@ const fetchFreshPersonalisedContent = async (
   favoriteActors: any[],
   gId: number | undefined,
   cacheKey: string,
+  genreFilterId: number = 0,
 ) => {
   try {
-    const langSlice = (languages && languages.length > 0) ? languages.slice(0, 15) : ['en'];
-    const langResults = await Promise.all(
-      langSlice.flatMap(lang => [
-        getLanguageMovies(lang, 1, gId),
-        getLanguageTV(lang, 1, gId),
-      ])
-    );
+    const langSlice = (languages && languages.length > 0) ? languages : ['en'];
+    const actorSlice = (favoriteActors || []).slice(0, 4);
+    const genreSlice = (genreIds && genreIds.length > 0) ? genreIds.slice(0, 4) : [28, 35, 878];
+
+    // Run ALL groups concurrently in parallel instead of sequentially!
+    const [base, langResults, actorResults, genreResults] = await Promise.all([
+      Promise.all([
+        getTrendingMovies(1, gId),
+        getTrendingTV(1, gId),
+        getUpcomingMovies(1),
+        getHiddenGems(1, gId),
+        getTopRated(1, gId),
+        getNostalgicMovies(1, gId),
+        getAnimatedMovies(1, gId),
+      ]),
+      Promise.all(
+        langSlice.flatMap(lang => [
+          getLanguageMovies(lang, 1, gId),
+          getLanguageTV(lang, 1, gId),
+        ])
+      ),
+      Promise.all(
+        actorSlice.map(async (actor: any) => {
+          try {
+            const credits = await getPersonCombinedCredits(actor.id);
+            const topItems = credits
+              .filter((item: any) => item.poster_path && (item.vote_count || 0) > 10)
+              .sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0))
+              .slice(0, 15);
+            return {
+              actorId: actor.id,
+              actorName: actor.name,
+              profilePath: actor.profile_path,
+              items: topItems,
+            };
+          } catch {
+            return null;
+          }
+        })
+      ),
+      Promise.all(
+        genreSlice.map(async (genreId: number) => {
+          try {
+            const movies = await getMoviesByGenre(genreId, 1);
+            return {
+              genreId,
+              items: movies.slice(0, 15),
+            };
+          } catch {
+            return null;
+          }
+        })
+      ),
+    ]);
 
     const langData: Record<string, { movies: any[]; tv: any[] }> = {};
     langSlice.forEach((lang, i) => {
       const movies = langResults[i * 2] ?? [];
       const tv = langResults[i * 2 + 1] ?? [];
-      if (movies.length > 0 || tv.length > 0) {
-        langData[lang] = { movies, tv };
-      }
+      langData[lang] = { movies, tv };
     });
 
-    const actorSlice = (favoriteActors || []).slice(0, 4);
-    const actorResults = await Promise.all(
-      actorSlice.map(async (actor: any) => {
-        try {
-          const credits = await getPersonCombinedCredits(actor.id);
-          const topItems = credits
-            .filter((item: any) => item.poster_path && (item.vote_count || 0) > 10)
-            .sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0))
-            .slice(0, 15);
-          return {
-            actorId: actor.id,
-            actorName: actor.name,
-            profilePath: actor.profile_path,
-            items: topItems,
-          };
-        } catch {
-          return null;
-        }
-      })
-    );
     const actorData = actorResults.filter(Boolean);
-
-    const genreSlice = (genreIds || []).slice(0, 3);
-    const genreResults = await Promise.all(
-      genreSlice.map(async (genreId: number) => {
-        try {
-          const movies = await getMoviesByGenre(genreId, 1);
-          return {
-            genreId,
-            items: movies.slice(0, 15),
-          };
-        } catch {
-          return null;
-        }
-      })
-    );
     const genreData = genreResults.filter(Boolean);
-
-    const base = await Promise.all([
-      getTrendingMovies(1, gId),
-      getTrendingTV(1, gId),
-      getUpcomingMovies(1),
-      getHiddenGems(1, gId),
-      getTopRated(1, gId),
-    ]);
 
     const todayStr = new Date().toISOString().split('T')[0];
     const twoYearsAgoStr = `${new Date().getFullYear() - 2}-01-01`;
@@ -1052,11 +1068,14 @@ const fetchFreshPersonalisedContent = async (
       upcoming: base[2],
       hiddenGems: base[3],
       topRated: base[4],
+      nostalgia: base[5],
+      animatedMovies: base[6],
       langData,
       actorData,
       genreData,
     };
 
+    saveExploreContentCacheSync(genreFilterId, result);
     AsyncStorage.setItem(cacheKey, JSON.stringify(result)).catch(() => {});
     return result;
   } catch (error) {
@@ -1109,6 +1128,7 @@ export const fetchMoreContentByType = async (type: string, page: number = 1): Pr
     case 'upcoming': return await getUpcomingMovies(page);
     case 'hiddengems': return await getHiddenGems(page);
     case 'nostalgia': return await getNostalgicMovies(page);
+    case 'animatedmovies': return await getAnimatedMovies(page);
     default:
       if (type.startsWith('search:')) { return await searchTMDB(type.substring(7), page); }
       return await getTrendingMovies(page);
@@ -1292,6 +1312,7 @@ export const updateUserMemoryWithAi = async (existingMemory: string, userMessage
 };
 
 export const fetchEmbedding = async (text: string): Promise<number[] | null> => {
+  if (!GLOBAL_CONFIG.aiEnabled) return null;
   try {
     const response = await axios.post('https://watcher-api-rho.vercel.app/api/embed', {
       text,
@@ -1299,12 +1320,13 @@ export const fetchEmbedding = async (text: string): Promise<number[] | null> => 
     });
     return response.data?.embedding || null;
   } catch (error: any) {
-    console.error('fetchEmbedding error:', error.message, error.response?.data);
+    console.warn('fetchEmbedding error:', error.message);
     return null;
   }
 };
 
 export const fetchEmbeddingsBatch = async (texts: string[]): Promise<number[][] | null> => {
+  if (!GLOBAL_CONFIG.aiEnabled) return null;
   try {
     const response = await axios.post('https://watcher-api-rho.vercel.app/api/embed', {
       texts,
@@ -1312,7 +1334,7 @@ export const fetchEmbeddingsBatch = async (texts: string[]): Promise<number[][] 
     });
     return response.data?.embeddings || null;
   } catch (error: any) {
-    console.error('fetchEmbeddingsBatch error:', error.message, error.response?.data);
+    console.warn('fetchEmbeddingsBatch error:', error.message);
     return null;
   }
 };

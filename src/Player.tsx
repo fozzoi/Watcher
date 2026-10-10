@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { View, StyleSheet, ActivityIndicator, Text, Platform, AppState, BackHandler, TouchableOpacity } from 'react-native';
 import { StatusBar, setStatusBarHidden } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
-import { useRoute, useNavigation } from "@react-navigation/native";
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
 import { saveProgress } from '../src/utils/progress';
@@ -40,9 +40,8 @@ const generateHlsHtml = (url: string) => `
 `;
 
 export default function Player() {
-  const route = useRoute();
-  const navigation = useNavigation();
-  const { tmdbId, mediaType, season, episode, title, poster } = route.params as any;
+  const router = useRouter();
+  const { tmdbId, mediaType, season, episode, title, poster } = useLocalSearchParams() as any;
 
   const [streamData, setStreamData] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,7 +54,7 @@ export default function Player() {
     enterFullScreen(transition);
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      exitFullScreen().then(() => navigation.goBack());
+      exitFullScreen().then(() => router.back());
       return true;
     });
     return () => {

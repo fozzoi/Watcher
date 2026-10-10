@@ -52,7 +52,7 @@ const IMAGE_SIZES = {
 
 const SHIMMER_WIDTH = width * 0.7; // Width of the shimmering gradient
 
-const SkeletonShimmer = ({ children, containerStyle = {} }) => {
+const SkeletonShimmer = ({ children, containerStyle = {} }: any) => {
   const shimmer = useSharedValue(-SHIMMER_WIDTH);
 
   useEffect(() => {
@@ -171,26 +171,26 @@ const SkeletonDetails = () => (
 
 // --------------------------------------------------------
 
-const ListDetails = ({ route }) => {
+const ListDetails = ({ route }: any) => {
   const router = useRouter();
   const { contentType = 'trending', title, initialSelectedMovie } = useLocalSearchParams();
   const initialMovies = route?.params?.movies || [];
   
   const insets = useSafeAreaInsets();
   
-  const [movies, setMovies] = useState(initialMovies || []);
-  const [selectedMovie, setSelectedMovie] = useState(null);
+  const [movies, setMovies] = useState<any[]>(initialMovies || []);
+  const [selectedMovie, setSelectedMovie] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(!initialMovies);
-  const [similarMovies, setSimilarMovies] = useState([]);
+  const [similarMovies, setSimilarMovies] = useState<any[]>([]);
   const [isSimilarLoading, setIsSimilarLoading] = useState(false);
   const [isInWatchlist, setIsInWatchlist] = useState(false);
-  const [selectedSeason, setSelectedSeason] = useState(null);
-  const [episodes, setEpisodes] = useState([]);
+  const [selectedSeason, setSelectedSeason] = useState<any>(null);
+  const [episodes, setEpisodes] = useState<any[]>([]);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
   
-  const [bgPoster, setBgPoster] = useState(null);
+  const [bgPoster, setBgPoster] = useState<any>(null);
   
-  const mainScrollViewRef = useRef(null);
+  const mainScrollViewRef = useRef<any>(null);
 
   const scale = useSharedValue(1);
   const animatedBgStyle = useAnimatedStyle(() => {
@@ -220,7 +220,8 @@ const ListDetails = ({ route }) => {
   const loadMovies = async () => {
     setIsLoading(true);
     try {
-      const data = await fetchMoreContentByType(contentType, 1);
+      const typeStr = Array.isArray(contentType) ? contentType[0] : contentType;
+      const data = await fetchMoreContentByType(typeStr, 1);
       setMovies(data);
       if (data.length > 0) {
         setBgPoster(data[0].poster_path); 
@@ -231,7 +232,7 @@ const ListDetails = ({ route }) => {
     } 
   };
 
-  const fetchSimilarMovies = async (movieId, mediaType) => {
+  const fetchSimilarMovies = async (movieId: any, mediaType: any) => {
     setIsSimilarLoading(true);
     try {
       const media = await getSimilarMedia(movieId, mediaType);
@@ -243,7 +244,7 @@ const ListDetails = ({ route }) => {
     }
   };
 
-  const handleMoviePress = async (movie) => {
+  const handleMoviePress = async (movie: any) => {
     setSelectedSeason(null);
     setEpisodes([]);
     setIsLoading(true);
@@ -312,7 +313,7 @@ const ListDetails = ({ route }) => {
     router.push(`/search?prefillQuery=${encodeURIComponent(`${selectedMovie.title || selectedMovie.name}`)}&fromMovieId=${selectedMovie.id}&fromMediaType=${mType}`);
   };
 
-  const handleSeasonSelect = async (seasonNumber) => {
+  const handleSeasonSelect = async (seasonNumber: any) => {
     if (!selectedMovie) return;
     setSelectedSeason(seasonNumber);
     setLoadingEpisodes(true);
@@ -326,7 +327,7 @@ const ListDetails = ({ route }) => {
     }
   };
 
-  const renderMovieCard = ({ item }) => (
+  const renderMovieCard = ({ item }: any) => (
     <TouchableOpacity activeOpacity={0.95} 
       style={styles.movieCard}
       onPress={() => handleMoviePress(item)}
@@ -463,7 +464,7 @@ const ListDetails = ({ route }) => {
               style={styles.seasonTabsContainer}
               nestedScrollEnabled={true} 
             >
-              {(selectedMovie.seasons.filter(s => s.season_number > 0) || selectedMovie.seasons).map((season) => (
+              {(selectedMovie.seasons.filter((s: any) => s.season_number > 0) || selectedMovie.seasons).map((season: any) => (
                 <TouchableOpacity activeOpacity={0.95}
                   key={`season-${season.id}`}
                   style={[

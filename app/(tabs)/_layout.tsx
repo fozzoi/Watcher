@@ -233,17 +233,20 @@ export default function TabLayout() {
     const targetRef = useRef<View | null>(null);
     const [targetReady, setTargetReady] = useState(false);
 
-    const onTargetRef = useCallback((node: View | null) => {
-        targetRef.current = node;
-        if (node) {
+    useEffect(() => {
+        if (targetRef.current) {
             setTargetReady(true);
         }
+        const timer = setTimeout(() => {
+            if (targetRef.current) setTargetReady(true);
+        }, 50);
+        return () => clearTimeout(timer);
     }, []);
 
     return (
         <View style={{ flex: 1, backgroundColor: '#141414' }}>
             {/* Target captures only the screens */}
-            <BlurTargetView ref={onTargetRef} style={{ flex: 1 }} collapsable={false}>
+            <BlurTargetView ref={targetRef} style={{ flex: 1 }} collapsable={false}>
                 <Tabs
                     backBehavior="history"
                     screenOptions={{

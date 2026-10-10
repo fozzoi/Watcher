@@ -104,7 +104,11 @@ async function resolveFirst<T>(queries: string[], resolver: (q: string) => Promi
   const settled = await Promise.all(
     queries.map((q) => resolver(q).then((arr) => arr[0] ?? null).catch(() => null))
   );
-  return settled.filter((r): r is T => r != null);
+  const results: T[] = [];
+  for (const item of settled) {
+    if (item != null) results.push(item);
+  }
+  return results;
 }
 
 /**

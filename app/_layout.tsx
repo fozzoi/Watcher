@@ -14,7 +14,7 @@ import { registerForPushNotificationsAsync, syncPushTokenAndWatchlist } from '@/
 import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, setOnSavedItemsChangedListener } from '@/src/database';
-import { fetchEmbedding, fetchEmbeddingsBatch, loadGlobalConfig } from '@/src/tmdb';
+import { loadGlobalConfig, GLOBAL_CONFIG, fetchEmbeddingsBatch } from '@/src/tmdb';
 import { pollCloudChanges, prepareCloudSessionOnStartup, queueCloudMutation } from '@/src/cloudSync';
 
 // Disable non-critical warnings
@@ -28,6 +28,7 @@ LogBox.ignoreLogs([
 SplashScreen.preventAutoHideAsync();
 
 const performAiBackgroundSync = async () => {
+  if (!GLOBAL_CONFIG.aiEnabled) return;
   try {
     const watchlist = getSavedItems('watchlist');
     const missingItems = [];
@@ -201,18 +202,23 @@ export default function RootLayout() {
       try {
         initDb();
         await performMigration();
-        await prepareCloudSessionOnStartup();
         await loadGlobalConfig();
         setDatabaseReady(true);
-        
-        // Fire and forget silent background AI embedding sync for existing users
-        performAiBackgroundSync();
+        // Non-blocking background sync
+        prepareCloudSessionOnStartup().catch((e) => console.warn('Cloud session warning:', e));
+        if (GLOBAL_CONFIG.aiEnabled) {
+          performAiBackgroundSync().catch(() => {});
+        }
       } catch (e) {
         console.error('Database init failed:', e);
       }
 
-      const complete = await isOnboardingComplete();
-      setNeedsOnboarding(!complete);
+      try {
+        const complete = await isOnboardingComplete();
+        setNeedsOnboarding(!complete);
+      } catch (e) {
+        setNeedsOnboarding(false);
+      }
       setIsReady(true);
     }
     initializeApp();
@@ -223,6 +229,8 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [isReady]);
+
+  
 
   // Release decoded native image cache to Android OS whenever app is backgrounded
   useEffect(() => {

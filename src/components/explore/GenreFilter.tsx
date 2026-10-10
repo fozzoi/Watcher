@@ -8,6 +8,8 @@ interface GenreFilterProps {
   onSelectGenre: (id: number) => void;
 }
 
+const ESTIMATED_CHIP_WIDTH = 110;
+
 const GenreFilter = memo(({ selectedGenre, onSelectGenre }: GenreFilterProps) => (
   <View style={styles.genreFilterContainer}>
     <FlatList
@@ -15,12 +17,19 @@ const GenreFilter = memo(({ selectedGenre, onSelectGenre }: GenreFilterProps) =>
       data={GENRE_DATA}
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.genreFilterContent}
+      getItemLayout={(_, index) => ({
+        length: ESTIMATED_CHIP_WIDTH,
+        offset: (ESTIMATED_CHIP_WIDTH + 10) * index,
+        index,
+      })}
+      initialNumToRender={6}
+      maxToRenderPerBatch={4}
       renderItem={({ item }) => {
         const isSelected = selectedGenre === item.id;
         return (
-          <TouchableOpacity 
-            activeOpacity={0.95} 
-            onPress={() => onSelectGenre(item.id)} 
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => onSelectGenre(item.id)}
             style={[styles.genreChip, isSelected && styles.genreChipActive]}
           >
             {item.icon ? (
@@ -37,7 +46,7 @@ const GenreFilter = memo(({ selectedGenre, onSelectGenre }: GenreFilterProps) =>
           </TouchableOpacity>
         );
       }}
-      keyExtractor={item => `genre-${item.id}`}
+      keyExtractor={(item) => `genre-${item.id}`}
     />
   </View>
 ));
@@ -45,20 +54,38 @@ const GenreFilter = memo(({ selectedGenre, onSelectGenre }: GenreFilterProps) =>
 export default GenreFilter;
 
 const styles = StyleSheet.create({
-  genreFilterContainer: { marginVertical: 18 },
-  genreFilterContent: { paddingHorizontal: HORIZONTAL_MARGIN, gap: 10 },
-  genreChip: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingHorizontal: 16, 
-    paddingVertical: 9, 
-    borderRadius: 22, 
-    backgroundColor: '#1E1E1E', 
-    borderWidth: 1, 
-    borderColor: '#1E1E1E' 
+  genreFilterContainer: {
+    marginVertical: 14,
+    minHeight: 44,
   },
-  genreChipActive: { backgroundColor: '#E50914', borderColor: '#E50914' },
-  genreChipIcon: { marginRight: 6 },
-  genreChipText: { color: '#AAA', fontSize: 14, fontWeight: '400' },
-  genreChipTextActive: { color: '#FFFFFF', fontWeight: '700' },
+  genreFilterContent: {
+    paddingHorizontal: HORIZONTAL_MARGIN,
+    gap: 10,
+  },
+  genreChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 22,
+    backgroundColor: '#1E1E1E',
+    borderWidth: 1,
+    borderColor: '#1E1E1E',
+  },
+  genreChipActive: {
+    backgroundColor: '#E50914',
+    borderColor: '#E50914',
+  },
+  genreChipIcon: {
+    marginRight: 6,
+  },
+  genreChipText: {
+    color: '#AAA',
+    fontSize: 14,
+    fontWeight: '400',
+  },
+  genreChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
 });

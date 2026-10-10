@@ -13,13 +13,18 @@ interface QuickAddButtonProps {
 }
 
 const QuickAddButton = memo(({ itemId, item, isAdded: propIsAdded, onPress }: QuickAddButtonProps) => {
-  const targetId = itemId ?? item?.id;
+  const targetId = itemId ?? item?.id ?? item?.media_id;
+  const numId = targetId !== undefined && targetId !== null ? Number(targetId) : undefined;
+
+  // Reactively track watchlist status from savedStore$ whenever an item ID is available
   const reactiveIsAdded = useSelector(() => {
-    if (propIsAdded !== undefined || targetId === undefined) return false;
-    return savedStore$.savedIds.get().has(targetId);
+    if (numId === undefined || isNaN(numId)) return false;
+    const current = savedStore$.savedIds.get();
+    return current ? current.has(numId) : false;
   });
 
-  const isAdded = propIsAdded !== undefined ? propIsAdded : reactiveIsAdded;
+  // If we have an ID, always prefer the reactive state; otherwise fall back to prop
+  const isAdded = numId !== undefined ? reactiveIsAdded : (propIsAdded ?? false);
 
   const handlePress = () => {
     if (onPress) {
@@ -36,7 +41,11 @@ const QuickAddButton = memo(({ itemId, item, isAdded: propIsAdded, onPress }: Qu
       style={styles.quickAddWrapper}
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
     >
-      <MaterialIcons name={isAdded ? "favorite" : "favorite-outline"} size={25} color={isAdded ? "#E50914" : "#FFFFFF"} />
+      <MaterialIcons
+        name={isAdded ? "favorite" : "favorite-outline"}
+        size={25}
+        color={isAdded ? "#E50914" : "#FFFFFF"}
+      />
     </TouchableOpacity>
   );
 });

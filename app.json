@@ -3,6 +3,7 @@
     "name": "Watcher",
     "slug": "Watcher",
     "version": "3.1.4",
+    "newArchEnabled": true,
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "myapp",

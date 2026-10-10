@@ -1,7 +1,5 @@
-// src/userPreferences.ts
-// Stores and retrieves user onboarding preferences from AsyncStorage.
-
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearExploreCache } from './database';
 
 const PREFS_KEY = 'user_preferences';
 let onPreferencesChanged: ((prefs: Partial<UserPreferences>) => void) | null = null;
@@ -29,12 +27,25 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   favoriteActors: [],
 };
 
+let memoryUserPreferences: UserPreferences | null = null;
+
+export const getUserPreferencesSync = (): UserPreferences => {
+  return memoryUserPreferences || DEFAULT_PREFERENCES;
+};
+
 export const getUserPreferences = async (): Promise<UserPreferences> => {
+  if (memoryUserPreferences) return memoryUserPreferences;
   try {
     const str = await AsyncStorage.getItem(PREFS_KEY);
-    if (!str) return DEFAULT_PREFERENCES;
-    return { ...DEFAULT_PREFERENCES, ...JSON.parse(str) };
+    if (!str) {
+      memoryUserPreferences = DEFAULT_PREFERENCES;
+      return DEFAULT_PREFERENCES;
+    }
+    const parsed = { ...DEFAULT_PREFERENCES, ...JSON.parse(str) };
+    memoryUserPreferences = parsed;
+    return parsed;
   } catch {
+    memoryUserPreferences = DEFAULT_PREFERENCES;
     return DEFAULT_PREFERENCES;
   }
 };
@@ -42,12 +53,16 @@ export const getUserPreferences = async (): Promise<UserPreferences> => {
 export const setUserPreferences = async (prefs: Partial<UserPreferences>, notify = true): Promise<void> => {
   const current = await getUserPreferences();
   const updated = { ...current, ...prefs };
+  memoryUserPreferences = updated;
+  clearExploreCache();
   await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(updated));
   if (notify) onPreferencesChanged?.(updated);
 };
 
 export const completeOnboarding = async (prefs: Omit<UserPreferences, 'onboardingComplete'>): Promise<void> => {
   const updated = { ...prefs, onboardingComplete: true };
+  memoryUserPreferences = updated;
+  clearExploreCache();
   await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(updated));
   onPreferencesChanged?.({ ...prefs, onboardingComplete: true });
 };
@@ -58,6 +73,8 @@ export const isOnboardingComplete = async (): Promise<boolean> => {
 };
 
 export const resetOnboarding = async (): Promise<void> => {
+  memoryUserPreferences = DEFAULT_PREFERENCES;
+  clearExploreCache();
   await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(DEFAULT_PREFERENCES));
   onPreferencesChanged?.(DEFAULT_PREFERENCES);
 };

@@ -7,6 +7,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { getImageUrl, type TMDBResult } from '../../tmdb';
 import QuickAddButton from '../shared/QuickAddButton';
 import { HERO_HEIGHT, HORIZONTAL_MARGIN } from './ExploreConstants';
+import { observable } from '@legendapp/state';
+import { useSelector } from '@legendapp/state/react';
+
+export const heroScroll$ = observable({ isScrolledOut: false });
 
 const MAX_SLIDES = 8;
 const AUTOPLAY_MS = 5000;
@@ -30,7 +34,6 @@ const HIT_H = 32;
 
 type Props = {
   items: TMDBResult[];
-  savedIds: Set<number>;
   toggleWatchlist: (item: TMDBResult) => void;
   isLoading?: boolean;
 };
@@ -99,8 +102,8 @@ const LiquidIndicator = memo(function LiquidIndicator({
 });
 
 // ── Slide ────────────────────────────────────────────────────────────────────
-const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMotion, width, height, isAdded, onToggle, onPress }: {
-  item: TMDBResult; active: boolean; shouldRender: boolean; reduceMotion: boolean; width: number; height: number; isAdded: boolean;
+const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMotion, width, height, onToggle, onPress }: {
+  item: TMDBResult; active: boolean; shouldRender: boolean; reduceMotion: boolean; width: number; height: number;
   onToggle: (item: TMDBResult) => void; onPress: (item: TMDBResult) => void;
 }) {
   const opacity = useRef(new Animated.Value(active ? 1 : 0)).current;
@@ -158,7 +161,7 @@ const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMo
       >
         <View style={styles.titleRow}>
           <Text style={styles.title} numberOfLines={2}>{title}</Text>
-          <QuickAddButton isAdded={isAdded} onPress={() => onToggle(item)} />
+          <QuickAddButton item={item} itemId={item.id} onPress={() => onToggle(item)} />
         </View>
         <View style={styles.meta}>
           {rating ? (
@@ -176,7 +179,7 @@ const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMo
 });
 
 // ── Section ──────────────────────────────────────────────────────────────────
-export default memo(function HeroSection({ items, savedIds, toggleWatchlist, isLoading = false }: Props) {
+export default memo(function HeroSection({ items, toggleWatchlist, isLoading = false }: Props) {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const width = Math.max(1, screenWidth - HORIZONTAL_MARGIN * 2);
@@ -187,7 +190,8 @@ export default memo(function HeroSection({ items, savedIds, toggleWatchlist, isL
   const [focused, setFocused] = useState(false);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [reduceMotion, setReduceMotion] = useState(true);
-  const paused = userPaused || dragging;
+  const isScrolledOut = useSelector(() => heroScroll$.isScrolledOut.get());
+  const paused = userPaused || dragging || isScrolledOut;
   const activeIndex = slides.length ? Math.min(index, slides.length - 1) : 0;
 
   useEffect(() => { setIndex((p) => Math.min(p, Math.max(0, slides.length - 1))); }, [slides.length]);
@@ -237,10 +241,9 @@ export default memo(function HeroSection({ items, savedIds, toggleWatchlist, isL
             item={item}
             active={i === activeIndex}
             shouldRender={isNearby}
-            reduceMotion={reduceMotion || !focused || !foreground}
+            reduceMotion={reduceMotion || !focused || !foreground || isScrolledOut}
             width={width}
             height={HERO_HEIGHT}
-            isAdded={savedIds.has(item.id)}
             onToggle={toggleWatchlist}
             onPress={open}
           />

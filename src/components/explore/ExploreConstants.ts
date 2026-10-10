@@ -11,7 +11,7 @@ export const AVAILABLE_WIDTH = width - (HORIZONTAL_MARGIN * 2) - (GAP_SIZE * 2);
 export const EXPLORE_CARD_WIDTH = AVAILABLE_WIDTH / 2.5;
 export const SEARCH_CARD_WIDTH = (width - HORIZONTAL_MARGIN * 2 - GAP_SIZE) / 3;
 export const HERO_CARD_WIDTH = width - HORIZONTAL_MARGIN * 2;
-export const HERO_HEIGHT = height * 0.55;
+export const HERO_HEIGHT = Math.round(height * 0.52);
 
 export type GenreIconName = ComponentProps<typeof Ionicons>['name'];
 

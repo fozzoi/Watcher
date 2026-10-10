@@ -17,6 +17,7 @@ import {
   completeOnboarding, getUserPreferences, FavoriteActor,
 } from '../src/userPreferences';
 import { searchPeople, getImageUrl } from '../src/tmdb';
+import { clearExploreCache } from '../src/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
@@ -251,6 +252,7 @@ export default function Onboarding() {
       await completeOnboarding({ country: 'IN', languages, genreIds, favoriteActors: actors });
       
       // Invalidate local discovery cache so explore page immediately reflects new preferences
+      clearExploreCache();
       const keys = await AsyncStorage.getAllKeys();
       const discoveryKeys = keys.filter(k => k.startsWith('PERSONALISED_PAGE_DATA_'));
       if (discoveryKeys.length > 0) {

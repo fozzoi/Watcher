@@ -1,71 +1,35 @@
-// src/components/aichat/AiComparisonTable.tsx
-import React, { memo, useMemo, useState } from 'react';
-import {
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  ScrollView,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+// src/components/aichat/AiStructuredList.tsx
+import React, { memo, useMemo } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import FormattedMarkdownText from './FormattedMarkdownText';
 import { ai } from './aiTheme';
 
-interface AiComparisonTableProps {
+export type ListItem = {
+  title?: string;
+  subtitle?: string;
+  value?: string;
+  tag?: string;
+};
+
+interface AiStructuredListProps {
   title?: string;
   text?: string;
-  headers: string[];
-  rows: (string | number)[][];
+  items: Array<ListItem | string>;
+  /** Numbers only when the order actually means something (rankings, steps). */
+  ordered?: boolean;
 }
 
-const OUTER_PAD = 16; // container paddingHorizontal (matches chat gutter)
-const CHAR_PX = 6.6;
-const strip = (s: string) => s.replace(/[*_`~]/g, '');
-const isWin = (s: string) => /^(yes|winner|✓|✔)$/i.test(s.trim()) || s.trim().startsWith('🏆');
-
-export const AiComparisonTable = memo(({ title, text, headers = [], rows = [] }: AiComparisonTableProps) => {
-  const { width: winW } = useWindowDimensions();
-  const [atEnd, setAtEnd] = useState(false);
-
-  const heads = useMemo(() => (headers ?? []).map((h) => String(h ?? '')), [headers]);
-  const data = useMemo(
+export const AiStructuredList = memo(({ title, text, items = [], ordered = true }: AiStructuredListProps) => {
+  const rows = useMemo<ListItem[]>(
     () =>
-      (rows ?? [])
-        .filter(Array.isArray)
-        .map((r) => heads.map((_, i) => String(r[i] ?? '').trim() || '—')),
-    [rows, heads]
+      (items ?? [])
+        .map((it) => (it && typeof it === 'object' ? it : { title: String(it ?? '') }))
+        .filter((it) => it.title || it.subtitle),
+    [items]
   );
 
-  const available = winW - OUTER_PAD * 2 - 2;
-
-  // Column widths follow the content, then stretch to fill the card if there's room.
-  const widths = useMemo(() => {
-    const w = heads.map((h, c) => {
-      const longest = Math.max(strip(h).length, ...data.map((r) => strip(r[c]).length));
-      const [min, max] = c === 0 ? [104, 150] : [96, 200];
-      return Math.min(max, Math.max(min, Math.round(longest * CHAR_PX) + 26));
-    });
-    const total = w.reduce((a, b) => a + b, 0);
-    if (total > 0 && total < available) {
-      const k = available / total;
-      return w.map((x) => Math.floor(x * k));
-    }
-    return w;
-  }, [heads, data, available]);
-
-  if (!heads.length || (!data.length && !text)) return null;
-
-  const total = widths.reduce((a, b) => a + b, 0);
-  const overflow = total > available + 1;
-
-  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
-    const end = contentOffset.x + layoutMeasurement.width >= contentSize.width - 6;
-    if (end !== atEnd) setAtEnd(end);
-  };
+  if (!rows.length) return null;
 
   return (
     <View style={styles.container}>
@@ -75,77 +39,64 @@ export const AiComparisonTable = memo(({ title, text, headers = [], rows = [] }:
         </View>
       )}
 
-      {data.length > 0 && (
-        <View style={styles.card}>
-          {!!title && (
-            <View style={styles.titleRow}>
-              <Ionicons name="swap-horizontal" size={15} color={ai.accent} />
-              <Text style={styles.title} numberOfLines={1}>
-                {title}
-              </Text>
-            </View>
-          )}
-
-          <View>
-            <ScrollView
-              horizontal
-              nestedScrollEnabled
-              bounces={false}
-              showsHorizontalScrollIndicator={false}
-              scrollEventThrottle={32}
-              onScroll={overflow ? onScroll : undefined}
-            >
-              <View>
-                <View style={styles.headRow}>
-                  {heads.map((h, c) => (
-                    <View key={c} style={[styles.cell, c === 0 && styles.firstCell, { width: widths[c] }]}>
-                      <FormattedMarkdownText text={h || ' '} style={styles.headText} baseColor={ai.textMute} />
-                    </View>
-                  ))}
-                </View>
-
-                {data.map((row, r) => (
-                  <View key={r} style={[styles.row, r === data.length - 1 && styles.rowLast]}>
-                    {row.map((cell, c) => {
-                      const win = c > 0 && isWin(cell);
-                      return (
-                        <View key={c} style={[styles.cell, c === 0 && styles.firstCell, { width: widths[c] }]}>
-                          <FormattedMarkdownText
-                            text={cell}
-                            style={[styles.cellText, c === 0 && styles.firstColText, win && styles.winText]}
-                            baseColor={c === 0 ? '#FFFFFF' : win ? ai.accentText : ai.textDim}
-                          />
-                        </View>
-                      );
-                    })}
-                  </View>
-                ))}
-              </View>
-            </ScrollView>
-
-            {overflow && !atEnd && (
-              <LinearGradient
-                pointerEvents="none"
-                colors={['rgba(20,20,24,0)', ai.card]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.fade}
-              />
-            )}
+      <View style={styles.card}>
+        {!!title && (
+          <View style={styles.titleRow}>
+            <Ionicons name="list-outline" size={16} color={ai.accent} />
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {title}
+            </Text>
           </View>
-        </View>
-      )}
+        )}
+
+        {rows.map((item, i) => {
+          const headline = item.title || item.subtitle || '';
+          const detail = item.title ? item.subtitle : undefined;
+          return (
+            <View key={i} style={[styles.row, i === rows.length - 1 && styles.rowLast]}>
+              <View style={styles.lead}>
+                {ordered ? <Text style={styles.index}>{i + 1}</Text> : <View style={styles.dot} />}
+              </View>
+
+              <View style={styles.body}>
+                <FormattedMarkdownText text={headline} style={styles.itemTitle} baseColor="#FFFFFF" />
+                {!!detail && (
+                  <FormattedMarkdownText text={detail} style={styles.itemSubtitle} baseColor={ai.textDim} />
+                )}
+                {!!item.tag && (
+                  <View style={styles.tag}>
+                    <Text style={styles.tagText}>{item.tag}</Text>
+                  </View>
+                )}
+              </View>
+
+              {!!item.value && (
+                <Text style={styles.value} numberOfLines={2}>
+                  {item.value}
+                </Text>
+              )}
+            </View>
+          );
+        })}
+      </View>
     </View>
   );
 });
 
-AiComparisonTable.displayName = 'AiComparisonTable';
-export default AiComparisonTable;
+AiStructuredList.displayName = 'AiStructuredList';
+export default AiStructuredList;
 
 const styles = StyleSheet.create({
-  container: { marginVertical: 6, paddingHorizontal: OUTER_PAD },
-  textBubble: { marginBottom: 10 },
-  introText: { color: '#E8E8E8', fontSize: 15, lineHeight: 22 },
+  container: { marginVertical: 6, paddingHorizontal: 12 },
+  textBubble: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: ai.border,
+  },
+  introText: { color: '#DDD', fontSize: 14, lineHeight: 20 },
   card: {
     backgroundColor: ai.card,
     borderRadius: 14,
@@ -159,25 +110,40 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 14,
     paddingTop: 12,
-    paddingBottom: 8,
+    paddingBottom: 6,
   },
-  title: { flex: 1, color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  headRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: ai.accentLine,
-  },
+  cardTitle: { flex: 1, color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
   row: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255,255,255,0.10)',
   },
   rowLast: { borderBottomWidth: 0 },
-  cell: { paddingHorizontal: 10, paddingVertical: 10, justifyContent: 'center' },
-  firstCell: { paddingLeft: 14 },
-  headText: { fontSize: 12, fontWeight: '600', lineHeight: 16 },
-  cellText: { fontSize: 13, lineHeight: 18 },
-  firstColText: { fontWeight: '600' },
-  winText: { fontWeight: '700' },
-  fade: { position: 'absolute', top: 0, right: 0, bottom: 0, width: 28 },
+  lead: { width: 20, alignItems: 'center', paddingTop: 2 },
+  index: { color: ai.accent, fontSize: 13, fontWeight: '700', lineHeight: 18 },
+  dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: ai.accent, marginTop: 7 },
+  body: { flex: 1, gap: 3 },
+  itemTitle: { fontSize: 14, fontWeight: '600', lineHeight: 19 },
+  itemSubtitle: { fontSize: 13, lineHeight: 18 },
+  tag: {
+    alignSelf: 'flex-start',
+    marginTop: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: ai.accentSoft,
+  },
+  tagText: { color: '#FF8A8A', fontSize: 11, fontWeight: '600' },
+  value: {
+    maxWidth: 96,
+    textAlign: 'right',
+    color: ai.accentText,
+    fontSize: 12.5,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
 });

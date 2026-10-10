@@ -1,11 +1,11 @@
 import React, { memo } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { getImageUrl } from '../../tmdb';
 import QuickAddButton from './QuickAddButton';
 import { EXPLORE_CARD_WIDTH, SEARCH_CARD_WIDTH, GAP_SIZE } from '../explore/ExploreConstants';
 
-// Shared design system — kept in sync with DetailPage.tsx / CastDetails.tsx
 const C = {
   surface2: '#1C1C20',
   white: '#FAFAFA',
@@ -18,70 +18,94 @@ interface MovieCardProps {
   item: any;
   onPress: () => void;
   isSearchMode?: boolean;
-  isAdded: boolean;
-  toggleWatchlist: (item: any) => void;
+  isAdded?: boolean;
+  toggleWatchlist?: (item: any) => void;
 }
 
-const MovieCard = memo(({ item, onPress, isSearchMode = false, isAdded, toggleWatchlist }: MovieCardProps) => {
-  const cardWidth = isSearchMode ? SEARCH_CARD_WIDTH : EXPLORE_CARD_WIDTH;
-  const cardHeight = cardWidth * 1.5;
+const MovieCard = memo(
+  ({ item, onPress, isSearchMode = false, isAdded = false, toggleWatchlist }: MovieCardProps) => {
+    if (!item || !item.id) return null;
 
-  if (!item || !item.id) return null;
+    const cardWidth = isSearchMode ? SEARCH_CARD_WIDTH : EXPLORE_CARD_WIDTH;
+    const cardHeight = cardWidth * 1.5;
+    const imagePath = item.poster_path || item.backdrop_path;
+    const imageUrl = imagePath ? getImageUrl(imagePath, 'w342') : null;
 
-  const imagePath = item.poster_path || item.backdrop_path;
-
-  return (
-    <TouchableOpacity
-      activeOpacity={0.95}
-      onPress={onPress}
-      style={{ width: cardWidth, marginRight: isSearchMode ? 0 : GAP_SIZE, marginBottom: isSearchMode ? 16 : 0 }}
-    >
-      <View style={styles.cardContainer}>
-        {imagePath ? (
-          <Image
-            source={{ uri: getImageUrl(imagePath, 'w342') }}
-            style={[styles.sectionImage, { width: cardWidth, height: cardHeight }]}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={[styles.placeholderCard, { width: cardWidth, height: cardHeight }]}>
-            <Ionicons name="film-outline" size={28} color={C.mutedSoft} />
-            <Text style={styles.placeholderTitle} numberOfLines={2}>
-              {item.title || item.name || 'Untitled'}
-            </Text>
-          </View>
-        )}
-        <View style={styles.cardAddButtonOverlay}>
-          <QuickAddButton isAdded={isAdded} onPress={() => toggleWatchlist(item)} />
-        </View>
-        {item.vote_average ? (
-          <View style={styles.cardOverlay}>
-            <View style={styles.ratingBadgeSmall}>
-              <Ionicons name="star" size={10} color={C.gold} />
-              <Text style={styles.ratingTextSmall}>{item.vote_average.toFixed(1)}</Text>
+    return (
+      <TouchableOpacity
+        activeOpacity={0.92}
+        onPress={onPress}
+        style={{
+          width: cardWidth,
+          marginRight: isSearchMode ? 0 : GAP_SIZE,
+          marginBottom: isSearchMode ? 16 : 0,
+        }}
+      >
+        <View style={[styles.cardContainer, { width: cardWidth, height: cardHeight }]}>
+          {imageUrl ? (
+            <Image
+              source={{ uri: imageUrl }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              cachePolicy="disk"
+              recyclingKey={imageUrl}
+              transition={150}
+            />
+          ) : (
+            <View style={[styles.placeholderCard, { width: cardWidth, height: cardHeight }]}>
+              <Ionicons name="film-outline" size={28} color={C.mutedSoft} />
+              <Text style={styles.placeholderTitle} numberOfLines={2}>
+                {item.title || item.name || 'Untitled'}
+              </Text>
             </View>
+          )}
+
+          <View style={styles.cardAddButtonOverlay}>
+            <QuickAddButton
+              item={item}
+              itemId={item.id}
+              isAdded={isAdded}
+              onPress={toggleWatchlist ? () => toggleWatchlist(item) : undefined}
+            />
           </View>
-        ) : null}
-      </View>
-      {isSearchMode && (
-        <Text style={styles.sectionItemTitle} numberOfLines={2}>
-          {item.title || item.name}
-        </Text>
-      )}
-    </TouchableOpacity>
-  );
-});
+
+          {item.vote_average ? (
+            <View style={styles.cardOverlay}>
+              <View style={styles.ratingBadgeSmall}>
+                <Ionicons name="star" size={10} color={C.gold} />
+                <Text style={styles.ratingTextSmall}>{item.vote_average.toFixed(1)}</Text>
+              </View>
+            </View>
+          ) : null}
+        </View>
+
+        {isSearchMode && (
+          <Text style={styles.sectionItemTitle} numberOfLines={2}>
+            {item.title || item.name}
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
+  },
+  (prev, next) => {
+    return (
+      prev.item.id === next.item.id &&
+      prev.isAdded === next.isAdded &&
+      prev.isSearchMode === next.isSearchMode
+    );
+  }
+);
 
 export default MovieCard;
 
 const styles = StyleSheet.create({
-  cardContainer: { position: 'relative' },
-  sectionImage: {
+  cardContainer: {
+    position: 'relative',
     borderRadius: 12,
     backgroundColor: C.surface2,
+    overflow: 'hidden',
   },
   placeholderCard: {
-    borderRadius: 12,
     backgroundColor: C.surface2,
     alignItems: 'center',
     justifyContent: 'center',
@@ -106,6 +130,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 8,
     left: 8,
+    zIndex: 5,
   },
   ratingBadgeSmall: {
     flexDirection: 'row',

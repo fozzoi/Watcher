@@ -518,7 +518,7 @@ const AiChat = () => {
         try {
           const userEmbedding = await fetchEmbedding(text);
           const all = userEmbedding ? getAllAiEmbeddings() : [];
-          if (all.length > 0) {
+          if (userEmbedding && all.length > 0) {
             const topIds = new Set(
               all
                 .map((item: any) => ({ mediaId: item.media_id, score: cosineSimilarity(userEmbedding, item.embedding) }))
@@ -575,7 +575,7 @@ const AiChat = () => {
     openingRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      navigateToDetails((await getFullDetails(item)) || item);
+      navigateToDetails((await getFullDetails(item as any)) || item);
     } catch {
       navigateToDetails(item); // still open the page if enrichment fails
     } finally {
