@@ -20,8 +20,11 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
   Dimensions,
+  InteractionManager,
 } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { LegendList } from '@legendapp/list/react-native';
+import { useSelector } from '@legendapp/state/react';
+import { savedStore$, toggleWatchlistGlobal, syncSavedStore } from '../../src/state/savedState';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Animated, {
   useSharedValue,
@@ -95,8 +98,8 @@ const ExplorePage = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
-  const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
-  const [watchedIds, setWatchedIds] = useState<Set<number>>(new Set());
+  const savedIds = useSelector(() => savedStore$.savedIds.get());
+  const watchedIds = useSelector(() => savedStore$.watchedIds.get());
 
   const [tmdbResults, setTmdbResults] = useState<any[]>([]);
   const [peopleResults, setPeopleResults] = useState<any[]>([]);
@@ -174,19 +177,6 @@ const ExplorePage = () => {
     }, [])
   );
 
-  const loadUserData = useCallback(async () => {
-    try {
-      const m = getSavedItems('watchlist');
-      const a = getSavedItems('artist');
-      setSavedIds(new Set([...m.map((i: any) => i.id), ...a.map((i: any) => i.id)]));
-
-      const w = getSavedItems('history');
-      setWatchedIds(new Set(w.map((i: any) => i.id)));
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
-
   const lastPrefsRef = useRef<string>('');
 
   const fetchContent = useCallback(async (genreId: number = 0, forceRefresh: boolean = false) => {
@@ -222,53 +212,25 @@ const ExplorePage = () => {
 
   useFocusEffect(
     useCallback(() => {
-      loadUserData();
-      getUserPreferences().then((prefs) => {
-        const actorsKey = (prefs.favoriteActors || []).map((a: any) => a.id).join(',');
-        const currentHash = `${(prefs.languages || []).join(',')}-${(prefs.genreIds || []).join(',')}-${actorsKey}`;
-        if (lastPrefsRef.current && lastPrefsRef.current !== currentHash) {
-          fetchContent(selectedGenre, true);
-        }
-        lastPrefsRef.current = currentHash;
+      const task = InteractionManager.runAfterInteractions(() => {
+        syncSavedStore();
+        getUserPreferences().then((prefs) => {
+          const actorsKey = (prefs.favoriteActors || []).map((a: any) => a.id).join(',');
+          const currentHash = `${(prefs.languages || []).join(',')}-${(prefs.genreIds || []).join(',')}-${actorsKey}`;
+          if (lastPrefsRef.current && lastPrefsRef.current !== currentHash) {
+            fetchContent(selectedGenre, true);
+          }
+          lastPrefsRef.current = currentHash;
+        });
       });
-    }, [loadUserData, fetchContent, selectedGenre])
+      return () => {
+        task.cancel();
+      };
+    }, [fetchContent, selectedGenre])
   );
 
   const toggleWatchlist = useCallback((item: any) => {
-    const isPerson = !!(item.profile_path || item.known_for_department);
-    const type = isPerson ? 'artist' : 'watchlist';
-    try {
-      const exists = hasSavedItem(item.id, type);
-      if (exists) {
-        removeSavedItem(item.id, type);
-      } else {
-        addSavedItem(item, type);
-        if (isPerson) {
-          logTasteEvent({
-            entity_type: 'cast',
-            entity_id: item.id,
-            entity_name: item.name,
-            weight: TASTE_WEIGHTS.FAVORITE_ARTIST,
-          });
-        } else {
-          logTasteEvent({
-            entity_type: item.media_type || (item.first_air_date ? 'tv' : 'movie'),
-            entity_id: item.id,
-            entity_name: item.title || item.name,
-            genres: item.genre_ids,
-            weight: TASTE_WEIGHTS.WATCHLIST_ADD,
-          });
-        }
-      }
-      setSavedIds((prev) => {
-        const n = new Set(prev);
-        if (n.has(item.id)) n.delete(item.id);
-        else n.add(item.id);
-        return n;
-      });
-    } catch (e) {
-      console.error(e);
-    }
+    toggleWatchlistGlobal(item);
   }, []);
 
   useEffect(() => {
@@ -478,10 +440,6 @@ const ExplorePage = () => {
     );
   }, [visibleCount, exploreSections.length, contentLoading]);
 
-  // Tell FlashList the exact height of carousel rows so reverse scrolls don't trigger blank re-measuring
-  const overrideItemLayout = useCallback((layout: { span?: number; size?: number }, _item: ExploreSection) => {
-    layout.size = 280;
-  }, []);
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -564,13 +522,11 @@ const ExplorePage = () => {
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      <FlashList
+      <LegendList
         data={contentLoading ? [] : paginatedSections}
         renderItem={renderExploreSection}
         keyExtractor={(item) => item.key}
-        overrideItemLayout={overrideItemLayout}
-        drawDistance={Math.round(SCREEN_HEIGHT * 1.0)}
-        removeClippedSubviews={true}
+        estimatedItemSize={280}
         ListHeaderComponent={renderExploreHeader}
         ListFooterComponent={renderFooter}
         onEndReached={loadMoreSections}

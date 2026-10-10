@@ -259,15 +259,19 @@ export default function RootLayout() {
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: '#141414' },
+          animationDuration: 280,
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade' }} />
         <Stack.Screen name="player" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="stats" options={{ presentation: 'card', animation: 'slide_from_right' }} />
         <Stack.Screen name="movie/[id]" options={{ presentation: 'card' }} />
         <Stack.Screen name="cast/[id]" options={{ presentation: 'card' }} />
         <Stack.Screen name="collection/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="viewall" options={{ presentation: 'card' }} />
       </Stack>
 
       <AppUpdateModal

@@ -174,14 +174,14 @@ const WatchListPage = () => {
   const filterTranslateY = useSharedValue(0);
   const filterOpacity = useSharedValue(1);
   const filterScale = useSharedValue(1);
-  const scrollTimeout = useRef<NodeJS.Timeout>(null);
+  const scrollTimeout = useRef<any>(null);
 
   const animatedFilterStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: filterTranslateY.value }, { scale: filterScale.value }],
     opacity: filterOpacity.value,
   }));
 
-  const flatListRef = useRef<FlashList<any>>(null);
+  const flatListRef = useRef<any>(null);
 
   useEffect(() => {
     let active = true;
@@ -416,7 +416,7 @@ const WatchListPage = () => {
         setSyncProgress(`Matching [${i + 1}/${extractedMovies.length}]: ${item.title}`);
         try {
           const searchData = await searchTMDB(item.title);
-          const topResult = searchData.results?.[0];
+          const topResult = Array.isArray(searchData) ? searchData[0] : (searchData as any)?.results?.[0];
 
           if (topResult) {
             const alreadyExists = currentWatchlist.some((m: any) => m.id === topResult.id);

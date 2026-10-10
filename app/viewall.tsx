@@ -11,7 +11,7 @@ import {
   ScrollView
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { FlashList } from '@shopify/flash-list';
+import { LegendList } from '@legendapp/list/react-native';
 import { getImageUrl, getFullDetails, TMDBResult, getDiscoverMedia, fetchMoreContentByType } from '../src/tmdb';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -182,12 +182,12 @@ const ViewAllPage = () => {
           </View>
         </ScrollView>
       ) : (
-        <FlashList
+        <LegendList
           data={movies}
           renderItem={renderMovieCard}
           keyExtractor={(item, index) => `${item.id}-${index}`}
           numColumns={3}
-          removeClippedSubviews={true}
+          estimatedItemSize={200}
           contentContainerStyle={styles.listContent}
           onEndReached={loadMoreMovies}
           onEndReachedThreshold={0.5}

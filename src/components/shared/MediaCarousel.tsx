@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { FlashList } from '@shopify/flash-list';
+import { LegendList } from '@legendapp/list/react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { getFullDetails } from '../../tmdb';
 import MovieCard from './MovieCard';
@@ -64,17 +64,17 @@ const MediaCarousel = memo(({ title, type, data, savedIds, toggleWatchlist }: Me
           <MaterialIcons name="chevron-right" size={24} color={C.mutedSoft} />
         </TouchableOpacity>
       </View>
-      <FlashList
+      <LegendList
         horizontal
         data={validData}
         showsHorizontalScrollIndicator={false}
         bounces={true}
         contentContainerStyle={{ paddingHorizontal: HORIZONTAL_MARGIN }}
-        removeClippedSubviews={true}
         keyExtractor={(item, index) => `${item.id}-${index}`}
         snapToInterval={SNAP_INTERVAL}
         snapToAlignment="start"
         decelerationRate="fast"
+        estimatedItemSize={SNAP_INTERVAL}
         renderItem={({ item }) => (
           <CarouselMovieCard
             item={item}
