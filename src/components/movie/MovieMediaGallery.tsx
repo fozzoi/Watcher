@@ -307,7 +307,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
                   style={StyleSheet.absoluteFill}
                   contentFit="cover"
                   cachePolicy="disk"
-                  transition={200}
+                  priority="low"
                 />
                 <View style={styles.cardGradient} />
                 <View style={styles.zoomIconWrapper}>

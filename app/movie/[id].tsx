@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import dayjs from 'dayjs';
 import {
   View,
+  Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
@@ -16,7 +17,6 @@ import {
   DimensionValue,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { Text } from 'react-native-paper';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { LegendList } from '@legendapp/list/react-native';
@@ -54,13 +54,21 @@ import MovieTorrentModal from '../../src/components/movie/MovieTorrentModal';
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 const INITIAL_EPISODES_LIMIT = 8;
 
-const runWhenIdle = (cb: () => void) => {
-  if (typeof requestIdleCallback === 'function') {
-    const handle = requestIdleCallback(cb, { timeout: 400 });
-    return () => cancelIdleCallback(handle);
-  }
-  const timer = setTimeout(cb, 180);
-  return () => clearTimeout(timer);
+const runAfterTransition = (cb: () => void, delayMs = 320) => {
+  let isCancelled = false;
+  let rafId: number | null = null;
+  const timer = setTimeout(() => {
+    if (isCancelled) return;
+    rafId = requestAnimationFrame(() => {
+      if (!isCancelled) cb();
+    });
+  }, delayMs);
+
+  return () => {
+    isCancelled = true;
+    clearTimeout(timer);
+    if (rafId !== null) cancelAnimationFrame(rafId);
+  };
 };
 
 const C = {
@@ -77,8 +85,6 @@ const C = {
   ai: '#FF453A',
   aiSoft: 'rgba(255,69,58,0.10)',
 };
-
-const ListSpacer = () => <View style={{ width: 12 }} />;
 
 const AIShimmerBar = ({ width: w = '100%', height = 12 }: { width?: string | number; height?: number }) => (
   <View style={{ width: w as any, height, borderRadius: 6, backgroundColor: C.aiSoft, marginBottom: 8 }} />
@@ -105,124 +111,134 @@ const CardShimmer = React.memo(({ width, height }: { width: DimensionValue; heig
   </View>
 ));
 
-const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => (
-  <TouchableOpacity
-    activeOpacity={0.92}
-    style={[styles.similarCard, { width: cardWidth }]}
-    onPress={() => onPress(item)}
-  >
-    <Image
-      source={{ uri: getImageUrl(item.poster_path, 'w342') }}
-      style={[styles.similarImg, { width: cardWidth, height: cardWidth * 1.5 }]}
-      contentFit="cover"
-      cachePolicy="disk"
-    />
-    <View style={styles.ratingBadge}>
-      <Ionicons name="star" size={9} color={C.gold} />
-      <Text style={styles.ratingText}>{item.vote_average ? item.vote_average.toFixed(1) : 'N/A'}</Text>
-    </View>
-    <Text style={styles.similarTitle} numberOfLines={2}>
-      {item.title || item.name}
-    </Text>
-  </TouchableOpacity>
-));
-
-const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => (
-  <TouchableOpacity
-    activeOpacity={0.92}
-    style={styles.directorCard}
-    onPress={() => onPress(item.id)}
-  >
-    <Image
-      source={{
-        uri: item.profile_path
-          ? getImageUrl(item.profile_path, 'w185')
-          : 'https://via.placeholder.com/150',
-      }}
-      style={styles.directorImg}
-      contentFit="cover"
-      cachePolicy="disk"
-    />
-    <View style={{ maxWidth: 140 }}>
-      <Text style={styles.directorName} numberOfLines={1}>
-        {item.name}
-      </Text>
-      <Text style={styles.directorRole} numberOfLines={1}>
-        {item.role || (mediaType === 'tv' ? 'Creator' : 'Director')}
-      </Text>
-    </View>
-  </TouchableOpacity>
-));
-
-const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => (
-  <TouchableOpacity
-    activeOpacity={0.92}
-    style={{ width: cardWidth }}
-    onPress={() => onPress(item.id)}
-  >
-    <Image
-      source={{
-        uri: item.profile_path
-          ? getImageUrl(item.profile_path, 'w185')
-          : 'https://via.placeholder.com/150',
-      }}
-      style={[styles.castImg, { width: cardWidth, height: cardWidth * 1.35 }]}
-      contentFit="cover"
-      cachePolicy="disk"
-    />
-    <Text style={styles.castName} numberOfLines={1}>
-      {item.name}
-    </Text>
-    {item.character ? (
-      <Text style={styles.castCharacter} numberOfLines={1}>
-        {item.character}
-      </Text>
-    ) : null}
-  </TouchableOpacity>
-));
-
-const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay }: any) => (
-  <TouchableOpacity
-    activeOpacity={0.92}
-    style={[styles.epRow, isActive && styles.epRowActive]}
-    onPress={() => onPlay(ep)}
-  >
-    <View style={{ position: 'relative' }}>
+const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => {
+  const posterUrl = getImageUrl(item.poster_path, 'w342');
+  return (
+    <TouchableOpacity
+      activeOpacity={0.92}
+      style={[styles.similarCard, { width: cardWidth }]}
+      onPress={() => onPress(item)}
+    >
       <Image
-        source={{
-          uri: ep.still_path
-            ? getImageUrl(ep.still_path, 'w185')
-            : 'https://via.placeholder.com/150',
-        }}
-        style={[styles.epThumb, { width: episodeThumbWidth, height: episodeThumbWidth * 0.56 }]}
+        source={{ uri: posterUrl }}
+        style={[styles.similarImg, { width: cardWidth, height: cardWidth * 1.5 }]}
         contentFit="cover"
         cachePolicy="disk"
+        recyclingKey={posterUrl}
       />
-      <View style={styles.epPlayOverlay}>
-        <Ionicons name="play" size={16} color="#FFF" />
+      <View style={styles.ratingBadge}>
+        <Ionicons name="star" size={9} color={C.gold} />
+        <Text style={styles.ratingText}>{item.vote_average ? item.vote_average.toFixed(1) : 'N/A'}</Text>
       </View>
-      {isActive ? <View style={styles.epActiveDot} /> : null}
-    </View>
-    <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={[styles.epNum, isActive && { color: C.gold }]}>
-          EPISODE {ep.episode_number}
+      <Text style={styles.similarTitle} numberOfLines={2}>
+        {item.title || item.name}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
+const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => {
+  const profileUrl = item.profile_path
+    ? getImageUrl(item.profile_path, 'w185')
+    : 'https://via.placeholder.com/150';
+  return (
+    <TouchableOpacity
+      activeOpacity={0.92}
+      style={styles.directorCard}
+      onPress={() => onPress(item.id)}
+    >
+      <Image
+        source={{ uri: profileUrl }}
+        style={styles.directorImg}
+        contentFit="cover"
+        cachePolicy="disk"
+        recyclingKey={profileUrl}
+      />
+      <View style={{ maxWidth: 140 }}>
+        <Text style={styles.directorName} numberOfLines={1}>
+          {item.name}
         </Text>
-        {ep.air_date ? (
-          <Text style={{ fontSize: 11, color: C.muted }}>
-            {dayjs(ep.air_date).format('MMM D, YYYY')}
-          </Text>
-        ) : null}
+        <Text style={styles.directorRole} numberOfLines={1}>
+          {item.role || (mediaType === 'tv' ? 'Creator' : 'Director')}
+        </Text>
       </View>
-      <Text style={styles.epTitle} numberOfLines={1}>
-        {ep.name}
+    </TouchableOpacity>
+  );
+});
+
+const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => {
+  const profileUrl = item.profile_path
+    ? getImageUrl(item.profile_path, 'w185')
+    : 'https://via.placeholder.com/150';
+  return (
+    <TouchableOpacity
+      activeOpacity={0.92}
+      style={{ width: cardWidth }}
+      onPress={() => onPress(item.id)}
+    >
+      <Image
+        source={{ uri: profileUrl }}
+        style={[styles.castImg, { width: cardWidth, height: cardWidth * 1.35 }]}
+        contentFit="cover"
+        cachePolicy="disk"
+        recyclingKey={profileUrl}
+      />
+      <Text style={styles.castName} numberOfLines={1}>
+        {item.name}
       </Text>
-      <Text style={styles.epOverview} numberOfLines={2}>
-        {ep.overview}
-      </Text>
-    </View>
-  </TouchableOpacity>
-));
+      {item.character ? (
+        <Text style={styles.castCharacter} numberOfLines={1}>
+          {item.character}
+        </Text>
+      ) : null}
+    </TouchableOpacity>
+  );
+});
+
+const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay }: any) => {
+  const stillUrl = ep.still_path
+    ? getImageUrl(ep.still_path, 'w185')
+    : 'https://via.placeholder.com/150';
+  return (
+    <TouchableOpacity
+      activeOpacity={0.92}
+      style={[styles.epRow, isActive && styles.epRowActive]}
+      onPress={() => onPlay(ep)}
+    >
+      <View style={{ position: 'relative' }}>
+        <Image
+          source={{ uri: stillUrl }}
+          style={[styles.epThumb, { width: episodeThumbWidth, height: episodeThumbWidth * 0.56 }]}
+          contentFit="cover"
+          cachePolicy="disk"
+          recyclingKey={stillUrl}
+        />
+        <View style={styles.epPlayOverlay}>
+          <Ionicons name="play" size={16} color="#FFF" />
+        </View>
+        {isActive ? <View style={styles.epActiveDot} /> : null}
+      </View>
+      <View style={{ flex: 1 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={[styles.epNum, isActive && { color: C.gold }]}>
+            EPISODE {ep.episode_number}
+          </Text>
+          {ep.air_date ? (
+            <Text style={{ fontSize: 11, color: C.muted }}>
+              {dayjs(ep.air_date).format('MMM D, YYYY')}
+            </Text>
+          ) : null}
+        </View>
+        <Text style={styles.epTitle} numberOfLines={1}>
+          {ep.name}
+        </Text>
+        <Text style={styles.epOverview} numberOfLines={2}>
+          {ep.overview}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
 
 /* =========================================================================
    MICRO-RENDERED SUB-COMPONENTS (Isolated State & Zero Root Re-renders)
@@ -269,51 +285,54 @@ const MovieActionDock = React.memo(({ movie }: MovieActionDockProps) => {
   const toggleWatched = useCallback(async () => {
     if (!movie) return;
     const exists = hasSavedItem(movie.id, 'history');
-    if (exists) {
-      removeSavedItem(movie.id, 'history');
-      // If movie belongs to a collection, unmarking a movie means the collection is no longer fully watched
-      if (movie.belongs_to_collection?.id) {
-        if (hasSavedItem(movie.belongs_to_collection.id, 'history')) {
-          removeSavedItem(movie.belongs_to_collection.id, 'history');
+    try {
+      if (exists) {
+        removeSavedItem(movie.id, 'history');
+        // If movie belongs to a collection, unmarking a movie means the collection is no longer fully watched
+        if (movie.belongs_to_collection?.id) {
+          if (hasSavedItem(movie.belongs_to_collection.id, 'history')) {
+            removeSavedItem(movie.belongs_to_collection.id, 'history');
+          }
         }
-      }
-    } else {
-      addSavedItem(movie, 'history');
-      logTasteEvent({
-        entity_type: movie.media_type === 'tv' ? 'tv' : 'movie',
-        entity_id: movie.id,
-        entity_name: movie.title || movie.name,
-        genres: movie.genres,
-        weight: TASTE_WEIGHTS.COMPLETED_WATCH,
-      });
+      } else {
+        addSavedItem(movie, 'history');
+        logTasteEvent({
+          entity_type: movie.media_type === 'tv' ? 'tv' : 'movie',
+          entity_id: movie.id,
+          entity_name: movie.title || movie.name,
+          genres: movie.genres,
+          weight: TASTE_WEIGHTS.COMPLETED_WATCH,
+        });
 
-      // Automatically un-toggle Watchlist
-      if (hasSavedItem(movie.id, 'watchlist')) {
-        removeSavedItem(movie.id, 'watchlist');
-      }
+        // Automatically un-toggle Watchlist
+        if (hasSavedItem(movie.id, 'watchlist')) {
+          removeSavedItem(movie.id, 'watchlist');
+        }
 
-      // Check if all movies in the collection are now watched
-      if (movie.belongs_to_collection?.id) {
-        const colDetails = await getCollectionDetails(movie.belongs_to_collection.id);
-        if (colDetails?.parts && colDetails.parts.length > 0) {
-          const allWatched = colDetails.parts.every((part: any) =>
-            part.id === movie.id || hasSavedItem(part.id, 'history')
-          );
-          if (allWatched) {
-            if (hasSavedItem(colDetails.id, 'watchlist')) {
-              removeSavedItem(colDetails.id, 'watchlist');
-            }
-            if (!hasSavedItem(colDetails.id, 'history')) {
-              addSavedItem(colDetails, 'history');
-            }
-            if (Platform.OS === 'android') {
-              ToastAndroid.show(`${colDetails.name} completed!`, ToastAndroid.SHORT);
+        // Check if all movies in the collection are now watched
+        if (movie.belongs_to_collection?.id) {
+          const colDetails = await getCollectionDetails(movie.belongs_to_collection.id);
+          if (colDetails?.parts && colDetails.parts.length > 0) {
+            const allWatched = colDetails.parts.every((part: any) =>
+              part.id === movie.id || hasSavedItem(part.id, 'history')
+            );
+            if (allWatched) {
+              if (hasSavedItem(colDetails.id, 'watchlist')) {
+                removeSavedItem(colDetails.id, 'watchlist');
+              }
+              if (!hasSavedItem(colDetails.id, 'history')) {
+                addSavedItem(colDetails, 'history');
+              }
+              if (Platform.OS === 'android') {
+                ToastAndroid.show(`${colDetails.name} completed!`, ToastAndroid.SHORT);
+              }
             }
           }
         }
       }
+    } finally {
+      syncSavedStore();
     }
-    syncSavedStore();
   }, [movie]);
 
   const openTelegramSearch = useCallback(() => {
@@ -723,13 +742,46 @@ export default function DetailPage() {
 
   const [movie, setMovie] = useState<any>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
-  const [isReadyToRenderExtras, setIsReadyToRenderExtras] = useState(false);
 
-  const [genres, setGenres] = useState<{ id: number; name: string }[]>([]);
-  const [directors, setDirectors] = useState<any[]>([]);
-  const [collectionData, setCollectionData] = useState<any>(null);
-  const [similarMovies, setSimilarMovies] = useState<any[]>([]);
-  const [loadingSimilar, setLoadingSimilar] = useState(false);
+  // Progressive Staging: Tier 1 (Cast/Directors) lands at 250ms; Tier 2 (Gallery/AI/Similar) anchors strictly to scroll
+  const [renderStage, setRenderStage] = useState<0 | 1>(0);
+  const [hasScrolledPastFold, setHasScrolledPastFold] = useState(false);
+  const hasScrolledRef = useRef(false);
+
+  useEffect(() => {
+    // Stage 1: Mount just Cast & Directors once the transition lands
+    const timer = setTimeout(() => {
+      setRenderStage(1);
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleScroll = useCallback((e: any) => {
+    if (hasScrolledRef.current) return;
+    const y = e.nativeEvent?.contentOffset?.y ?? 0;
+    if (y > 150) {
+      hasScrolledRef.current = true;
+      setHasScrolledPastFold(true);
+    }
+  }, []);
+
+  // Group all secondary metadata into a single atomic extras state (movie remains immutable)
+  const [extras, setExtras] = useState<{
+    directors: any[];
+    cast: any[];
+    images: any[];
+    posters: any[];
+    collectionData: any | null;
+    similarMovies: any[];
+  }>({
+    directors: [],
+    cast: [],
+    images: [],
+    posters: [],
+    collectionData: null,
+    similarMovies: [],
+  });
 
   const [lastWatched, setLastWatched] = useState<any>(null);
   const [sourceStatus, setSourceStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
@@ -740,6 +792,13 @@ export default function DetailPage() {
   const [episodesLimit, setEpisodesLimit] = useState(INITIAL_EPISODES_LIMIT);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
   const episodeRequestRef = useRef(0);
+
+  // Derived metadata (prevents redundant state duplication & extra render cycles)
+  const genres: { id: number; name: string }[] = movie?.genres || [];
+  const directors = extras.directors;
+  const cast = extras.cast;
+  const collectionData = extras.collectionData;
+  const similarMovies = extras.similarMovies;
 
   const similarCardWidth = isTablet ? 160 : width * 0.3;
   const castCardWidth = isTablet ? 120 : width * 0.26;
@@ -762,6 +821,7 @@ export default function DetailPage() {
   useEffect(() => {
     if (!id) return;
     let isActive = true;
+    let cancelSchedule: (() => void) | null = null;
 
     const fetchInitial = async () => {
       try {
@@ -769,15 +829,20 @@ export default function DetailPage() {
         const data = await getMediaDetails(Number(id), (media_type as 'movie' | 'tv') || 'movie');
 
         if (!isActive) return;
-        setMovie(data);
-        setGenres(data.genres || []);
 
-        if (data.media_type === 'tv' && data.seasons && data.seasons.length > 0) {
-          const firstValidSeason = data.seasons.find((s: any) => s.season_number > 0);
-          if (firstValidSeason) {
-            setSelectedSeason(firstValidSeason.season_number);
+        // Ensure state update doesn't interrupt native screen transitions
+        // Wait until the 350ms push animation finishes before mounting details
+          cancelSchedule = runAfterTransition(() => {
+            if (!isActive) return;
+            setMovie(data);
+
+          if (data.media_type === 'tv' && data.seasons && data.seasons.length > 0) {
+            const firstValidSeason = data.seasons.find((s: any) => s.season_number > 0);
+            if (firstValidSeason) {
+              setSelectedSeason(firstValidSeason.season_number);
+            }
           }
-        }
+        }, 320); // Must be >= 300ms
       } catch {
         if (isActive) {
           setDetailsError('Unable to load this title. Check your connection.');
@@ -788,125 +853,119 @@ export default function DetailPage() {
     fetchInitial();
     return () => {
       isActive = false;
+      if (cancelSchedule) cancelSchedule();
     };
   }, [id, media_type]);
 
-  const loadSimilar = useCallback(async () => {
-    if (!movie?.id) return;
-    setLoadingSimilar(true);
-    try {
-      const results = await getSimilarMedia(movie.id, movie.media_type);
-      setSimilarMovies(results);
-    } catch {
-      setSimilarMovies([]);
-    } finally {
-      setLoadingSimilar(false);
-    }
-  }, [movie?.id, movie?.media_type]);
-
-  // Phase 2: Deferred crew, cast, collection, and recommendations
+  // Phase 2: Deferred crew, cast, collection, and recommendations (fires as soon as movie.id AND renderStage >= 1)
   useEffect(() => {
-    if (!movie?.id) return;
+    if (!movie?.id || renderStage < 1) return;
+    let isActive = true;
 
-    const cancelIdle = runWhenIdle(() => {
-      setIsReadyToRenderExtras(true);
+    const fullDetailsPromise = getFullDetails({ id: movie.id, media_type: movie.media_type } as any).catch(() => null);
+    const collectionPromise = movie.belongs_to_collection?.id
+      ? getCollectionDetails(movie.belongs_to_collection.id).catch(() => null)
+      : Promise.resolve(null);
+    const similarPromise = getSimilarMedia(movie.id, movie.media_type).catch(() => []);
 
-      getFullDetails({ id: movie.id, media_type: movie.media_type } as any)
-        .then((fullData: any) => {
-          const merged: any[] = [];
-          if (fullData.director) {
-            merged.push({
-              ...fullData.director,
-              role: fullData.director.job || (movie.media_type === 'tv' ? 'Creator' : 'Director'),
-            });
+    Promise.all([
+      fullDetailsPromise,
+      collectionPromise,
+      similarPromise,
+    ]).then(async ([rawFullData, colData, similarData]) => {
+      if (!isActive) return;
+
+      const fullData: any = rawFullData;
+      const mergedDirectors: any[] = [];
+      if (fullData?.director) {
+        mergedDirectors.push({
+          ...fullData.director,
+          role: fullData.director.job || (movie.media_type === 'tv' ? 'Creator' : 'Director'),
+        });
+      }
+      const crew = fullData?.crew || fullData?.credits?.crew || [];
+      const creators = fullData?.created_by || [];
+      const dirFromCrew = crew.filter(
+        (p: any) => p.job === 'Director' || p.department === 'Directing'
+      );
+      [...creators, ...dirFromCrew].forEach((person: any) => {
+        if (!person?.id || mergedDirectors.find((entry) => entry.id === person.id)) return;
+        mergedDirectors.push({
+          ...person,
+          role: person.job || (movie.media_type === 'tv' ? 'Creator' : 'Director'),
+        });
+      });
+
+      let extraImages = fullData?.images || [];
+      let extraPosters = fullData?.posters || [];
+
+      if ((!extraImages || extraImages.length === 0) && (!extraPosters || extraPosters.length === 0)) {
+        try {
+          const imgs = await getMediaImages(movie.id, movie.media_type);
+          if (isActive) {
+            extraImages = imgs.backdrops || [];
+            extraPosters = imgs.posters || [];
           }
-          const crew = fullData.crew || fullData.credits?.crew || [];
-          const creators = fullData.created_by || [];
-          const dirFromCrew = crew.filter(
-            (p: any) => p.job === 'Director' || p.department === 'Directing'
-          );
-          [...creators, ...dirFromCrew].forEach((person: any) => {
-            if (!person?.id || merged.find((entry) => entry.id === person.id)) return;
-            merged.push({
-              ...person,
-              role: person.job || (movie.media_type === 'tv' ? 'Creator' : 'Director'),
-            });
-          });
-          setDirectors(merged);
-
-          setMovie((prev: any) => ({
-            ...prev,
-            ...(fullData.cast ? { cast: fullData.cast } : {}),
-            images: fullData.images || prev?.images || [],
-            posters: fullData.posters || prev?.posters || [],
-          }));
-
-          if ((!fullData.images || fullData.images.length === 0) && (!fullData.posters || fullData.posters.length === 0)) {
-            getMediaImages(movie.id, movie.media_type)
-              .then((imgs) => {
-                setMovie((prev: any) => ({
-                  ...prev,
-                  images: imgs.backdrops,
-                  posters: imgs.posters,
-                }));
-              })
-              .catch(() => {});
-          }
-        })
-        .catch(() => {});
-
-      if (movie.belongs_to_collection) {
-        getCollectionDetails(movie.belongs_to_collection.id)
-          .then((col) => setCollectionData(col))
-          .catch(() => {});
+        } catch {}
       }
 
-      loadSimilar();
-    });
+      if (!isActive) return;
 
-    return () => cancelIdle();
-  }, [movie?.id, loadSimilar]);
+      // Commit secondary metadata atomically into extras; NEVER mutate movie
+      setExtras({
+        directors: mergedDirectors,
+        cast: fullData?.cast || [],
+        images: extraImages,
+        posters: extraPosters,
+        collectionData: colData,
+        similarMovies: similarData || [],
+      });
+    }).catch(() => {});
 
-  const prefetchSources = useCallback(async (seasonToTry = 1, episodeToTry = 1) => {
-    if (!movie) return;
-    setSourceStatus('checking');
-    try {
-      const baseUrl = 'https://watcher-api-rho.vercel.app';
-      const encodedTitle = encodeURIComponent(movie.title || movie.name || '');
-      const endpoint = `${baseUrl}/api/get_stream?tmdb_id=${movie.id}&media_type=${movie.media_type}&title=${encodedTitle}&season=${seasonToTry}&episode=${episodeToTry}`;
-      const response = await fetch(endpoint);
-      const data = await response.json();
-      setSourceStatus(data.status === 'success' && data.stream_url ? 'available' : 'unavailable');
-    } catch {
-      setSourceStatus('unavailable');
-    }
-  }, [movie]);
+    return () => {
+      isActive = false;
+    };
+  }, [movie?.id, movie?.media_type, movie?.belongs_to_collection?.id, renderStage]);
 
-  useEffect(() => {
-    if (movie?.id) {
-      let s = 1;
-      let e = 1;
-      if (movie.media_type === 'tv') {
-        s = lastWatched?.lastSeason || 1;
-        e = lastWatched?.lastEpisode || 1;
+  const prefetchSources = useCallback(
+    async (
+      tmdbId: number,
+      mediaType: string,
+      title: string,
+      seasonToTry = 1,
+      episodeToTry = 1
+    ) => {
+      setSourceStatus('checking');
+      try {
+        const baseUrl = 'https://watcher-api-rho.vercel.app';
+        const encodedTitle = encodeURIComponent(title || '');
+        const endpoint = `${baseUrl}/api/get_stream?tmdb_id=${tmdbId}&media_type=${mediaType}&title=${encodedTitle}&season=${seasonToTry}&episode=${episodeToTry}`;
+        const response = await fetch(endpoint);
+        const data = await response.json();
+        setSourceStatus(data.status === 'success' && data.stream_url ? 'available' : 'unavailable');
+      } catch {
+        setSourceStatus('unavailable');
       }
-      prefetchSources(s, e);
-    }
-  }, [movie?.id, lastWatched, prefetchSources]);
+    },
+    []
+  );
 
   useFocusEffect(
     useCallback(() => {
+      if (!movie?.id) return;
       let isActive = true;
-      if (movie?.id) {
-        getProgress(movie.id).then((progress) => {
-          if (isActive) setLastWatched(progress);
-        });
-        syncSavedStore();
-      }
+      getProgress(movie.id).then((progress) => {
+        if (!isActive) return;
+        setLastWatched(progress);
+        const s = movie.media_type === 'tv' ? (progress?.lastSeason || 1) : 1;
+        const e = movie.media_type === 'tv' ? (progress?.lastEpisode || 1) : 1;
+        prefetchSources(movie.id, movie.media_type, movie.title || movie.name || '', s, e);
+      });
+      syncSavedStore();
       return () => {
         isActive = false;
       };
-    }, [movie?.id])
+    }, [movie?.id, movie?.media_type, prefetchSources])
   );
 
   const fetchEpisodes = useCallback(async (seasonNumber: number) => {
@@ -981,27 +1040,6 @@ export default function DetailPage() {
     if (Platform.OS === 'android') ToastAndroid.show('Copied!', ToastAndroid.SHORT);
   }, [movie]);
 
-  const renderCastItem = useCallback(
-    ({ item }: any) => (
-      <MemoizedCastCard
-        item={item}
-        cardWidth={castCardWidth}
-        onPress={(personId: number) => router.push(`/cast/${personId}`)}
-      />
-    ),
-    [castCardWidth, router]
-  );
-
-  const renderDirectorItem = useCallback(
-    ({ item }: any) => (
-      <MemoizedDirectorCard
-        item={item}
-        mediaType={movie?.media_type}
-        onPress={(personId: number) => router.push(`/cast/${personId}`)}
-      />
-    ),
-    [movie?.media_type, router]
-  );
 
   const renderSimilarItem = useCallback(
     ({ item }: any) => (
@@ -1069,6 +1107,8 @@ export default function DetailPage() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 }}
+        onScroll={handleScroll}
+        scrollEventThrottle={32}
       >
         {/* Lowered Details Card Spacer */}
         <View style={{ height: HEADER_HEIGHT + 30 }} />
@@ -1176,160 +1216,171 @@ export default function DetailPage() {
           {/* Micro-rendered Overview */}
           <MovieOverview overview={movie.overview} />
 
-          {/* Collection Banner */}
-          {isReadyToRenderExtras && movie.belongs_to_collection ? (
-            <TouchableOpacity
-              activeOpacity={0.92}
-              style={styles.collectionBanner}
-              onPress={() =>
-                router.push(
-                  `/collection/${movie.belongs_to_collection.id}?name=${encodeURIComponent(
-                    movie.belongs_to_collection.name
-                  )}`
-                )
-              }
-            >
-              <Image
-                source={{ uri: getImageUrl(movie.belongs_to_collection.backdrop_path, 'w500') }}
-                style={styles.collectionBackdrop}
-                contentFit="cover"
-                cachePolicy="disk"
-              />
-              <LinearGradient
-                colors={['transparent', 'rgba(10,10,11,0.5)', '#0A0A0A']}
-                locations={[0, 0.5, 1]}
-                style={StyleSheet.absoluteFill}
-              />
-              <View style={styles.collectionContent}>
-                <Text style={styles.collectionSubtitle}>
-                  Part of a Collection {collectionData?.parts?.length ? `• ${collectionData.parts.length} Movies` : ''}
+          {/* TIER 1: Directors & Cast (Mounts first, immediately below overview) */}
+          {renderStage >= 1 && (
+            <>
+              {/* Directors with In-Page Skeleton Placeholder */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>
+                  {movie.media_type === 'tv' ? 'Created by' : 'Directed by'}
                 </Text>
-                <Text style={styles.collectionName} numberOfLines={2}>
-                  {movie.belongs_to_collection.name}
-                </Text>
+                {!directors || directors.length === 0 ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+                    {[1, 2, 3].map((i) => (
+                      <View key={i} style={[styles.directorCard, { paddingRight: 16 }]}>
+                        <ShimmerBlock width={38} height={38} borderRadius={19} />
+                        <View style={{ gap: 4 }}>
+                          <ShimmerBlock width={60} height={12} />
+                          <ShimmerBlock width={40} height={10} />
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 10 }}
+                  >
+                    {directors.map((director: any) => (
+                      <MemoizedDirectorCard
+                        key={director.id}
+                        item={director}
+                        mediaType={movie?.media_type}
+                        onPress={(personId: number) => router.push(`/cast/${personId}`)}
+                      />
+                    ))}
+                  </ScrollView>
+                )}
               </View>
-            </TouchableOpacity>
-          ) : null}
 
-          {/* Micro-rendered AI Insights Panel */}
-          {isReadyToRenderExtras ? (
-            <MovieAIPanel
-              movie={movie}
-              releaseYear={releaseYear}
-              directors={directors}
-              genres={genres}
-              similarCardWidth={similarCardWidth}
-              renderSimilarItem={renderSimilarItem}
-            />
-          ) : null}
+              {/* Cast with In-Page Skeleton Placeholder */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Cast</Text>
+                {!cast || cast.length === 0 ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+                    {[1, 2, 3, 4].map((i) => (
+                      <CardShimmer key={i} width={castCardWidth} height={castCardWidth * 1.35} />
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 12 }}
+                  >
+                    {cast.slice(0, 15).map((castMember: any) => (
+                      <MemoizedCastCard
+                        key={castMember.id}
+                        item={castMember}
+                        cardWidth={castCardWidth}
+                        onPress={(personId: number) => router.push(`/cast/${personId}`)}
+                      />
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
 
-          {/* Directors with In-Page Skeleton Placeholder */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              {movie.media_type === 'tv' ? 'Created by' : 'Directed by'}
-            </Text>
-            {!isReadyToRenderExtras ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-                {[1, 2, 3].map((i) => (
-                  <View key={i} style={[styles.directorCard, { paddingRight: 16 }]}>
-                    <ShimmerBlock width={38} height={38} borderRadius={19} />
-                    <View style={{ gap: 4 }}>
-                      <ShimmerBlock width={60} height={12} />
-                      <ShimmerBlock width={40} height={10} />
-                    </View>
+              {/* TV Episodes with In-Page Skeleton Placeholder */}
+              {movie.media_type === 'tv' && movie.seasons && movie.seasons.length > 0 ? (
+                <MovieEpisodesSection
+                  seasons={movie.seasons}
+                  selectedSeason={selectedSeason}
+                  onSelectSeason={(seasonNum) => setSelectedSeason(seasonNum)}
+                  loadingEpisodes={loadingEpisodes}
+                  episodes={episodes}
+                  episodesLimit={episodesLimit}
+                  onShowMore={() => setEpisodesLimit((prev) => prev + 15)}
+                  lastWatched={lastWatched}
+                  episodeThumbWidth={episodeThumbWidth}
+                  onPlay={handlePlay}
+                />
+              ) : null}
+            </>
+          )}
+
+          {/* TIER 2: Mounts only when the user scrolls down, NEVER on launch */}
+          {hasScrolledPastFold && (
+            <>
+              {/* Collection Banner */}
+              {movie.belongs_to_collection ? (
+                <TouchableOpacity
+                  activeOpacity={0.92}
+                  style={styles.collectionBanner}
+                  onPress={() =>
+                    router.push(
+                      `/collection/${movie.belongs_to_collection.id}?name=${encodeURIComponent(
+                        movie.belongs_to_collection.name
+                      )}`
+                    )
+                  }
+                >
+                  <Image
+                    source={{ uri: getImageUrl(movie.belongs_to_collection.backdrop_path, 'w500') }}
+                    style={styles.collectionBackdrop}
+                    contentFit="cover"
+                    cachePolicy="disk"
+                  />
+                  <LinearGradient
+                    colors={['transparent', 'rgba(10,10,11,0.5)', '#0A0A0A']}
+                    locations={[0, 0.5, 1]}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View style={styles.collectionContent}>
+                    <Text style={styles.collectionSubtitle}>
+                      Part of a Collection {collectionData?.parts?.length ? `• ${collectionData.parts.length} Movies` : ''}
+                    </Text>
+                    <Text style={styles.collectionName} numberOfLines={2}>
+                      {movie.belongs_to_collection.name}
+                    </Text>
                   </View>
-                ))}
-              </ScrollView>
-            ) : directors && directors.length > 0 ? (
-              <LegendList
-                horizontal
-                data={directors}
-                recycleItems={false}
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={(item) => String(item.id)}
-                renderItem={renderDirectorItem}
-                estimatedItemSize={50}
-                drawDistance={10}
-                decelerationRate="normal"
+                </TouchableOpacity>
+              ) : null}
+
+              {/* Micro-rendered AI Insights Panel */}
+              <MovieAIPanel
+                movie={movie}
+                releaseYear={releaseYear}
+                directors={directors}
+                genres={genres}
+                similarCardWidth={similarCardWidth}
+                renderSimilarItem={renderSimilarItem}
               />
-            ) : null}
-          </View>
 
-          {/* Cast with In-Page Skeleton Placeholder */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Cast</Text>
-            {!isReadyToRenderExtras || !movie.cast ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
-                {[1, 2, 3, 4].map((i) => (
-                  <CardShimmer key={i} width={castCardWidth} height={castCardWidth * 1.35} />
-                ))}
-              </ScrollView>
-            ) : (
-              <LegendList
-                horizontal
-                data={movie.cast.slice(0, 15)}
-                recycleItems={false}
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={(item) => String(item.id)}
-                renderItem={renderCastItem}
-                ItemSeparatorComponent={ListSpacer}
-                estimatedItemSize={castCardWidth + 12}
-                drawDistance={150}
-                decelerationRate="fast"
+              {/* Photos & Scene Images Gallery */}
+              <MovieMediaGallery
+                backdrops={extras.images}
+                posters={extras.posters}
+                fallbackBackdrop={movie.backdrop_path}
+                fallbackPoster={movie.poster_path}
+                title={displayTitle}
               />
-            )}
-          </View>
 
-          {/* TV Episodes with In-Page Skeleton Placeholder */}
-          {movie.media_type === 'tv' && movie.seasons && movie.seasons.length > 0 ? (
-            <MovieEpisodesSection
-              seasons={movie.seasons}
-              selectedSeason={selectedSeason}
-              onSelectSeason={(seasonNum) => setSelectedSeason(seasonNum)}
-              loadingEpisodes={loadingEpisodes}
-              episodes={episodes}
-              episodesLimit={episodesLimit}
-              onShowMore={() => setEpisodesLimit((prev) => prev + 15)}
-              lastWatched={lastWatched}
-              episodeThumbWidth={episodeThumbWidth}
-              onPlay={handlePlay}
-            />
-          ) : null}
-
-          {/* Photos & Scene Images Gallery */}
-          {isReadyToRenderExtras ? (
-            <MovieMediaGallery
-              backdrops={movie.images}
-              posters={movie.posters}
-              fallbackBackdrop={movie.backdrop_path}
-              fallbackPoster={movie.poster_path}
-              title={displayTitle}
-            />
-          ) : null}
-
-          {/* Similar Titles with In-Page Skeleton Placeholder */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>More like this</Text>
-            {!isReadyToRenderExtras || loadingSimilar ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
-                {[1, 2, 3, 4].map((i) => (
-                  <CardShimmer key={i} width={similarCardWidth} height={similarCardWidth * 1.5} />
-                ))}
-              </ScrollView>
-            ) : similarMovies && similarMovies.length > 0 ? (
-              <LegendList
-                horizontal
-                data={similarMovies}
-                recycleItems={false}
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={(item) => String(item.id)}
-                renderItem={renderSimilarItem}
-                estimatedItemSize={similarCardWidth + 12}
-                drawDistance={150}
-                decelerationRate="fast"
-              />
-            ) : null}
-          </View>
+              {/* Similar Titles with In-Page Skeleton Placeholder */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>More like this</Text>
+                {!similarMovies || similarMovies.length === 0 ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+                    {[1, 2, 3, 4].map((i) => (
+                      <CardShimmer key={i} width={similarCardWidth} height={similarCardWidth * 1.5} />
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <LegendList
+                    horizontal
+                    data={similarMovies}
+                    recycleItems={true}
+                    showsHorizontalScrollIndicator={false}
+                    keyExtractor={(item) => String(item.id)}
+                    renderItem={renderSimilarItem}
+                    estimatedItemSize={similarCardWidth + 12}
+                    drawDistance={300}
+                    decelerationRate="fast"
+                  />
+                )}
+              </View>
+            </>
+          )}
         </View>
       </ScrollView>
 

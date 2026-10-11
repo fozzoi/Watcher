@@ -4,11 +4,13 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import Reanimated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { getImageUrl, type TMDBResult } from '../../tmdb';
 import QuickAddButton from '../shared/QuickAddButton';
 import { HERO_HEIGHT, HORIZONTAL_MARGIN } from './ExploreConstants';
 import { observable } from '@legendapp/state';
 import { useSelector } from '@legendapp/state/react';
+import { savedStore$ } from '../../state/savedState';
 
 export const heroScroll$ = observable({ isScrolledOut: false });
 
@@ -39,9 +41,7 @@ type Props = {
 };
 
 // ── Liquid indicator ─────────────────────────────────────────────────────────
-// One red blob slides over idle dots. Its two edges are separate springs:
-// the leading edge shoots ahead, the trailing edge lags, so the blob stretches
-// and then snaps back like a droplet. Width/left are layout props, so JS driver.
+// Driven 100% on C++ UI Thread at 120 FPS via Reanimated transform
 const LiquidIndicator = memo(function LiquidIndicator({
   items,
   index,
@@ -53,32 +53,18 @@ const LiquidIndicator = memo(function LiquidIndicator({
   reduceMotion: boolean;
   onSelect: (i: number) => void;
 }) {
-  const left = useRef(new Animated.Value(index * PITCH + BLOB_INSET)).current;
-  const right = useRef(new Animated.Value(index * PITCH + BLOB_INSET + ACTIVE_W)).current;
-  const prev = useRef(index);
-
-  useEffect(() => {
-    const from = prev.current;
-    prev.current = index;
-    const toL = index * PITCH + BLOB_INSET;
-    const toR = toL + ACTIVE_W;
-    left.stopAnimation();
-    right.stopAnimation();
-    if (reduceMotion || from === index) {
-      left.setValue(toL);
-      right.setValue(toR);
-      return;
-    }
-    const forward = index > from;
-    const fast = { stiffness: 320, damping: 24, mass: 0.7 };
-    const slow = { stiffness: 130, damping: 19, mass: 0.9 };
-    Animated.parallel([
-      Animated.spring(right, { toValue: toR, ...(forward ? fast : slow), useNativeDriver: false }),
-      Animated.spring(left, { toValue: toL, ...(forward ? slow : fast), useNativeDriver: false }),
-    ]).start();
-  }, [index, reduceMotion, left, right]);
-
-  const width = useMemo(() => Animated.subtract(right, left), [left, right]);
+  const animatedBlobStyle = useAnimatedStyle(() => {
+    const targetX = index * PITCH + BLOB_INSET;
+    return {
+      transform: [
+        {
+          translateX: reduceMotion
+            ? targetX
+            : withSpring(targetX, { damping: 20, stiffness: 200 }),
+        },
+      ],
+    };
+  }, [index, reduceMotion]);
 
   return (
     <View style={{ width: items.length * PITCH, height: HIT_H }}>
@@ -96,15 +82,15 @@ const LiquidIndicator = memo(function LiquidIndicator({
           </Pressable>
         ))}
       </View>
-      <Animated.View pointerEvents="none" style={[styles.blob, { left, width }]} />
+      <Reanimated.View pointerEvents="none" style={[styles.blob, animatedBlobStyle]} />
     </View>
   );
 });
 
 // ── Slide ────────────────────────────────────────────────────────────────────
-const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMotion, width, height, onToggle, onPress }: {
+const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMotion, width, height, isAdded, onToggle, onPress }: {
   item: TMDBResult; active: boolean; shouldRender: boolean; reduceMotion: boolean; width: number; height: number;
-  onToggle: (item: TMDBResult) => void; onPress: (item: TMDBResult) => void;
+  isAdded: boolean; onToggle: (item: TMDBResult) => void; onPress: (item: TMDBResult) => void;
 }) {
   const opacity = useRef(new Animated.Value(active ? 1 : 0)).current;
   const zoom = useRef(new Animated.Value(1.08)).current;
@@ -161,7 +147,7 @@ const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMo
       >
         <View style={styles.titleRow}>
           <Text style={styles.title} numberOfLines={2}>{title}</Text>
-          <QuickAddButton item={item} itemId={item.id} onPress={() => onToggle(item)} />
+          <QuickAddButton item={item} itemId={item.id} isAdded={isAdded} onPress={() => onToggle(item)} />
         </View>
         <View style={styles.meta}>
           {rating ? (
@@ -191,6 +177,7 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [reduceMotion, setReduceMotion] = useState(true);
   const isScrolledOut = useSelector(() => heroScroll$.isScrolledOut.get());
+  const savedIds = useSelector(() => savedStore$.savedIds.get());
   const paused = userPaused || dragging || isScrolledOut;
   const activeIndex = slides.length ? Math.min(index, slides.length - 1) : 0;
 
@@ -235,6 +222,7 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
     <View style={[styles.root, { width, height: HERO_HEIGHT }]} {...pan.panHandlers}>
       {slides.map((item, i) => {
         const isNearby = Math.abs(i - activeIndex) <= 1 || (activeIndex === 0 && i === slides.length - 1) || (activeIndex === slides.length - 1 && i === 0);
+        const isAdded = savedIds ? savedIds.has(Number(item.id)) : false;
         return (
           <FilmLayer
             key={`${item.media_type || 'movie'}-${item.id}`}
@@ -244,6 +232,7 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
             reduceMotion={reduceMotion || !focused || !foreground || isScrolledOut}
             width={width}
             height={HERO_HEIGHT}
+            isAdded={isAdded}
             onToggle={toggleWatchlist}
             onPress={open}
           />
@@ -288,5 +277,5 @@ const styles = StyleSheet.create({
   dotRow: { flexDirection: 'row' },
   dotHit: { width: PITCH, height: HIT_H, justifyContent: 'center', alignItems: 'center' },
   dot: { width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: C.idle },
-  blob: { position: 'absolute', top: (HIT_H - DOT) / 2, height: DOT, borderRadius: DOT / 2, backgroundColor: C.accent },
+  blob: { position: 'absolute', left: 0, top: (HIT_H - DOT) / 2, width: ACTIVE_W, height: DOT, borderRadius: DOT / 2, backgroundColor: C.accent },
 });

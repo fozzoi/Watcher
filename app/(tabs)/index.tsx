@@ -18,16 +18,17 @@ import {
   Keyboard,
   TextInput,
   ActivityIndicator,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
 } from 'react-native';
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
-import { toggleWatchlistGlobal, syncSavedStore } from '../../src/state/savedState';
+import { useSelector } from '@legendapp/state/react';
+import { savedStore$, toggleWatchlistGlobal, syncSavedStore } from '../../src/state/savedState';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  useAnimatedScrollHandler,
+  runOnJS,
 } from 'react-native-reanimated';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -79,8 +80,11 @@ const SkeletonCarousel = memo(() => (
 
 type ExploreSection = { key: string; title: string; type: string; data: any[] };
 
+const INITIAL_SHELVES = 5;
+
 const ExplorePage = () => {
   const [selectedGenre, setSelectedGenre] = useState(0);
+  const [visibleShelfCount, setVisibleShelfCount] = useState(INITIAL_SHELVES);
 
   const [rawContent, setRawContent] = useState<any>(() => getExploreContentCacheSync(0));
   const [contentLoading, setContentLoading] = useState<boolean>(() => !getExploreContentCacheSync(0));
@@ -94,6 +98,9 @@ const ExplorePage = () => {
   const [peopleResults, setPeopleResults] = useState<any[]>([]);
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
   const [forYouShelves, setForYouShelves] = useState<ForYouShelf[]>(() => getForYouShelvesSync());
+
+  // Watchlist IDs reactive subscription
+  const savedIds = useSelector(() => savedStore$.savedIds.get());
 
   // Smoothing shared value for seamless genre switching without screen tearing
   const feedOpacityAnim = useSharedValue(1);
@@ -131,8 +138,30 @@ const ExplorePage = () => {
   const bgOpacity = useSharedValue(0);
   const searchWidthAnim = useSharedValue(0);
   const searchBarTranslateY = useSharedValue(0);
-  const lastOffsetY = useRef(0);
-  const isHeaderHidden = useRef(false);
+  const lastOffsetY = useSharedValue(0);
+  const wasPastHero = useSharedValue(false);
+  const isSearchFocusedShared = useSharedValue(false);
+  const inSearchModeShared = useSharedValue(false);
+
+  useEffect(() => {
+    isSearchFocusedShared.value = isSearchFocused;
+  }, [isSearchFocused]);
+
+  useEffect(() => {
+    inSearchModeShared.value = inSearchMode;
+  }, [inSearchMode]);
+
+  useEffect(() => {
+    if (isExpanded) {
+      searchBarTranslateY.value = withTiming(0, { duration: 150 });
+    }
+  }, [isExpanded]);
+
+  const updateHeroScroll = useCallback((isPastHero: boolean) => {
+    if (isPastHero !== heroScroll$.isScrolledOut.peek()) {
+      heroScroll$.isScrolledOut.set(isPastHero);
+    }
+  }, []);
 
   useEffect(() => {
     bgOpacity.value = withTiming(isExpanded ? 1 : 0, { duration: 180 });
@@ -241,10 +270,9 @@ const ExplorePage = () => {
         // Retain existing content in background, soft fade while network catches up
         feedOpacityAnim.value = withTiming(0.45, { duration: 180 });
         setContentLoading(true);
-        fetchContent(genreId, false);
       }
     },
-    [selectedGenre, feedOpacityAnim, fetchContent]
+    [selectedGenre, feedOpacityAnim]
   );
 
   useFocusEffect(
@@ -271,6 +299,7 @@ const ExplorePage = () => {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    setVisibleShelfCount(INITIAL_SHELVES);
     try {
       await Promise.all([
         fetchContent(selectedGenre, true),
@@ -447,6 +476,20 @@ const ExplorePage = () => {
     return sections;
   }, [rawContent, forYouShelves, becauseYouWatched, selectedGenre]);
 
+  // Reset windowed shelves when changing genres
+  useEffect(() => {
+    setVisibleShelfCount(INITIAL_SHELVES);
+  }, [selectedGenre]);
+
+  const paginatedSections = useMemo(
+    () => exploreSections.slice(0, visibleShelfCount),
+    [exploreSections, visibleShelfCount]
+  );
+
+  const loadMoreShelves = useCallback(() => {
+    setVisibleShelfCount((prev) => Math.min(prev + 3, exploreSections.length));
+  }, [exploreSections.length]);
+
   const renderExploreHeader = useCallback(() => {
     if (contentLoading && !rawContent) {
       return (
@@ -476,42 +519,39 @@ const ExplorePage = () => {
         title={item.title}
         type={item.type}
         data={item.data}
+        savedIds={savedIds}
         toggleWatchlist={handleToggleWatchlist}
       />
     ),
-    [handleToggleWatchlist]
+    [handleToggleWatchlist, savedIds]
   );
 
   const renderFooter = useCallback(() => {
     return <View style={{ height: 40 }} />;
   }, []);
 
-  const handleScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const currentOffset = event.nativeEvent.contentOffset.y;
-      const diff = currentOffset - lastOffsetY.current;
-      lastOffsetY.current = currentOffset;
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      'worklet';
+      const currentOffset = event.contentOffset.y;
+      const diff = currentOffset - lastOffsetY.value;
+      lastOffsetY.value = currentOffset;
 
       const isPastHero = currentOffset > HERO_HEIGHT * 0.85;
-      if (isPastHero !== heroScroll$.isScrolledOut.peek()) {
-        heroScroll$.isScrolledOut.set(isPastHero);
+      if (isPastHero !== wasPastHero.value) {
+        wasPastHero.value = isPastHero;
+        runOnJS(updateHeroScroll)(isPastHero);
       }
 
       if (currentOffset <= 0) {
-        if (isHeaderHidden.current) {
-          searchBarTranslateY.value = withTiming(0, { duration: 150 });
-          isHeaderHidden.current = false;
-        }
-      } else if (diff > 25 && !isHeaderHidden.current && !isSearchFocused && !inSearchMode) {
+        searchBarTranslateY.value = withTiming(0, { duration: 150 });
+      } else if (diff > 25 && searchBarTranslateY.value === 0 && !isSearchFocusedShared.value && !inSearchModeShared.value) {
         searchBarTranslateY.value = withTiming(-100, { duration: 180 });
-        isHeaderHidden.current = true;
-      } else if (diff < -25 && isHeaderHidden.current) {
+      } else if (diff < -25 && searchBarTranslateY.value < 0) {
         searchBarTranslateY.value = withTiming(0, { duration: 180 });
-        isHeaderHidden.current = false;
       }
     },
-    [isSearchFocused, inSearchMode, searchBarTranslateY]
-  );
+  });
 
   const handleSearch = useCallback(async (searchText: string) => {
     const trimmed = searchText.trim();
@@ -566,6 +606,13 @@ const ExplorePage = () => {
   };
 
   useEffect(() => {
+    if (!query.trim()) {
+      if (searchTimeout.current) clearTimeout(searchTimeout.current);
+      setTmdbResults((prev) => (prev.length > 0 ? [] : prev));
+      setPeopleResults((prev) => (prev.length > 0 ? [] : prev));
+      setSearchLoading(false);
+      return;
+    }
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     searchTimeout.current = setTimeout(() => handleSearch(query), 320);
     return () => clearTimeout(searchTimeout.current);
@@ -578,19 +625,21 @@ const ExplorePage = () => {
       {/* Main virtualized feed with smooth cross-fade */}
       <AnimatedLegendList
         style={[{ flex: 1 }, animatedFeedStyle as any]}
-        data={contentLoading && !rawContent ? [] : exploreSections}
+        data={contentLoading && !rawContent ? [] : paginatedSections}
         renderItem={renderExploreSection}
         keyExtractor={(item) => item.key}
         recycleItems={false}
-        estimatedItemSize={150}
-        drawDistance={150}
+        estimatedItemSize={320}
+        drawDistance={500}
+        onEndReached={loadMoreShelves}
+        onEndReachedThreshold={0.5}
         decelerationRate="normal"
         ListHeaderComponent={renderExploreHeader}
         ListFooterComponent={renderFooter}
         keyboardDismissMode="on-drag"
         onScrollBeginDrag={() => Keyboard.dismiss()}
-        onScroll={handleScroll}
-        scrollEventThrottle={64}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />}
@@ -619,6 +668,7 @@ const ExplorePage = () => {
             <SearchResultsList
               peopleResults={peopleResults}
               tmdbResults={tmdbResults}
+              savedIds={savedIds}
               toggleWatchlist={handleToggleWatchlist}
             />
           )}

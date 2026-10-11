@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LegendList } from '@legendapp/list/react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useSelector } from '@legendapp/state/react';
+import { savedStore$ } from '../../state/savedState';
 import MovieCard from './MovieCard';
 import { EXPLORE_CARD_WIDTH, GAP_SIZE, HORIZONTAL_MARGIN } from '../explore/ExploreConstants';
 
@@ -17,12 +19,15 @@ interface MediaCarouselProps {
   title: string;
   type?: string;
   data: any[];
+  savedIds?: Set<number>;
   toggleWatchlist: (item: any) => void;
 }
 
 const MediaCarousel = memo(
-  ({ title, type, data, toggleWatchlist }: MediaCarouselProps) => {
+  ({ title, type, data, savedIds, toggleWatchlist }: MediaCarouselProps) => {
     const router = useRouter();
+    const storeSavedIds = useSelector(() => savedStore$.savedIds.get());
+    const effectiveSavedIds = savedIds ?? storeSavedIds;
 
     const validData = useMemo(() => {
       if (!Array.isArray(data)) return [];
@@ -45,11 +50,12 @@ const MediaCarousel = memo(
       ({ item }: { item: any }) => (
         <MovieCard
           item={item}
+          isAdded={effectiveSavedIds ? effectiveSavedIds.has(Number(item.id)) : false}
           toggleWatchlist={toggleWatchlist}
           onPress={() => handleCardPress(item)}
         />
       ),
-      [toggleWatchlist, handleCardPress]
+      [effectiveSavedIds, toggleWatchlist, handleCardPress]
     );
 
     if (!validData || validData.length === 0) return null;
@@ -66,7 +72,7 @@ const MediaCarousel = memo(
         <LegendList
           horizontal
           data={validData}
-          recycleItems={false}
+          recycleItems={true}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           keyExtractor={(item) => String(item.id)}
@@ -74,7 +80,7 @@ const MediaCarousel = memo(
           snapToAlignment="start"
           decelerationRate="fast"
           estimatedItemSize={SNAP_INTERVAL}
-          drawDistance={150}
+          drawDistance={300}
           renderItem={renderItem}
         />
       </View>
@@ -83,7 +89,8 @@ const MediaCarousel = memo(
   (prev, next) =>
     prev.title === next.title &&
     prev.type === next.type &&
-    prev.data === next.data
+    prev.data === next.data &&
+    prev.savedIds === next.savedIds
 );
 
 export default MediaCarousel;

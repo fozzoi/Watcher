@@ -23,8 +23,8 @@ const QuickAddButton = memo(({ itemId, item, isAdded: propIsAdded, onPress }: Qu
     return current ? current.has(numId) : false;
   });
 
-  // If we have an ID, always prefer the reactive state; otherwise fall back to prop
-  const isAdded = numId !== undefined ? reactiveIsAdded : (propIsAdded ?? false);
+  // Prefer propIsAdded when explicitly provided by parent; otherwise fall back to reactive state
+  const isAdded = propIsAdded !== undefined ? propIsAdded : reactiveIsAdded;
 
   const handlePress = () => {
     if (onPress) {

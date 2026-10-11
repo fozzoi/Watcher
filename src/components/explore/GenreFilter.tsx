@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { View, FlatList, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GENRE_DATA, HORIZONTAL_MARGIN } from './ExploreConstants';
 
@@ -8,26 +8,18 @@ interface GenreFilterProps {
   onSelectGenre: (id: number) => void;
 }
 
-const ESTIMATED_CHIP_WIDTH = 110;
-
 const GenreFilter = memo(({ selectedGenre, onSelectGenre }: GenreFilterProps) => (
   <View style={styles.genreFilterContainer}>
-    <FlatList
+    <ScrollView
       horizontal
-      data={GENRE_DATA}
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.genreFilterContent}
-      getItemLayout={(_, index) => ({
-        length: ESTIMATED_CHIP_WIDTH,
-        offset: (ESTIMATED_CHIP_WIDTH + 10) * index,
-        index,
-      })}
-      initialNumToRender={6}
-      maxToRenderPerBatch={4}
-      renderItem={({ item }) => {
+    >
+      {GENRE_DATA.map((item) => {
         const isSelected = selectedGenre === item.id;
         return (
           <TouchableOpacity
+            key={`genre-${item.id}`}
             activeOpacity={0.85}
             onPress={() => onSelectGenre(item.id)}
             style={[styles.genreChip, isSelected && styles.genreChipActive]}
@@ -45,9 +37,8 @@ const GenreFilter = memo(({ selectedGenre, onSelectGenre }: GenreFilterProps) =>
             </Text>
           </TouchableOpacity>
         );
-      }}
-      keyExtractor={(item) => `genre-${item.id}`}
-    />
+      })}
+    </ScrollView>
   </View>
 ));
 

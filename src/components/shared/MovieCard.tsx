@@ -23,7 +23,7 @@ interface MovieCardProps {
 }
 
 const MovieCard = memo(
-  ({ item, onPress, isSearchMode = false, isAdded = false, toggleWatchlist }: MovieCardProps) => {
+  ({ item, onPress, isSearchMode = false, isAdded, toggleWatchlist }: MovieCardProps) => {
     if (!item || !item.id) return null;
 
     const cardWidth = isSearchMode ? SEARCH_CARD_WIDTH : EXPLORE_CARD_WIDTH;
@@ -49,7 +49,6 @@ const MovieCard = memo(
               contentFit="cover"
               cachePolicy="disk"
               recyclingKey={imageUrl}
-              transition={150}
             />
           ) : (
             <View style={[styles.placeholderCard, { width: cardWidth, height: cardHeight }]}>

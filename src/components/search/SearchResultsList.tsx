@@ -9,10 +9,11 @@ import { logTasteEvent, TASTE_WEIGHTS } from '../../services/tasteProfile';
 interface SearchResultsListProps {
   peopleResults: any[];
   tmdbResults: any[];
+  savedIds?: Set<number>;
   toggleWatchlist: (item: any) => void;
 }
 
-const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], toggleWatchlist }: SearchResultsListProps) => {
+const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds, toggleWatchlist }: SearchResultsListProps) => {
   const router = useRouter();
   const collections = (tmdbResults || []).filter(r => r.media_type === 'collection');
   const movies = (tmdbResults || []).filter(r => r.media_type !== 'collection');
@@ -96,7 +97,11 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], toggleWa
             <View style={styles.searchResultsGrid}>
               {movies.map((result: any) => (
                 <MovieCard
-                  key={result.id} item={result} isSearchMode={true} toggleWatchlist={toggleWatchlist}
+                  key={result.id}
+                  item={result}
+                  isSearchMode={true}
+                  isAdded={savedIds ? savedIds.has(Number(result.id)) : false}
+                  toggleWatchlist={toggleWatchlist}
                   onPress={() => {
                     const mType = result.media_type || (result.first_air_date ? 'tv' : 'movie');
                     logTasteEvent({

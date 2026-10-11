@@ -5,6 +5,7 @@ import {
   Text,
   StyleSheet,
   StatusBar,
+  ScrollView,
   TouchableOpacity,
   Share,
   Modal,
@@ -12,7 +13,8 @@ import {
   useWindowDimensions,
   Platform,
   ToastAndroid,
-  Alert } from 'react-native';
+  Alert,
+} from 'react-native';
 import { Image } from 'expo-image';
 import { hasSavedItem, addSavedItem, removeSavedItem } from '../../src/database';
 import { logTasteEvent, TASTE_WEIGHTS } from '../../src/services/tasteProfile';
@@ -24,14 +26,10 @@ import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDi
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  interpolate,
-  Extrapolate,
-  useAnimatedScrollHandler,
   FadeInDown,
   withSpring,
   withSequence,
 } from 'react-native-reanimated';
-import { FlashList } from '@shopify/flash-list';
 
 import {
   getPersonDetails,
@@ -63,14 +61,108 @@ const C = {
   green: '#30D158',
 };
 
+const runAfterTransition = (cb: () => void, delayMs = 320) => {
+  let isCancelled = false;
+  let rafId: number | null = null;
+  const timer = setTimeout(() => {
+    if (isCancelled) return;
+    rafId = requestAnimationFrame(() => {
+      if (!isCancelled) cb();
+    });
+  }, delayMs);
+
+  return () => {
+    isCancelled = true;
+    clearTimeout(timer);
+    if (rafId !== null) cancelAnimationFrame(rafId);
+  };
+};
+
+const CreditCard = React.memo(
+  ({
+    item,
+    index,
+    cardWidth,
+    cardGap,
+    onPress,
+  }: {
+    item: TMDBResult;
+    index: number;
+    cardWidth: number;
+    cardGap: number;
+    onPress: (item: TMDBResult) => void;
+  }) => {
+    const handlePress = useCallback(() => {
+      onPress(item);
+    }, [onPress, item]);
+
+    const imagePath = item.poster_path || item.backdrop_path;
+    const isAnimate = index < 8;
+
+    const content = (
+      <TouchableOpacity activeOpacity={0.95} onPress={handlePress}>
+        <View>
+          <Image
+            source={{ uri: getImageUrl(imagePath || null, 'w342') }}
+            style={[styles.creditImage, { width: cardWidth, height: cardWidth * 1.5 }]}
+            contentFit="cover"
+            cachePolicy="disk"
+            transition={150}
+            recyclingKey={imagePath || String(item.id)}
+          />
+        </View>
+        <Text style={styles.creditTitle} numberOfLines={2}>
+          {item.title || item.name}
+        </Text>
+        {item.character ? (
+          <Text style={styles.creditCharacter} numberOfLines={1}>
+            {item.character}
+          </Text>
+        ) : null}
+      </TouchableOpacity>
+    );
+
+    if (isAnimate) {
+      return (
+        <Animated.View
+          entering={FadeInDown.delay(index * 30).duration(200)}
+          style={[
+            styles.creditCard,
+            { width: cardWidth, marginRight: (index + 1) % 2 === 0 ? 0 : cardGap },
+          ]}
+        >
+          {content}
+        </Animated.View>
+      );
+    }
+
+    return (
+      <View
+        style={[
+          styles.creditCard,
+          { width: cardWidth, marginRight: (index + 1) % 2 === 0 ? 0 : cardGap },
+        ]}
+      >
+        {content}
+      </View>
+    );
+  },
+  (prev, next) =>
+    prev.item.id === next.item.id &&
+    prev.cardWidth === next.cardWidth &&
+    prev.cardGap === next.cardGap &&
+    prev.onPress === next.onPress
+);
+
 export default function CastDetails() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const personId = Number(id);
   const { width, height } = useWindowDimensions();
+  const isTablet = width >= 768;
+  const isLandscape = width > height;
 
-  const HEADER_HEIGHT = height * 0.5;
-  const COLLAPSED_HEADER_HEIGHT = TOP_BAR_PADDING + 46;
+  const HEADER_HEIGHT = isLandscape ? height * 0.55 : height * 0.50;
   const CARD_GAP = 12;
   const CARD_WIDTH = (width - 40 - CARD_GAP) / 2;
 
@@ -105,9 +197,6 @@ export default function CastDetails() {
   }) => {
     setDialogConfig({ ...config, visible: true });
   }, []);
-  const headerListRef = useRef<FlatList>(null);
-
-  const scrollY = useSharedValue(0);
 
   useEffect(() => {
     loadData();
@@ -208,61 +297,24 @@ export default function CastDetails() {
     else Alert.alert('Copied', person.name);
   };
 
-  const scrollHandler = useAnimatedScrollHandler((event) => {
-    scrollY.value = event.contentOffset.y;
-  });
+  const INITIAL_CREDITS = 12;
+  const [creditsLimit, setCreditsLimit] = useState(INITIAL_CREDITS);
 
-  const headerStyle = useAnimatedStyle(() => {
-    const heightAnim = interpolate(
-      scrollY.value,
-      [0, HEADER_HEIGHT - COLLAPSED_HEADER_HEIGHT],
-      [HEADER_HEIGHT, COLLAPSED_HEADER_HEIGHT],
-      Extrapolate.CLAMP,
-    );
-    return { height: heightAnim };
-  });
+  // Defer mounting remaining 80+ credits until after the screen slide animation settles
+  useEffect(() => {
+    if (credits.length <= INITIAL_CREDITS) return;
+    const cancelTransition = runAfterTransition(() => {
+      setCreditsLimit(credits.length);
+    }, 320);
+    return () => cancelTransition();
+  }, [credits.length]);
 
-  const imageContainerStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(
-      scrollY.value,
-      [0, HEADER_HEIGHT - COLLAPSED_HEADER_HEIGHT - 50],
-      [1, 0.15],
-      Extrapolate.CLAMP,
-    );
-    const scale = interpolate(scrollY.value, [-100, 0], [1.2, 1], Extrapolate.CLAMP);
-    return { opacity, transform: [{ scale }] };
-  });
-
-  const CreditCard = ({ item, index }: { item: TMDBResult; index: number }) => (
-    <Animated.View
-      entering={FadeInDown.delay(Math.min(index, 10) * 40)}
-      style={[styles.creditCard, { width: CARD_WIDTH, marginRight: (index + 1) % 2 === 0 ? 0 : CARD_GAP }]}
-    >
-      <TouchableOpacity
-        activeOpacity={0.95}
-        onPress={() => {
-          const mType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
-          router.push(`/movie/${item.id}?media_type=${mType}`);
-        }}
-      >
-        <View>
-          <Image
-            source={{ uri: getImageUrl(item.poster_path, 'w342') }}
-            style={[styles.creditImage, { width: CARD_WIDTH, height: CARD_WIDTH * 1.5 }]}
-            contentFit="cover"
-            cachePolicy="disk"
-          />
-        </View>
-        <Text style={styles.creditTitle} numberOfLines={2}>
-          {item.title || item.name}
-        </Text>
-        {item.character ? (
-          <Text style={styles.creditCharacter} numberOfLines={1}>
-            {item.character}
-          </Text>
-        ) : null}
-      </TouchableOpacity>
-    </Animated.View>
+  const handleCreditPress = useCallback(
+    (item: TMDBResult) => {
+      const mType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+      router.push(`/movie/${item.id}?media_type=${mType}`);
+    },
+    [router]
   );
 
 
@@ -271,49 +323,40 @@ export default function CastDetails() {
     return <CastDetailSkeleton />;
   }
 
-  const headerImages = personImages.length > 0 ? personImages.slice(0, 8) : person.profile_path ? [{ file_path: person.profile_path }] : [];
+  const heroImagePath = person.profile_path || (personImages.length > 0 ? personImages[0].file_path : null);
 
   return (
     <View style={styles.root}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      <Animated.View style={[styles.headerContainer, headerStyle, { width }]}>
-        <Animated.View style={[StyleSheet.absoluteFill, imageContainerStyle]}>
-          <FlatList
-            ref={headerListRef}
-            data={headerImages}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(_, index) => `header-${index}`}
-            renderItem={({ item, index }) => (
-              <View style={{ width, height: '100%' }}>
-                <Image source={{ uri: getImageUrl(item.file_path, 'h632') }} style={{ width, height: '100%' }} contentFit="cover" cachePolicy="disk" />
-              </View>
-            )}
-          />
-          <LinearGradient
-            colors={['rgba(10,10,11,0.15)', 'transparent', 'rgba(10,10,11,0.6)', C.bg]}
-            locations={[0, 0.35, 0.75, 1]}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-        </Animated.View>
+      {/* Lightweight Static Hero Backdrop (Matched with Movie DetailPage) */}
+      <View style={[styles.heroContainer, { height: HEADER_HEIGHT }]} pointerEvents="none">
+        <Image
+          source={{ uri: getImageUrl(heroImagePath, 'w500') }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          cachePolicy="disk"
+          priority="high"
+        />
+        <LinearGradient
+          colors={['rgba(10,10,11,0.1)', 'transparent', C.bg]}
+          locations={[0, 0.45, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
 
-        <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-          <TouchableOpacity activeOpacity={0.95} onPress={() => router.back()} style={styles.glassBtn}>
-            <Ionicons name="chevron-back" size={22} color={C.white} />
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
+      {/* Top Bar HUD */}
+      <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
+        <TouchableOpacity activeOpacity={0.8} onPress={() => router.back()} style={styles.glassBtn}>
+          <Ionicons name="chevron-back" size={22} color={C.white} />
+        </TouchableOpacity>
+      </View>
 
-      <Animated.ScrollView
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
-        contentContainerStyle={{ paddingBottom: 60 }}
+      <ScrollView
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 60 }}
       >
-        <View style={{ height: HEADER_HEIGHT +25 }} />
+        <View style={{ height: HEADER_HEIGHT + 30 }} />
 
         <View style={styles.cardTop}>
           {person.known_for_department ? (
@@ -324,7 +367,7 @@ export default function CastDetails() {
             <Text style={styles.title} numberOfLines={2}>
               {person.name}
             </Text>
-            <TouchableOpacity activeOpacity={0.95} onPress={copyName} style={styles.copyBtn}>
+            <TouchableOpacity activeOpacity={0.8} onPress={copyName} style={styles.copyBtn}>
               <Feather name="copy" size={16} color={C.muted} />
             </TouchableOpacity>
           </View>
@@ -349,18 +392,18 @@ export default function CastDetails() {
             </View>
           ) : null}
 
-          <TouchableOpacity style={styles.playBtn} onPress={handleLovePress} activeOpacity={0.95}>
+          <TouchableOpacity style={styles.playBtn} onPress={handleLovePress} activeOpacity={0.9}>
             <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={20} color="#000" />
             <Text style={styles.playBtnText}>{isLiked ? 'Favorited' : 'Add to Favorites'}</Text>
           </TouchableOpacity>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity activeOpacity={0.95} style={styles.actionBtn} onPress={handlePageShare}>
+            <TouchableOpacity activeOpacity={0.8} style={styles.actionBtn} onPress={handlePageShare}>
               <Feather name="share-2" size={17} color={C.mutedSoft} />
               <Text style={styles.actionBtnText}>Share</Text>
             </TouchableOpacity>
             {personImages.length > 0 && (
-              <TouchableOpacity activeOpacity={0.95}
+              <TouchableOpacity activeOpacity={0.8}
                 style={styles.actionBtn}
                 onPress={() => {
                   setGalleryVisible(true);
@@ -378,7 +421,7 @@ export default function CastDetails() {
               {person.biography || 'No biography available for this person.'}
             </Text>
             {person.biography && person.biography.length > 220 && (
-              <TouchableOpacity activeOpacity={0.95} onPress={() => setIsBioExpanded(!isBioExpanded)}>
+              <TouchableOpacity activeOpacity={0.8} onPress={() => setIsBioExpanded(!isBioExpanded)}>
                 <Text style={styles.readMore}>{isBioExpanded ? 'Less' : 'Read more'}</Text>
               </TouchableOpacity>
             )}
@@ -393,13 +436,20 @@ export default function CastDetails() {
             </View>
 
             <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-              {credits.map((item, index) => (
-                <CreditCard key={`${item.id}-${index}`} item={item} index={index} />
+              {credits.slice(0, creditsLimit).map((item, index) => (
+                <CreditCard
+                  key={`${item.id}-${index}`}
+                  item={item}
+                  index={index}
+                  cardWidth={CARD_WIDTH}
+                  cardGap={CARD_GAP}
+                  onPress={handleCreditPress}
+                />
               ))}
             </View>
           </View>
         </View>
-      </Animated.ScrollView>
+      </ScrollView>
 
       {person && (
         <GalleryModal
@@ -543,7 +593,14 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.bg },
 
-  headerContainer: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1, overflow: 'hidden', backgroundColor: C.bg },
+  heroContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
 
   topBar: {
     position: 'absolute',
@@ -559,9 +616,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -569,7 +624,6 @@ const styles = StyleSheet.create({
   heroEyebrow: { color: C.mutedSoft, fontSize: 11, letterSpacing: 2, fontWeight: '700', marginBottom: 8 },
 
   cardTop: {
-    marginTop: -40,
     backgroundColor: C.bg,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
