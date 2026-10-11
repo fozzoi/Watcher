@@ -13,13 +13,15 @@ import {
   useWindowDimensions,
   Linking,
   BackHandler,
-  FlatList,
   DimensionValue,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Text } from 'react-native-paper';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
+import { LegendList } from '@legendapp/list/react-native';
+import { useSelector } from '@legendapp/state/react';
+import { savedStore$, syncSavedStore } from '../../src/state/savedState';
 import {
   getImageUrl,
   getSimilarMedia,
@@ -38,7 +40,6 @@ import {
   addSavedItem,
   removeSavedItem,
   hasSavedItem,
-  subscribeToSavedItemsChanges,
 } from '../../src/database';
 import { logTasteEvent, TASTE_WEIGHTS } from '../../src/services/tasteProfile';
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
@@ -223,6 +224,494 @@ const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay
   </TouchableOpacity>
 ));
 
+/* =========================================================================
+   MICRO-RENDERED SUB-COMPONENTS (Isolated State & Zero Root Re-renders)
+   ========================================================================= */
+
+interface MovieActionDockProps {
+  movie: any;
+}
+
+const MovieActionDock = React.memo(({ movie }: MovieActionDockProps) => {
+  const movieId = movie?.id;
+  const isInWatchlist = useSelector(() => {
+    if (!movieId) return false;
+    const current = savedStore$.savedIds.get();
+    return current ? current.has(Number(movieId)) : false;
+  });
+  const isWatched = useSelector(() => {
+    if (!movieId) return false;
+    const current = savedStore$.watchedIds.get();
+    return current ? current.has(Number(movieId)) : false;
+  });
+
+  const toggleWatchlist = useCallback(() => {
+    if (!movie) return;
+    const exists = hasSavedItem(movie.id, 'watchlist');
+    if (exists) {
+      removeSavedItem(movie.id, 'watchlist');
+    } else {
+      addSavedItem(movie, 'watchlist');
+      logTasteEvent({
+        entity_type: movie.media_type === 'tv' ? 'tv' : 'movie',
+        entity_id: movie.id,
+        entity_name: movie.title || movie.name,
+        genres: movie.genres,
+        weight: TASTE_WEIGHTS.WATCHLIST_ADD,
+      });
+    }
+    syncSavedStore();
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(exists ? 'Removed from Watchlist' : 'Added to Watchlist', ToastAndroid.SHORT);
+    }
+  }, [movie]);
+
+  const toggleWatched = useCallback(async () => {
+    if (!movie) return;
+    const exists = hasSavedItem(movie.id, 'history');
+    if (exists) {
+      removeSavedItem(movie.id, 'history');
+      // If movie belongs to a collection, unmarking a movie means the collection is no longer fully watched
+      if (movie.belongs_to_collection?.id) {
+        if (hasSavedItem(movie.belongs_to_collection.id, 'history')) {
+          removeSavedItem(movie.belongs_to_collection.id, 'history');
+        }
+      }
+    } else {
+      addSavedItem(movie, 'history');
+      logTasteEvent({
+        entity_type: movie.media_type === 'tv' ? 'tv' : 'movie',
+        entity_id: movie.id,
+        entity_name: movie.title || movie.name,
+        genres: movie.genres,
+        weight: TASTE_WEIGHTS.COMPLETED_WATCH,
+      });
+
+      // Automatically un-toggle Watchlist
+      if (hasSavedItem(movie.id, 'watchlist')) {
+        removeSavedItem(movie.id, 'watchlist');
+      }
+
+      // Check if all movies in the collection are now watched
+      if (movie.belongs_to_collection?.id) {
+        const colDetails = await getCollectionDetails(movie.belongs_to_collection.id);
+        if (colDetails?.parts && colDetails.parts.length > 0) {
+          const allWatched = colDetails.parts.every((part: any) =>
+            part.id === movie.id || hasSavedItem(part.id, 'history')
+          );
+          if (allWatched) {
+            if (hasSavedItem(colDetails.id, 'watchlist')) {
+              removeSavedItem(colDetails.id, 'watchlist');
+            }
+            if (!hasSavedItem(colDetails.id, 'history')) {
+              addSavedItem(colDetails, 'history');
+            }
+            if (Platform.OS === 'android') {
+              ToastAndroid.show(`${colDetails.name} completed!`, ToastAndroid.SHORT);
+            }
+          }
+        }
+      }
+    }
+    syncSavedStore();
+  }, [movie]);
+
+  const openTelegramSearch = useCallback(() => {
+    if (!movie) return;
+    const title = movie.title || movie.name;
+    const year = (movie.release_date || movie.first_air_date)?.substring(0, 4) || '';
+    const message = encodeURIComponent(`${title} ${year}`);
+    Linking.openURL(`tg://msg?text=${message}`).catch(() =>
+      Linking.openURL(`https://t.me/share/url?text=${message}`)
+    );
+  }, [movie]);
+
+  return (
+    <View style={styles.actionRow}>
+      <TouchableOpacity
+        activeOpacity={0.8}
+        style={[styles.actionBtn, isInWatchlist && styles.actionBtnWatchlistActive]}
+        onPress={toggleWatchlist}
+      >
+        <Ionicons
+          name={isInWatchlist ? 'bookmark' : 'bookmark-outline'}
+          size={18}
+          color={isInWatchlist ? C.red : C.white}
+        />
+        <Text style={[styles.actionBtnText, isInWatchlist && { color: C.red, fontWeight: '700' }]}>
+          Watchlist
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        activeOpacity={0.8}
+        style={[styles.actionBtn, isWatched && styles.actionBtnActive]}
+        onPress={toggleWatched}
+      >
+        <Ionicons
+          name={isWatched ? 'checkmark-circle' : 'checkmark-circle-outline'}
+          size={18}
+          color={isWatched ? C.green : C.mutedSoft}
+        />
+        <Text style={[styles.actionBtnText, isWatched && { color: C.green }]}>Watched</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        activeOpacity={0.8}
+        style={styles.actionBtn}
+        onPress={openTelegramSearch}
+      >
+        <Ionicons name="paper-plane-outline" size={17} color={C.mutedSoft} />
+        <Text style={styles.actionBtnText}>Telegram</Text>
+      </TouchableOpacity>
+    </View>
+  );
+});
+
+interface MovieOverviewProps {
+  overview?: string;
+}
+
+const MovieOverview = React.memo(({ overview }: MovieOverviewProps) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  if (!overview) return null;
+  const isLong = overview.length > 220;
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.overviewText}>
+        {isExpanded || !isLong ? overview : `${overview.slice(0, 220)}…`}
+      </Text>
+      {isLong ? (
+        <TouchableOpacity activeOpacity={0.8} onPress={() => setIsExpanded((prev) => !prev)}>
+          <Text style={styles.readMore}>{isExpanded ? 'Less' : 'Read more'}</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+});
+
+interface PlayCTAButtonProps {
+  sourceStatus: 'checking' | 'available' | 'unavailable';
+  lastWatched: any;
+  mediaType?: string;
+  onPlay: () => void;
+}
+
+const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, onPlay }: PlayCTAButtonProps) => {
+  const isUnavailable = sourceStatus === 'unavailable';
+  const isChecking = sourceStatus === 'checking';
+  const label = isChecking
+    ? 'Finding stream'
+    : isUnavailable
+    ? 'Unavailable'
+    : lastWatched
+    ? mediaType === 'tv'
+      ? `Resume S${lastWatched.lastSeason} · E${lastWatched.lastEpisode}`
+      : 'Resume'
+    : 'Play';
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      style={[styles.primaryCtaBtn, isUnavailable && styles.primaryCtaDisabled]}
+      onPress={onPlay}
+      disabled={sourceStatus !== 'available'}
+    >
+      <Ionicons name={lastWatched ? 'play-skip-forward' : 'play'} size={20} color="#000" />
+      <Text style={styles.primaryCtaText}>{label}</Text>
+    </TouchableOpacity>
+  );
+});
+
+interface MovieAIPanelProps {
+  movie: any;
+  releaseYear: string;
+  directors: any[];
+  genres: any[];
+  similarCardWidth: number;
+  renderSimilarItem: (props: any) => React.ReactElement;
+}
+
+const MovieAIPanel = React.memo(({
+  movie,
+  releaseYear,
+  directors,
+  genres,
+  similarCardWidth,
+  renderSimilarItem,
+}: MovieAIPanelProps) => {
+  const [aiTab, setAiTab] = useState<'lens' | 'chat' | 'vibe'>('lens');
+  const [lensInsight, setLensInsight] = useState<any>(null);
+  const [lensLoading, setLensLoading] = useState(false);
+  const [lensError, setLensError] = useState<string | null>(null);
+  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
+  const [loadingAi, setLoadingAi] = useState(false);
+
+  const fetchLensInsight = useCallback(async () => {
+    if (!movie || (!movie.title && !movie.name)) return;
+    setLensLoading(true);
+    setLensError(null);
+    setLensInsight(null);
+    try {
+      const response = await fetch('https://watcher-api-rho.vercel.app/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'lens',
+          title: movie.title || movie.name,
+          mediaType: movie.media_type,
+          year: (movie.release_date || movie.first_air_date)?.substring(0, 4) || '',
+          overview: movie.overview?.slice(0, 500) || '',
+          customApiKey: GLOBAL_CONFIG.customApiKey,
+        }),
+      });
+      const data = await response.json();
+      if (data?.result) setLensInsight(data.result);
+      else setLensError(data?.error || 'No insight returned.');
+    } catch (e: any) {
+      setLensError(e.message || 'Failed to fetch Lens insight.');
+    } finally {
+      setLensLoading(false);
+    }
+  }, [movie]);
+
+  const fetchAiRecommendations = useCallback(async () => {
+    if (!movie || (!movie.title && !movie.name)) return;
+    setLoadingAi(true);
+    const aiData = await getGeminiMoviesSimilarTo(movie.title || movie.name, movie.media_type, movie.id);
+    setAiRecommendations(aiData);
+    setLoadingAi(false);
+  }, [movie]);
+
+  return (
+    <View style={styles.aiPanel}>
+      <View style={styles.aiHeader}>
+        <View style={styles.aiHeaderLeft}>
+          <MaterialCommunityIcons name="creation" size={18} color={C.ai} />
+          <Text style={styles.aiHeaderTitle}>AI Insights</Text>
+        </View>
+        <View style={styles.aiTabs}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[styles.aiTab, aiTab === 'lens' && styles.aiTabActive]}
+            onPress={() => {
+              setAiTab('lens');
+              if (!lensInsight && !lensLoading) fetchLensInsight();
+            }}
+          >
+            <Text style={[styles.aiTabText, aiTab === 'lens' && styles.aiTabTextActive]}>Lens</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[styles.aiTab, aiTab === 'chat' && styles.aiTabActive]}
+            onPress={() => setAiTab('chat')}
+          >
+            <Text style={[styles.aiTabText, aiTab === 'chat' && styles.aiTabTextActive]}>Chat</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[styles.aiTab, aiTab === 'vibe' && styles.aiTabActive]}
+            onPress={() => setAiTab('vibe')}
+          >
+            <Text style={[styles.aiTabText, aiTab === 'vibe' && styles.aiTabTextActive]}>Vibe</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {aiTab === 'lens' ? (
+        <View>
+          {lensLoading ? (
+            <View style={{ paddingTop: 6 }}>
+              <AIShimmerBar width="40%" height={14} />
+              <AIShimmerBar width="100%" />
+              <AIShimmerBar width="88%" />
+            </View>
+          ) : lensError ? (
+            <View>
+              <Text style={styles.aiErrorText}>Couldn't load insight.</Text>
+              <TouchableOpacity activeOpacity={0.8} onPress={fetchLensInsight} style={styles.aiRetry}>
+                <Feather name="rotate-cw" size={13} color={C.ai} />
+                <Text style={styles.aiRetryText}>Try again</Text>
+              </TouchableOpacity>
+            </View>
+          ) : lensInsight ? (
+            <View>
+              <View style={styles.aiVerdictPill}>
+                <Text style={styles.aiVerdictText}>{lensInsight.worthIt}</Text>
+              </View>
+              <Text style={styles.aiFriendVerdict}>"{lensInsight.friendVerdict}"</Text>
+              {lensInsight.vibe ? (
+                <View style={styles.aiField}>
+                  <Text style={styles.aiFieldLabel}>Vibe</Text>
+                  <Text style={styles.aiFieldValue}>{lensInsight.vibe}</Text>
+                </View>
+              ) : null}
+              {lensInsight.whatItsActuallyAbout ? (
+                <View style={styles.aiField}>
+                  <Text style={styles.aiFieldLabel}>Story & Premise</Text>
+                  <Text style={styles.aiFieldValue}>{lensInsight.whatItsActuallyAbout}</Text>
+                </View>
+              ) : null}
+              {(lensInsight.certificationWarning || lensInsight.whatYoullSee) ? (
+                <View style={styles.aiAdvisory}>
+                  <Text style={styles.aiAdvisoryLabel}>⚠ Content Advisory</Text>
+                  <Text style={styles.aiAdvisoryFieldValue}>{lensInsight.certificationWarning || lensInsight.whatYoullSee}</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <TouchableOpacity activeOpacity={0.8} onPress={fetchLensInsight} style={styles.aiGenerateBtn}>
+              <MaterialCommunityIcons name="creation" size={16} color={C.ai} />
+              <Text style={styles.aiGenerateText}>Generate Lens insight</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : aiTab === 'chat' ? (
+        <MovieChatSection
+          movie={movie}
+          releaseYear={releaseYear}
+          directors={directors}
+          genres={genres}
+        />
+      ) : (
+        <View>
+          {loadingAi ? (
+            <View style={{ flexDirection: 'row', gap: 10, paddingTop: 6 }}>
+              {[1, 2, 3].map((i) => (
+                <View key={i} style={{ flex: 1 }}>
+                  <CardShimmer width="100%" height={similarCardWidth * 1.5} />
+                </View>
+              ))}
+            </View>
+          ) : aiRecommendations && aiRecommendations.length > 0 ? (
+            <LegendList
+              horizontal
+              data={aiRecommendations}
+              recycleItems={false}
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={renderSimilarItem}
+              estimatedItemSize={similarCardWidth + 12}
+              drawDistance={150}
+              decelerationRate="normal"
+            />
+          ) : (
+            <TouchableOpacity activeOpacity={0.8} onPress={fetchAiRecommendations} style={styles.aiGenerateBtn}>
+              <MaterialCommunityIcons name="creation" size={16} color={C.ai} />
+              <Text style={styles.aiGenerateText}>Find similar vibes</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </View>
+  );
+});
+
+interface MovieEpisodesSectionProps {
+  seasons: any[];
+  selectedSeason: number | null;
+  onSelectSeason: (seasonNum: number) => void;
+  loadingEpisodes: boolean;
+  episodes: TMDBEpisode[];
+  episodesLimit: number;
+  onShowMore: () => void;
+  lastWatched: any;
+  episodeThumbWidth: number;
+  onPlay: (ep: TMDBEpisode) => void;
+}
+
+const MovieEpisodesSection = React.memo(({
+  seasons,
+  selectedSeason,
+  onSelectSeason,
+  loadingEpisodes,
+  episodes,
+  episodesLimit,
+  onShowMore,
+  lastWatched,
+  episodeThumbWidth,
+  onPlay,
+}: MovieEpisodesSectionProps) => {
+  const visibleEpisodes = episodes.slice(0, episodesLimit);
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Episodes</Text>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 8, paddingBottom: 14 }}
+      >
+        {seasons
+          .filter((s: any) => s.season_number > 0)
+          .map((s: any) => (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              key={s.id}
+              style={[
+                styles.seasonPill,
+                selectedSeason === s.season_number && styles.seasonPillActive,
+              ]}
+              onPress={() => onSelectSeason(s.season_number)}
+            >
+              <Text
+                style={[
+                  styles.seasonPillText,
+                  selectedSeason === s.season_number && styles.seasonPillActiveText,
+                ]}
+              >
+                {s.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+      </ScrollView>
+
+      {loadingEpisodes ? (
+        <View style={{ gap: 10 }}>
+          {[1, 2, 3].map((i) => (
+            <EpisodeShimmer key={i} thumbWidth={episodeThumbWidth} />
+          ))}
+        </View>
+      ) : (
+        <View>
+          {visibleEpisodes.map((ep) => {
+            const isActive =
+              lastWatched?.lastSeason === ep.season_number &&
+              lastWatched?.lastEpisode === ep.episode_number;
+            return (
+              <MemoizedEpisodeRow
+                key={ep.id}
+                ep={ep}
+                isActive={isActive}
+                episodeThumbWidth={episodeThumbWidth}
+                onPlay={onPlay}
+              />
+            );
+          })}
+
+          {episodes.length > episodesLimit ? (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={styles.showMoreEpBtn}
+              onPress={onShowMore}
+            >
+              <Text style={styles.showMoreEpText}>
+                Show more episodes ({episodes.length - episodesLimit} remaining)
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      )}
+    </View>
+  );
+});
+
+/* =========================================================================
+   MAIN DETAIL PAGE
+   ========================================================================= */
+
 export default function DetailPage() {
   const router = useRouter();
   const { id, media_type } = useLocalSearchParams();
@@ -242,9 +731,6 @@ export default function DetailPage() {
   const [similarMovies, setSimilarMovies] = useState<any[]>([]);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
 
-  const [isInWatchlist, setIsInWatchlist] = useState(false);
-  const [isWatched, setIsWatched] = useState(false);
-  const [showFullOverview, setShowFullOverview] = useState(false);
   const [lastWatched, setLastWatched] = useState<any>(null);
   const [sourceStatus, setSourceStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
   const [torrentModalVisible, setTorrentModalVisible] = useState(false);
@@ -254,13 +740,6 @@ export default function DetailPage() {
   const [episodesLimit, setEpisodesLimit] = useState(INITIAL_EPISODES_LIMIT);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
   const episodeRequestRef = useRef(0);
-
-  const [aiTab, setAiTab] = useState<'lens' | 'chat' | 'vibe'>('lens');
-  const [lensInsight, setLensInsight] = useState<any>(null);
-  const [lensLoading, setLensLoading] = useState(false);
-  const [lensError, setLensError] = useState<string | null>(null);
-  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
-  const [loadingAi, setLoadingAi] = useState(false);
 
   const similarCardWidth = isTablet ? 160 : width * 0.3;
   const castCardWidth = isTablet ? 120 : width * 0.26;
@@ -311,6 +790,19 @@ export default function DetailPage() {
       isActive = false;
     };
   }, [id, media_type]);
+
+  const loadSimilar = useCallback(async () => {
+    if (!movie?.id) return;
+    setLoadingSimilar(true);
+    try {
+      const results = await getSimilarMedia(movie.id, movie.media_type);
+      setSimilarMovies(results);
+    } catch {
+      setSimilarMovies([]);
+    } finally {
+      setLoadingSimilar(false);
+    }
+  }, [movie?.id, movie?.media_type]);
 
   // Phase 2: Deferred crew, cast, collection, and recommendations
   useEffect(() => {
@@ -373,7 +865,7 @@ export default function DetailPage() {
     });
 
     return () => cancelIdle();
-  }, [movie?.id]);
+  }, [movie?.id, loadSimilar]);
 
   const prefetchSources = useCallback(async (seasonToTry = 1, episodeToTry = 1) => {
     if (!movie) return;
@@ -409,8 +901,7 @@ export default function DetailPage() {
         getProgress(movie.id).then((progress) => {
           if (isActive) setLastWatched(progress);
         });
-        setIsInWatchlist(hasSavedItem(movie.id, 'watchlist'));
-        setIsWatched(hasSavedItem(movie.id, 'history'));
+        syncSavedStore();
       }
       return () => {
         isActive = false;
@@ -418,17 +909,7 @@ export default function DetailPage() {
     }, [movie?.id])
   );
 
-  useEffect(
-    () =>
-      subscribeToSavedItemsChanges((type) => {
-        if (!movie?.id) return;
-        if (type === 'watchlist') setIsInWatchlist(hasSavedItem(movie.id, 'watchlist'));
-        if (type === 'history') setIsWatched(hasSavedItem(movie.id, 'history'));
-      }),
-    [movie?.id]
-  );
-
-  const fetchEpisodes = async (seasonNumber: number) => {
+  const fetchEpisodes = useCallback(async (seasonNumber: number) => {
     if (!movie?.id) return;
     const reqId = ++episodeRequestRef.current;
     setLoadingEpisodes(true);
@@ -443,62 +924,13 @@ export default function DetailPage() {
     } finally {
       if (reqId === episodeRequestRef.current) setLoadingEpisodes(false);
     }
-  };
+  }, [movie?.id]);
 
   useEffect(() => {
     if (selectedSeason !== null && movie?.media_type === 'tv') {
       fetchEpisodes(selectedSeason);
     }
-  }, [selectedSeason]);
-
-  const loadSimilar = async () => {
-    if (!movie?.id) return;
-    setLoadingSimilar(true);
-    try {
-      const results = await getSimilarMedia(movie.id, movie.media_type);
-      setSimilarMovies(results);
-    } catch {
-      setSimilarMovies([]);
-    } finally {
-      setLoadingSimilar(false);
-    }
-  };
-
-  const fetchAiRecommendations = async () => {
-    if (!movie || (!movie.title && !movie.name)) return;
-    setLoadingAi(true);
-    const aiData = await getGeminiMoviesSimilarTo(movie.title || movie.name, movie.media_type, movie.id);
-    setAiRecommendations(aiData);
-    setLoadingAi(false);
-  };
-
-  const fetchLensInsight = async () => {
-    if (!movie || (!movie.title && !movie.name)) return;
-    setLensLoading(true);
-    setLensError(null);
-    setLensInsight(null);
-    try {
-      const response = await fetch('https://watcher-api-rho.vercel.app/api/gemini', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'lens',
-          title: movie.title || movie.name,
-          mediaType: movie.media_type,
-          year: (movie.release_date || movie.first_air_date)?.substring(0, 4) || '',
-          overview: movie.overview?.slice(0, 500) || '',
-          customApiKey: GLOBAL_CONFIG.customApiKey,
-        }),
-      });
-      const data = await response.json();
-      if (data?.result) setLensInsight(data.result);
-      else setLensError(data?.error || 'No insight returned.');
-    } catch (e: any) {
-      setLensError(e.message || 'Failed to fetch Lens insight.');
-    } finally {
-      setLensLoading(false);
-    }
-  };
+  }, [selectedSeason, movie?.media_type, fetchEpisodes]);
 
   const handlePlay = useCallback((episode?: TMDBEpisode) => {
     if (sourceStatus === 'unavailable') {
@@ -542,97 +974,12 @@ export default function DetailPage() {
     );
   }, [sourceStatus, movie, lastWatched, episodes, router]);
 
-  const toggleWatchlist = () => {
-    if (!movie) return;
-    const exists = hasSavedItem(movie.id, 'watchlist');
-    if (exists) {
-      removeSavedItem(movie.id, 'watchlist');
-    } else {
-      addSavedItem(movie, 'watchlist');
-      logTasteEvent({
-        entity_type: movie.media_type === 'tv' ? 'tv' : 'movie',
-        entity_id: movie.id,
-        entity_name: movie.title || movie.name,
-        genres: movie.genres,
-        weight: TASTE_WEIGHTS.WATCHLIST_ADD,
-      });
-    }
-    setIsInWatchlist(!exists);
-    if (Platform.OS === 'android') {
-      ToastAndroid.show(exists ? 'Removed from Watchlist' : 'Added to Watchlist', ToastAndroid.SHORT);
-    }
-  };
-
-  // Auto-untoggle Watchlist when Marked as Watched
-  const toggleWatched = async () => {
-    if (!movie) return;
-    const exists = hasSavedItem(movie.id, 'history');
-    if (exists) {
-      removeSavedItem(movie.id, 'history');
-      setIsWatched(false);
-    } else {
-      addSavedItem(movie, 'history');
-      logTasteEvent({
-        entity_type: movie.media_type === 'tv' ? 'tv' : 'movie',
-        entity_id: movie.id,
-        entity_name: movie.title || movie.name,
-        genres: movie.genres,
-        weight: TASTE_WEIGHTS.COMPLETED_WATCH,
-      });
-      setIsWatched(true);
-
-      // Automatically un-toggle Watchlist
-      if (hasSavedItem(movie.id, 'watchlist')) {
-        removeSavedItem(movie.id, 'watchlist');
-        setIsInWatchlist(false);
-      }
-    }
-
-    if (!exists && movie.belongs_to_collection) {
-      const watchlistArr = getSavedItems('watchlist');
-      const colInWatchlist = watchlistArr.find(
-        (i: any) => i.id === movie.belongs_to_collection.id && i.media_type === 'collection'
-      );
-      if (colInWatchlist) {
-        const colDetails = await getCollectionDetails(movie.belongs_to_collection.id);
-        if (colDetails?.parts && colDetails.parts.length > 0) {
-          const historyArr = getSavedItems('history');
-          const allWatched = colDetails.parts.every((part: any) =>
-            historyArr.some((hi: any) => hi.id === part.id)
-          );
-          if (allWatched) {
-            removeSavedItem(colDetails.id, 'watchlist');
-            if (!hasSavedItem(colDetails.id, 'history')) addSavedItem(colDetails, 'history');
-            if (Platform.OS === 'android') {
-              ToastAndroid.show(`${colDetails.name} completed!`, ToastAndroid.SHORT);
-            }
-          }
-        }
-      }
-    }
-  };
-
-  const openTelegramSearch = () => {
-    if (!movie) return;
-    const title = movie.title || movie.name;
-    const year = (movie.release_date || movie.first_air_date)?.substring(0, 4) || '';
-    const message = encodeURIComponent(`${title} ${year}`);
-    Linking.openURL(`tg://msg?text=${message}`).catch(() =>
-      Linking.openURL(`https://t.me/share/url?text=${message}`)
-    );
-  };
-
-  const openTorrentSearch = () => {
-    if (!movie) return;
-    setTorrentModalVisible(true);
-  };
-
-  const copyTitle = async () => {
+  const copyTitle = useCallback(async () => {
     if (!movie) return;
     const text = `${movie.title || movie.name} ${(movie.release_date || movie.first_air_date)?.substring(0, 4) || ''}`;
     await Clipboard.setStringAsync(text);
     if (Platform.OS === 'android') ToastAndroid.show('Copied!', ToastAndroid.SHORT);
-  };
+  }, [movie]);
 
   const renderCastItem = useCallback(
     ({ item }: any) => (
@@ -683,8 +1030,6 @@ export default function DetailPage() {
       </View>
     );
   }
-
-  const visibleEpisodes = episodes.slice(0, episodesLimit);
 
   return (
     <View style={styles.root}>
@@ -752,7 +1097,7 @@ export default function DetailPage() {
               </Text>
             ) : null}
             {movie.vote_average && movie.vote_average > 0 ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={styles.metaInline}>
                 {movie.runtime && movie.runtime > 0 ? <Text style={styles.metaDot}>·</Text> : null}
                 <Ionicons name="star" size={11} color={C.gold} />
                 <Text style={[styles.metaText, { marginLeft: 4 }]}>
@@ -761,7 +1106,7 @@ export default function DetailPage() {
               </View>
             ) : null}
             {movie.certification ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={styles.metaInline}>
                 <Text style={styles.metaDot}>·</Text>
                 <View style={styles.certPill}>
                   <Text style={styles.certText}>{movie.certification}</Text>
@@ -769,7 +1114,7 @@ export default function DetailPage() {
               </View>
             ) : null}
             {movie.media_type === 'tv' && movie.number_of_seasons ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={styles.metaInline}>
                 <Text style={styles.metaDot}>·</Text>
                 <Text style={styles.metaText}>{movie.number_of_seasons} Seasons</Text>
               </View>
@@ -807,92 +1152,29 @@ export default function DetailPage() {
             </ScrollView>
           ) : null}
 
-          {/* Primary Play CTA */}
-          <TouchableOpacity
-            activeOpacity={0.9}
-            style={[styles.primaryCtaBtn, sourceStatus === 'unavailable' && styles.primaryCtaDisabled]}
-            onPress={() => handlePlay()}
-            disabled={sourceStatus !== 'available'}
-          >
-            <Ionicons name={lastWatched ? 'play-skip-forward' : 'play'} size={20} color="#000" />
-            <Text style={styles.primaryCtaText}>
-              {sourceStatus === 'checking'
-                ? 'Finding stream'
-                : sourceStatus === 'unavailable'
-                ? 'Unavailable'
-                : lastWatched
-                ? movie.media_type === 'tv'
-                  ? `Resume S${lastWatched.lastSeason} · E${lastWatched.lastEpisode}`
-                  : 'Resume'
-                : 'Play'}
-            </Text>
-          </TouchableOpacity>
+          {/* Primary Play CTA (Micro-rendered status updates) */}
+          <PlayCTAButton
+            sourceStatus={sourceStatus}
+            lastWatched={lastWatched}
+            mediaType={movie.media_type}
+            onPlay={() => handlePlay()}
+          />
 
-          {/* Primary Download CTA (Stacked Directly Below Play in Same Style) */}
+          {/* Primary Download CTA */}
           <TouchableOpacity
             activeOpacity={0.9}
             style={[styles.primaryCtaBtn, styles.downloadCtaBtn]}
-            onPress={openTorrentSearch}
+            onPress={() => setTorrentModalVisible(true)}
           >
             <Feather name="download" size={19} color="#000" />
             <Text style={styles.primaryCtaText}>Download</Text>
           </TouchableOpacity>
 
-          {/* Action Dock: Watchlist, Watched, Telegram */}
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.actionBtn, isInWatchlist && styles.actionBtnWatchlistActive]}
-              onPress={toggleWatchlist}
-            >
-              <Ionicons
-                name={isInWatchlist ? 'bookmark' : 'bookmark-outline'}
-                size={18}
-                color={isInWatchlist ? C.red : C.white}
-              />
-              <Text style={[styles.actionBtnText, isInWatchlist && { color: C.red, fontWeight: '700' }]}>
-                Watchlist
-              </Text>
-            </TouchableOpacity>
+          {/* Micro-rendered Action Dock: Watchlist, Watched, Telegram */}
+          <MovieActionDock movie={movie} />
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.actionBtn, isWatched && styles.actionBtnActive]}
-              onPress={toggleWatched}
-            >
-              <Ionicons
-                name={isWatched ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                size={18}
-                color={isWatched ? C.green : C.mutedSoft}
-              />
-              <Text style={[styles.actionBtnText, isWatched && { color: C.green }]}>Watched</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.actionBtn}
-              onPress={openTelegramSearch}
-            >
-              <Ionicons name="paper-plane-outline" size={17} color={C.mutedSoft} />
-              <Text style={styles.actionBtnText}>Telegram</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Overview */}
-          {movie.overview ? (
-            <View style={styles.section}>
-              <Text style={styles.overviewText}>
-                {showFullOverview || movie.overview.length <= 220
-                  ? movie.overview
-                  : `${movie.overview.slice(0, 220)}…`}
-              </Text>
-              {movie.overview.length > 220 ? (
-                <TouchableOpacity activeOpacity={0.8} onPress={() => setShowFullOverview(!showFullOverview)}>
-                  <Text style={styles.readMore}>{showFullOverview ? 'Less' : 'Read more'}</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          ) : null}
+          {/* Micro-rendered Overview */}
+          <MovieOverview overview={movie.overview} />
 
           {/* Collection Banner */}
           {isReadyToRenderExtras && movie.belongs_to_collection ? (
@@ -929,126 +1211,16 @@ export default function DetailPage() {
             </TouchableOpacity>
           ) : null}
 
-          {/* AI Insights */}
+          {/* Micro-rendered AI Insights Panel */}
           {isReadyToRenderExtras ? (
-            <View style={styles.aiPanel}>
-              <View style={styles.aiHeader}>
-                <View style={styles.aiHeaderLeft}>
-                  <MaterialCommunityIcons name="creation" size={18} color={C.ai} />
-                  <Text style={styles.aiHeaderTitle}>AI Insights</Text>
-                </View>
-                <View style={styles.aiTabs}>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    style={[styles.aiTab, aiTab === 'lens' && styles.aiTabActive]}
-                    onPress={() => {
-                      setAiTab('lens');
-                      if (!lensInsight && !lensLoading) fetchLensInsight();
-                    }}
-                  >
-                    <Text style={[styles.aiTabText, aiTab === 'lens' && styles.aiTabTextActive]}>Lens</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    style={[styles.aiTab, aiTab === 'chat' && styles.aiTabActive]}
-                    onPress={() => setAiTab('chat')}
-                  >
-                    <Text style={[styles.aiTabText, aiTab === 'chat' && styles.aiTabTextActive]}>Chat</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    style={[styles.aiTab, aiTab === 'vibe' && styles.aiTabActive]}
-                    onPress={() => setAiTab('vibe')}
-                  >
-                    <Text style={[styles.aiTabText, aiTab === 'vibe' && styles.aiTabTextActive]}>Vibe</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {aiTab === 'lens' ? (
-                <View>
-                  {lensLoading ? (
-                    <View style={{ paddingTop: 6 }}>
-                      <AIShimmerBar width="40%" height={14} />
-                      <AIShimmerBar width="100%" />
-                      <AIShimmerBar width="88%" />
-                    </View>
-                  ) : lensError ? (
-                    <View>
-                      <Text style={styles.aiErrorText}>Couldn't load insight.</Text>
-                      <TouchableOpacity activeOpacity={0.8} onPress={fetchLensInsight} style={styles.aiRetry}>
-                        <Feather name="rotate-cw" size={13} color={C.ai} />
-                        <Text style={styles.aiRetryText}>Try again</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : lensInsight ? (
-                    <View>
-                      <View style={styles.aiVerdictPill}>
-                        {/* <View style={styles.aiVerdictDot} /> */}
-                        <Text style={styles.aiVerdictText}>{lensInsight.worthIt}</Text>
-                      </View>
-                      <Text style={styles.aiFriendVerdict}>"{lensInsight.friendVerdict}"</Text>
-                      {lensInsight.vibe ? (
-                        <View style={styles.aiField}>
-                          <Text style={styles.aiFieldLabel}>Vibe</Text>
-                          <Text style={styles.aiFieldValue}>{lensInsight.vibe}</Text>
-                        </View>
-                      ) : null}
-                      {lensInsight.whatItsActuallyAbout ? (
-                        <View style={styles.aiField}>
-                          <Text style={styles.aiFieldLabel}>Story & Premise</Text>
-                          <Text style={styles.aiFieldValue}>{lensInsight.whatItsActuallyAbout}</Text>
-                        </View>
-                      ) : null}
-                      {(lensInsight.certificationWarning || lensInsight.whatYoullSee) ? (
-                          <View style={styles.aiAdvisory}>
-                            <Text style={styles.aiAdvisoryLabel}>⚠ Content Advisory</Text>
-                            <Text style={styles.aiAdvisoryFieldValue}>{lensInsight.certificationWarning || lensInsight.whatYoullSee}</Text>
-                          </View>
-                        ) : null}
-                    </View>
-                  ) : (
-                    <TouchableOpacity activeOpacity={0.8} onPress={fetchLensInsight} style={styles.aiGenerateBtn}>
-                      <MaterialCommunityIcons name="creation" size={16} color={C.ai} />
-                      <Text style={styles.aiGenerateText}>Generate Lens insight</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ) : aiTab === 'chat' ? (
-                <MovieChatSection
-                  movie={movie}
-                  releaseYear={releaseYear}
-                  directors={directors}
-                  genres={genres}
-                />
-              ) : (
-                <View>
-                  {loadingAi ? (
-                    <View style={{ flexDirection: 'row', gap: 10, paddingTop: 6 }}>
-                      {[1, 2, 3].map((i) => (
-                        <View key={i} style={{ flex: 1 }}>
-                          <CardShimmer width="100%" height={similarCardWidth * 1.5} />
-                        </View>
-                      ))}
-                    </View>
-                  ) : aiRecommendations && aiRecommendations.length > 0 ? (
-                    <FlatList
-                      horizontal
-                      data={aiRecommendations}
-                      showsHorizontalScrollIndicator={false}
-                      keyExtractor={(item) => String(item.id)}
-                      renderItem={renderSimilarItem}
-                      ItemSeparatorComponent={ListSpacer}
-                    />
-                  ) : (
-                    <TouchableOpacity activeOpacity={0.8} onPress={fetchAiRecommendations} style={styles.aiGenerateBtn}>
-                      <MaterialCommunityIcons name="creation" size={16} color={C.ai} />
-                      <Text style={styles.aiGenerateText}>Find similar vibes</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-            </View>
+            <MovieAIPanel
+              movie={movie}
+              releaseYear={releaseYear}
+              directors={directors}
+              genres={genres}
+              similarCardWidth={similarCardWidth}
+              renderSimilarItem={renderSimilarItem}
+            />
           ) : null}
 
           {/* Directors with In-Page Skeleton Placeholder */}
@@ -1069,12 +1241,16 @@ export default function DetailPage() {
                 ))}
               </ScrollView>
             ) : directors && directors.length > 0 ? (
-              <FlatList
+              <LegendList
                 horizontal
                 data={directors}
+                recycleItems={false}
                 showsHorizontalScrollIndicator={false}
                 keyExtractor={(item) => String(item.id)}
                 renderItem={renderDirectorItem}
+                estimatedItemSize={50}
+                drawDistance={10}
+                decelerationRate="normal"
               />
             ) : null}
           </View>
@@ -1089,88 +1265,35 @@ export default function DetailPage() {
                 ))}
               </ScrollView>
             ) : (
-              <FlatList
+              <LegendList
                 horizontal
                 data={movie.cast.slice(0, 15)}
+                recycleItems={false}
                 showsHorizontalScrollIndicator={false}
                 keyExtractor={(item) => String(item.id)}
                 renderItem={renderCastItem}
                 ItemSeparatorComponent={ListSpacer}
+                estimatedItemSize={castCardWidth + 12}
+                drawDistance={150}
+                decelerationRate="fast"
               />
             )}
           </View>
 
           {/* TV Episodes with In-Page Skeleton Placeholder */}
           {movie.media_type === 'tv' && movie.seasons && movie.seasons.length > 0 ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Episodes</Text>
-
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 8, paddingBottom: 14 }}
-              >
-                {movie.seasons
-                  .filter((s: any) => s.season_number > 0)
-                  .map((s: any) => (
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      key={s.id}
-                      style={[
-                        styles.seasonPill,
-                        selectedSeason === s.season_number && styles.seasonPillActive,
-                      ]}
-                      onPress={() => setSelectedSeason(s.season_number)}
-                    >
-                      <Text
-                        style={[
-                          styles.seasonPillText,
-                          selectedSeason === s.season_number && styles.seasonPillActiveText,
-                        ]}
-                      >
-                        {s.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-              </ScrollView>
-
-              {loadingEpisodes ? (
-                <View style={{ gap: 10 }}>
-                  {[1, 2, 3].map((i) => (
-                    <EpisodeShimmer key={i} thumbWidth={episodeThumbWidth} />
-                  ))}
-                </View>
-              ) : (
-                <View>
-                  {visibleEpisodes.map((ep) => {
-                    const isActive =
-                      lastWatched?.lastSeason === ep.season_number &&
-                      lastWatched?.lastEpisode === ep.episode_number;
-                    return (
-                      <MemoizedEpisodeRow
-                        key={ep.id}
-                        ep={ep}
-                        isActive={isActive}
-                        episodeThumbWidth={episodeThumbWidth}
-                        onPlay={handlePlay}
-                      />
-                    );
-                  })}
-
-                  {episodes.length > episodesLimit ? (
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      style={styles.showMoreEpBtn}
-                      onPress={() => setEpisodesLimit((prev) => prev + 15)}
-                    >
-                      <Text style={styles.showMoreEpText}>
-                        Show more episodes ({episodes.length - episodesLimit} remaining)
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-              )}
-            </View>
+            <MovieEpisodesSection
+              seasons={movie.seasons}
+              selectedSeason={selectedSeason}
+              onSelectSeason={(seasonNum) => setSelectedSeason(seasonNum)}
+              loadingEpisodes={loadingEpisodes}
+              episodes={episodes}
+              episodesLimit={episodesLimit}
+              onShowMore={() => setEpisodesLimit((prev) => prev + 15)}
+              lastWatched={lastWatched}
+              episodeThumbWidth={episodeThumbWidth}
+              onPlay={handlePlay}
+            />
           ) : null}
 
           {/* Photos & Scene Images Gallery */}
@@ -1194,12 +1317,16 @@ export default function DetailPage() {
                 ))}
               </ScrollView>
             ) : similarMovies && similarMovies.length > 0 ? (
-              <FlatList
+              <LegendList
                 horizontal
                 data={similarMovies}
+                recycleItems={false}
                 showsHorizontalScrollIndicator={false}
                 keyExtractor={(item) => String(item.id)}
                 renderItem={renderSimilarItem}
+                estimatedItemSize={similarCardWidth + 12}
+                drawDistance={150}
+                decelerationRate="fast"
               />
             ) : null}
           </View>
@@ -1291,6 +1418,7 @@ const styles = StyleSheet.create({
   },
   copyBtn: { padding: 6, marginTop: 2 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginBottom: 14 },
+  metaInline: { flexDirection: 'row', alignItems: 'center' },
   metaText: { color: C.mutedSoft, fontSize: 12.5, fontWeight: '500' },
   metaDot: { color: C.muted, fontSize: 12, marginHorizontal: 4 },
   certPill: {
@@ -1444,14 +1572,12 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 100,
     marginBottom: 12,
-    paddingBlock:10
   },
-  aiVerdictDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.ai },
-  aiVerdictText: { color: C.ai, 
-    fontSize: 11.5, 
-    fontWeight: '700', 
+  aiVerdictText: {
+    color: C.ai,
+    fontSize: 11.5,
+    fontWeight: '700',
     letterSpacing: 0.3,
-    paddingStart: 15,
   },
   aiFriendVerdict: {
     color: C.white,
@@ -1475,9 +1601,6 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: 'rgb(14, 30, 31)',
     borderRadius: 12,
-    
-    // borderWidth: 1,
-    // borderColor: 'rgba(255, 179, 0, 0.25)',
   },
   aiAdvisoryLabel: {
     color: '#ba0101',
@@ -1488,7 +1611,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textTransform: 'uppercase',
   },
-  aiAdvisoryFieldValue:{ color: "#d4d2d2", fontSize: 12, lineHeight: 15 ,fontStyle: 'italic'},
+  aiAdvisoryFieldValue: { color: '#d4d2d2', fontSize: 12, lineHeight: 15, fontStyle: 'italic' },
   aiFieldValue: { color: C.text, fontSize: 13.5, lineHeight: 20 },
   aiErrorText: { color: C.mutedSoft, fontSize: 13, marginBottom: 8 },
   aiRetry: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },

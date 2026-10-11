@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,13 +6,17 @@ import {
   StatusBar,
   FlatList,
   ActivityIndicator,
+  Platform,
+  ToastAndroid,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Text } from 'react-native-paper';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { hasSavedItem, addSavedItem, removeSavedItem } from '../../src/database';
+import { hasSavedItem, addSavedItem, removeSavedItem, subscribeToSavedItemsChanges } from '../../src/database';
+import { savedStore$, syncSavedStore } from '../../src/state/savedState';
+import { useSelector } from '@legendapp/state/react';
 import {
   getCollectionDetails,
   getImageUrl,
@@ -59,15 +63,40 @@ const CollectionDetails = () => {
   const collectionId = Number(id);
   const collectionName = (name as string) || '';
 
+  const watchedIds = useSelector(() => savedStore$.watchedIds.get());
   const [collection, setCollection] = useState<TMDBCollectionDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [isWatched, setIsWatched] = useState(false);
 
-  const checkStatus = (col: TMDBCollectionDetails) => {
-    setIsInWatchlist(hasSavedItem(col.id, 'watchlist'));
-    setIsWatched(hasSavedItem(col.id, 'history'));
-  };
+  const checkStatus = useCallback((col: TMDBCollectionDetails) => {
+    const inWatchlist = hasSavedItem(col.id, 'watchlist');
+    setIsInWatchlist(inWatchlist);
+
+    const parts = col.parts || [];
+    if (parts.length > 0) {
+      const allPartsWatched = parts.every((p) => hasSavedItem(p.id, 'history'));
+      if (allPartsWatched) {
+        if (!hasSavedItem(col.id, 'history')) {
+          addSavedItem(col, 'history');
+          if (inWatchlist) {
+            removeSavedItem(col.id, 'watchlist');
+            setIsInWatchlist(false);
+          }
+          syncSavedStore();
+        }
+        setIsWatched(true);
+      } else {
+        if (hasSavedItem(col.id, 'history')) {
+          removeSavedItem(col.id, 'history');
+          syncSavedStore();
+        }
+        setIsWatched(false);
+      }
+    } else {
+      setIsWatched(hasSavedItem(col.id, 'history'));
+    }
+  }, []);
 
   useEffect(() => {
     const fetchCollection = async () => {
@@ -78,7 +107,22 @@ const CollectionDetails = () => {
       setLoading(false);
     };
     fetchCollection();
-  }, [collectionId]);
+  }, [collectionId, checkStatus]);
+
+  useEffect(() => {
+    const unsub = subscribeToSavedItemsChanges(() => {
+      if (collection) checkStatus(collection);
+    });
+    return unsub;
+  }, [collection, checkStatus]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (collection) {
+        checkStatus(collection);
+      }
+    }, [collection, checkStatus])
+  );
 
   const sortedParts = collection?.parts
     ? [...collection.parts].sort((a, b) => {
@@ -101,21 +145,50 @@ const CollectionDetails = () => {
       addSavedItem(collection, 'watchlist');
     }
     setIsInWatchlist(!exists);
+    syncSavedStore();
   };
 
   const toggleWatched = () => {
     if (!collection) return;
     const exists = hasSavedItem(collection.id, 'history');
     if (exists) {
+      // Un-marking collection: remove collection and all its parts from history
       removeSavedItem(collection.id, 'history');
+      if (collection.parts) {
+        collection.parts.forEach((part) => {
+          removeSavedItem(part.id, 'history');
+        });
+      }
+      setIsWatched(false);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(`${collection.name} unmarked as watched`, ToastAndroid.SHORT);
+      }
     } else {
+      // Marking collection as watched: add collection & all its parts to history
       addSavedItem(collection, 'history');
+      if (hasSavedItem(collection.id, 'watchlist')) {
+        removeSavedItem(collection.id, 'watchlist');
+        setIsInWatchlist(false);
+      }
+      if (collection.parts) {
+        collection.parts.forEach((part) => {
+          addSavedItem(part, 'history');
+          if (hasSavedItem(part.id, 'watchlist')) {
+            removeSavedItem(part.id, 'watchlist');
+          }
+        });
+      }
+      setIsWatched(true);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(`Marked all ${collection.parts?.length || 0} movies as watched!`, ToastAndroid.SHORT);
+      }
     }
-    setIsWatched(!exists);
+    syncSavedStore();
   };
 
   const renderMovieItem = ({ item }: { item: TMDBResult }) => {
     const year = item.release_date?.split('-')[0] || '';
+    const isItemWatched = watchedIds ? watchedIds.has(item.id) : hasSavedItem(item.id, 'history');
     return (
       <TouchableOpacity
         style={styles.movieCard}
@@ -132,17 +205,25 @@ const CollectionDetails = () => {
           <Text style={styles.movieTitle} numberOfLines={2}>
             {item.title || item.name}
           </Text>
-          {year ? (
-            <Text style={styles.movieYear}>{year}</Text>
-          ) : null}
-          {item.vote_average > 0 && (
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={11} color={C.gold} />
-              <Text style={styles.ratingText}>
-                {item.vote_average.toFixed(1)}
-              </Text>
-            </View>
-          )}
+          <View style={styles.metaRow}>
+            {year ? (
+              <Text style={styles.movieYear}>{year}</Text>
+            ) : null}
+            {item.vote_average > 0 && (
+              <View style={styles.ratingRow}>
+                <Ionicons name="star" size={11} color={C.gold} />
+                <Text style={styles.ratingText}>
+                  {item.vote_average.toFixed(1)}
+                </Text>
+              </View>
+            )}
+            {isItemWatched && (
+              <View style={styles.partWatchedBadge}>
+                <Ionicons name="checkmark-circle" size={11} color="#4ADE80" />
+                <Text style={styles.partWatchedText}>Watched</Text>
+              </View>
+            )}
+          </View>
           {item.overview ? (
             <Text style={styles.movieOverview} numberOfLines={3}>
               {item.overview}
@@ -273,6 +354,7 @@ const CollectionDetails = () => {
       ) : (
         <FlatList
           data={sortedParts}
+          extraData={watchedIds}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderMovieItem}
           ListHeaderComponent={renderHeader}
@@ -434,11 +516,33 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '500',
   },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginTop: 2,
+  },
+  partWatchedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(74, 222, 128, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(74, 222, 128, 0.25)',
+  },
+  partWatchedText: {
+    color: '#4ADE80',
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 2,
   },
   ratingText: {
     color: C.mutedSoft,

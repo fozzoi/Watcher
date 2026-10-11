@@ -12,8 +12,9 @@ import {
   ScrollView,
   DeviceEventEmitter,
   Pressable,
+  PanResponder,
 } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { LegendList } from '@legendapp/list/react-native';
 import { Image } from 'expo-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -23,6 +24,7 @@ import {
   clearSavedItems,
   subscribeToSavedItemsChanges,
 } from '../../src/database';
+import { syncSavedStore } from '../../src/state/savedState';
 import { getImageUrl, searchTMDB, GLOBAL_CONFIG, setGlobalConfig } from '../../src/tmdb';
 import { isAdultContent } from '../../src/contentSafety';
 import { GENRE_OPTIONS } from '../../src/userPreferences';
@@ -37,6 +39,8 @@ import Animated, {
   withSpring,
   withTiming,
   FadeInDown,
+  FadeInRight,
+  FadeInLeft,
 } from 'react-native-reanimated';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -105,11 +109,262 @@ const WatchlistCard = React.memo(({
   return prevProps.item.id === nextProps.item.id && prevProps.activeTab === nextProps.activeTab;
 });
 
+/* =========================================================================
+   MEMOIZED SUB-COMPONENTS (Isolated Micro-rendering)
+   ========================================================================= */
+
+interface WatchlistHeaderTabsProps {
+  activeTab: number;
+  animatedTabStyle: any;
+  animatedHeaderStyle: any;
+  insetsTop: number;
+  count: number;
+  isSearchOpen: boolean;
+  searchQuery: string;
+  onTabChange: (index: number) => void;
+  onToggleSearch: () => void;
+  onChangeSearchQuery: (text: string) => void;
+  onOpenOptions: () => void;
+}
+
+const WatchlistHeaderTabs = React.memo(({
+  activeTab,
+  animatedTabStyle,
+  animatedHeaderStyle,
+  insetsTop,
+  count,
+  isSearchOpen,
+  searchQuery,
+  onTabChange,
+  onToggleSearch,
+  onChangeSearchQuery,
+  onOpenOptions,
+}: WatchlistHeaderTabsProps) => {
+  return (
+    <View
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insetsTop + 2, zIndex: 100 }}
+      pointerEvents="box-none"
+    >
+      <LinearGradient
+        colors={['#121212', 'rgba(18, 18, 18, 0.85)', 'transparent']}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insetsTop + 160 }}
+        pointerEvents="none"
+      />
+
+      <Animated.View style={[styles.headerContainer, animatedHeaderStyle]} pointerEvents="box-none">
+        <View style={styles.headerTitleRow}>
+          <Text style={styles.header}>My Library</Text>
+          <View style={styles.countBadge}>
+            <Text style={styles.countBadgeText}>{count}</Text>
+          </View>
+        </View>
+      </Animated.View>
+
+      {/* Tabs */}
+      <View style={styles.tabWrapper}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={onToggleSearch}
+          style={[styles.headerIconButton, isSearchOpen && styles.headerIconButtonActive]}
+        >
+          <Ionicons name={isSearchOpen ? 'close' : 'search'} size={18} color="#FFF" />
+        </TouchableOpacity>
+
+        <View style={styles.tabContainer}>
+          <Animated.View style={[styles.activePill, animatedTabStyle]} />
+          <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => onTabChange(0)}>
+            <Text style={[styles.tabText, activeTab === 0 && styles.activeTabText]}>Watchlist</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => onTabChange(1)}>
+            <Text style={[styles.tabText, activeTab === 1 && styles.activeTabText]}>Artists</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => onTabChange(2)}>
+            <Text style={[styles.tabText, activeTab === 2 && styles.activeTabText]}>Watched</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity activeOpacity={0.8} onPress={onOpenOptions} style={styles.headerIconButton}>
+          <Feather name="more-vertical" size={20} color="#FFF" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Search Bar */}
+      {isSearchOpen && (
+        <Animated.View entering={FadeInDown.duration(200)} style={styles.searchBarContainer}>
+          <Ionicons name="search" size={16} color="#888" style={{ marginLeft: 14 }} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search library..."
+            placeholderTextColor="#777"
+            value={searchQuery}
+            onChangeText={onChangeSearchQuery}
+            returnKeyType="search"
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => onChangeSearchQuery('')} style={{ padding: 8, marginRight: 4 }}>
+              <Ionicons name="close-circle" size={18} color="#999" />
+            </TouchableOpacity>
+          ) : null}
+        </Animated.View>
+      )}
+    </View>
+  );
+});
+
+interface WatchlistFilterDockProps {
+  activeTab: number;
+  bottomInset: number;
+  animatedFilterStyle: any;
+  sortBy: SortOption;
+  sortDirection: 'desc' | 'asc';
+  selectedMediaType: FilterMediaType;
+  selectedGenreIds: number[];
+  onOpenSort: () => void;
+  onSelectMediaType: (type: FilterMediaType) => void;
+  onToggleGenre: (id: number) => void;
+}
+
+const WatchlistFilterDock = React.memo(({
+  activeTab,
+  bottomInset,
+  animatedFilterStyle,
+  sortBy,
+  sortDirection,
+  selectedMediaType,
+  selectedGenreIds,
+  onOpenSort,
+  onSelectMediaType,
+  onToggleGenre,
+}: WatchlistFilterDockProps) => {
+  if (activeTab !== 0 && activeTab !== 2) return null;
+
+  return (
+    <Animated.View
+      style={[styles.filterSection, { bottom: bottomInset + 95 }, animatedFilterStyle]}
+      collapsable={false}
+    >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ marginHorizontal: 12 }}
+        contentContainerStyle={styles.filterScrollContent}
+      >
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={[styles.filterChip, sortBy !== 'default' && styles.filterChipActive]}
+          onPress={onOpenSort}
+        >
+          <MaterialIcons name="sort" size={16} color={sortBy !== 'default' ? '#FFF' : '#A0A0A0'} />
+          <Text style={[styles.filterChipText, sortBy !== 'default' && styles.filterChipTextActive]}>
+            {sortBy === 'default'
+              ? 'Sort'
+              : sortBy === 'rating'
+              ? `Rating (${sortDirection.toUpperCase()})`
+              : sortBy === 'year'
+              ? `Year (${sortDirection.toUpperCase()})`
+              : `Title (${sortDirection.toUpperCase()})`}
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.chipDivider} />
+
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={[styles.filterChip, selectedMediaType === 'all' && styles.filterChipActive]}
+          onPress={() => onSelectMediaType('all')}
+        >
+          <Text style={[styles.filterChipText, selectedMediaType === 'all' && styles.filterChipTextActive]}>
+            All
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={[styles.filterChip, selectedMediaType === 'movie' && styles.filterChipActive]}
+          onPress={() => onSelectMediaType(selectedMediaType === 'movie' ? 'all' : 'movie')}
+        >
+          <Ionicons
+            name="film-outline"
+            size={14}
+            color={selectedMediaType === 'movie' ? '#FFF' : '#A0A0A0'}
+          />
+          <Text style={[styles.filterChipText, selectedMediaType === 'movie' && styles.filterChipTextActive]}>
+            Movies
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={[styles.filterChip, selectedMediaType === 'tv' && styles.filterChipActive]}
+          onPress={() => onSelectMediaType(selectedMediaType === 'tv' ? 'all' : 'tv')}
+        >
+          <Ionicons
+            name="tv-outline"
+            size={14}
+            color={selectedMediaType === 'tv' ? '#FFF' : '#A0A0A0'}
+          />
+          <Text style={[styles.filterChipText, selectedMediaType === 'tv' && styles.filterChipTextActive]}>
+            Series
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={[styles.filterChip, selectedMediaType === 'collection' && styles.filterChipActive]}
+          onPress={() => onSelectMediaType(selectedMediaType === 'collection' ? 'all' : 'collection')}
+        >
+          <Ionicons
+            name="albums-outline"
+            size={14}
+            color={selectedMediaType === 'collection' ? '#FFF' : '#A0A0A0'}
+          />
+          <Text style={[styles.filterChipText, selectedMediaType === 'collection' && styles.filterChipTextActive]}>
+            Collections
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.chipDivider} />
+
+        {GENRE_OPTIONS.map((g) => {
+          const isSelected = selectedGenreIds.includes(g.id);
+          return (
+            <TouchableOpacity
+              key={g.id}
+              activeOpacity={0.8}
+              style={[styles.filterChip, isSelected && styles.filterChipActive]}
+              onPress={() => onToggleGenre(g.id)}
+            >
+              <Text style={{ fontSize: 13 }}>{g.emoji}</Text>
+              <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
+                {g.label}
+              </Text>
+              {isSelected && <Ionicons name="close" size={14} color="#FFF" />}
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </Animated.View>
+  );
+});
+
+/* =========================================================================
+   MAIN WATCHLIST PAGE
+   ========================================================================= */
+
 const WatchListPage = () => {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState(0);
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const [slideDirection, setSlideDirection] = useState<'forward' | 'backward'>('forward');
+
   const [watchlist, setWatchlist] = useState<any[]>([]);
   const [artists, setArtists] = useState<any[]>([]);
   const [watched, setWatched] = useState<any[]>([]);
@@ -160,7 +415,7 @@ const WatchListPage = () => {
     title: '',
   });
 
-  const showDialog = (config: {
+  const showDialog = useCallback((config: {
     title: string;
     message?: string;
     type?: 'info' | 'success' | 'warning' | 'danger';
@@ -168,7 +423,7 @@ const WatchListPage = () => {
     iconName?: string;
   }) => {
     setDialogConfig({ ...config, visible: true });
-  };
+  }, []);
 
   const tabPosition = useSharedValue(0);
   const filterTranslateY = useSharedValue(0);
@@ -199,7 +454,7 @@ const WatchListPage = () => {
     return () => { active = false; settingListener.remove(); };
   }, []);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setWatchlist(getSavedItems('watchlist'));
       setArtists(getSavedItems('artist'));
@@ -210,12 +465,12 @@ const WatchListPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [])
+    }, [loadData])
   );
 
   useEffect(() => subscribeToSavedItemsChanges((type) => {
@@ -267,6 +522,7 @@ const WatchListPage = () => {
 
     currentList.forEach((item: any) => addSavedItem(item, 'watchlist'));
     setWatchlist(currentList);
+    syncSavedStore();
     setSyncProgress('');
     return { addedCount, existingCount, missedTitles };
   };
@@ -437,6 +693,7 @@ const WatchListPage = () => {
       if (addedCount > 0) {
         currentWatchlist.forEach((item: any) => addSavedItem(item, 'watchlist'));
         setWatchlist(currentWatchlist);
+        syncSavedStore();
       }
 
       if (addedCount > 0 || existingCount > 0 || missedTitles.length > 0) {
@@ -477,17 +734,43 @@ const WatchListPage = () => {
     }
   };
 
-  const handleTabChange = (index: number) => {
-    if (activeTab === index) return;
+  const handleTabChange = useCallback((index: number) => {
+    if (activeTabRef.current === index) return;
+    setSlideDirection(index > activeTabRef.current ? 'forward' : 'backward');
     setActiveTab(index);
     tabPosition.value = withSpring(index * TAB_ITEM_WIDTH, { damping: 15, stiffness: 120 });
     // Instantly resets scroll position to top on tab switch
-    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-  };
+    try {
+      flatListRef.current?.scrollToOffset?.({ offset: 0, animated: false });
+    } catch {}
+  }, [tabPosition]);
 
   const animatedTabStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tabPosition.value }],
   }));
+
+  // PanResponder to detect Left and Right swipes across the content area to switch tabs
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gesture) => {
+          // Dominant horizontal swipe (> 1.6x vertical) and distance > 18px
+          return Math.abs(gesture.dx) > 18 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.6;
+        },
+        onPanResponderRelease: (_, gesture) => {
+          const isSwipeLeft = gesture.dx < -35 && (gesture.vx < -0.15 || gesture.dx < -60);
+          const isSwipeRight = gesture.dx > 35 && (gesture.vx > 0.15 || gesture.dx > 60);
+
+          if (isSwipeLeft && activeTabRef.current < 2) {
+            handleTabChange(activeTabRef.current + 1);
+          } else if (isSwipeRight && activeTabRef.current > 0) {
+            handleTabChange(activeTabRef.current - 1);
+          }
+        },
+      }),
+    [handleTabChange]
+  );
 
   const handleRemove = useCallback((id: number, type: 'watchlist' | 'artist' | 'history') => {
     if (type === 'watchlist') {
@@ -509,6 +792,7 @@ const WatchListPage = () => {
         return newList;
       });
     }
+    syncSavedStore();
   }, []);
 
   const handleClearAll = () => {
@@ -527,16 +811,26 @@ const WatchListPage = () => {
             if (activeTab === 0) { setWatchlist([]); clearSavedItems('watchlist'); }
             if (activeTab === 1) { setArtists([]); clearSavedItems('artist'); }
             if (activeTab === 2) { setWatched([]); clearSavedItems('history'); }
+            syncSavedStore();
           },
         },
       ],
     });
   };
 
+  // Two-stage memoization to prevent cross-tab recalculation overhead
+  const rawCurrentList = useMemo(() => {
+    if (activeTab === 0) {
+      return nsfwFilterEnabled ? watchlist.filter(item => !isAdultContent(item)) : watchlist;
+    }
+    if (activeTab === 1) {
+      return artists;
+    }
+    return watched;
+  }, [activeTab, watchlist, artists, watched, nsfwFilterEnabled]);
+
   const filteredCurrentList = useMemo(() => {
-    let list = activeTab === 0
-      ? (nsfwFilterEnabled ? watchlist.filter(item => !isAdultContent(item)) : watchlist)
-      : activeTab === 1 ? artists : watched;
+    let list = rawCurrentList;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
@@ -554,18 +848,18 @@ const WatchListPage = () => {
       } else if (selectedMediaType === 'collection') {
         list = list.filter((item: any) => item.media_type === 'collection');
       }
-    }
 
-    if (selectedGenreIds.length > 0 && (activeTab === 0 || activeTab === 2)) {
-      list = list.filter(item => {
-        if (item.genre_ids && Array.isArray(item.genre_ids)) {
-          return selectedGenreIds.some(id => item.genre_ids.includes(id));
-        }
-        if (item.genres && Array.isArray(item.genres)) {
-          return selectedGenreIds.some(id => item.genres.some((g: any) => g.id === id));
-        }
-        return false;
-      });
+      if (selectedGenreIds.length > 0) {
+        list = list.filter(item => {
+          if (item.genre_ids && Array.isArray(item.genre_ids)) {
+            return selectedGenreIds.some(id => item.genre_ids.includes(id));
+          }
+          if (item.genres && Array.isArray(item.genres)) {
+            return selectedGenreIds.some(id => item.genres.some((g: any) => g.id === id));
+          }
+          return false;
+        });
+      }
     }
 
     if (sortBy === 'default') return sortDirection === 'asc' ? [...list].reverse() : list;
@@ -590,7 +884,7 @@ const WatchListPage = () => {
       }
       return 0;
     });
-  }, [activeTab, watchlist, artists, watched, nsfwFilterEnabled, searchQuery, selectedMediaType, selectedGenreIds, sortBy, sortDirection]);
+  }, [rawCurrentList, activeTab, searchQuery, selectedMediaType, selectedGenreIds, sortBy, sortDirection]);
 
   const handleCardPress = useCallback((item: any) => {
     if (activeTab === 1 || item.profile_path !== undefined || item.known_for_department) {
@@ -614,6 +908,44 @@ const WatchListPage = () => {
     );
   }, [activeTab, handleRemove, handleCardPress]);
 
+  const handleScroll = useCallback((e: any) => {
+    const y = e.nativeEvent.contentOffset.y;
+    DeviceEventEmitter.emit('exploreScroll', y);
+
+    if (y <= 0 && headerOpacityAnim.value !== 1) {
+      headerTranslateYAnim.value = withTiming(0, { duration: 150 });
+      headerOpacityAnim.value = withTiming(1, { duration: 150 });
+    } else if (y > 20 && headerOpacityAnim.value !== 0) {
+      headerTranslateYAnim.value = withTiming(-10, { duration: 250 });
+      headerOpacityAnim.value = withTiming(0, { duration: 250 });
+    }
+
+    if (y > 30) {
+      if (filterTranslateY.value !== 60) {
+        filterTranslateY.value = withTiming(60, { duration: 250 });
+        filterOpacity.value = withTiming(0, { duration: 250 });
+        filterScale.value = withTiming(0.9, { duration: 250 });
+      }
+      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+      scrollTimeout.current = setTimeout(() => {
+        filterTranslateY.value = withTiming(0, { duration: 250 });
+        filterOpacity.value = withTiming(1, { duration: 250 });
+        filterScale.value = withTiming(1, { duration: 250 });
+      }, 1500);
+    } else {
+      if (filterTranslateY.value !== 0) {
+        filterTranslateY.value = withTiming(0, { duration: 200 });
+        filterOpacity.value = withTiming(1, { duration: 200 });
+        filterScale.value = withTiming(1, { duration: 200 });
+      }
+      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+    }
+  }, [filterOpacity, filterScale, filterTranslateY, headerOpacityAnim, headerTranslateYAnim]);
+
+  const toggleGenre = useCallback((id: number) => {
+    setSelectedGenreIds((prev) => (prev.includes(id) ? prev.filter((gid) => gid !== id) : [...prev, id]));
+  }, []);
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -628,263 +960,109 @@ const WatchListPage = () => {
         </View>
       )}
 
-      {/* ── SINGLE HIGH-PERFORMANCE VIRTUALIZED FLASHLIST ── */}
-      {loading && !syncing ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator animating={true} size="large" color="#E50914" />
-        </View>
-      ) : !syncing && filteredCurrentList.length === 0 ? (
-        <View style={[styles.emptyContainer, { paddingTop: insets.top + 130 }]}>
-          <View style={styles.emptyIconCircle}>
-            {activeTab === 0 ? (
-              <MaterialIcons name="movie-filter" size={38} color="#E50914" />
-            ) : activeTab === 1 ? (
-              <Ionicons name="people" size={38} color="#E50914" />
-            ) : (
-              <Feather name="check-circle" size={38} color="#E50914" />
-            )}
-          </View>
-          <Text style={styles.emptyText}>
-            {searchQuery || selectedGenreIds.length > 0 || selectedMediaType !== 'all'
-              ? "No matching items found"
-              : activeTab === 0
-                ? "Watchlist Empty"
-                : activeTab === 1
-                  ? "No Favorite Artists"
-                  : "Nothing Watched Yet"
-            }
-          </Text>
-          <Text style={styles.emptySubtext}>
-            {searchQuery || selectedGenreIds.length > 0 || selectedMediaType !== 'all'
-              ? "Try adjusting your search or clearing active filters."
-              : activeTab === 0
-                ? "Tap the bookmark icon on any movie or TV show to save it here."
-                : activeTab === 1
-                  ? "Favorite cast & directors to easily track their filmographies."
-                  : "Titles you finish or mark as watched will appear in this history."
-            }
-          </Text>
-          {activeTab === 0 && !searchQuery && (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.emptyActionButton}
-              onPress={() => setIsImportModalOpen(true)}
-            >
-              <Feather name="download-cloud" size={16} color="#FFF" />
-              <Text style={styles.emptyActionText}>Import Existing Watchlist</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      ) : (
-        <FlashList
-          ref={flatListRef}
-          data={filteredCurrentList}
-          extraData={activeTab}
-          keyExtractor={(item) => `${activeTab}-${item.id}`}
-          renderItem={renderCard}
-          numColumns={2}
-          removeClippedSubviews={true}
-          drawDistance={SCREEN_HEIGHT}
-          contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 115 }]}
-          showsVerticalScrollIndicator={false}
-          scrollEventThrottle={16}
-          onScroll={(e) => {
-            const y = e.nativeEvent.contentOffset.y;
-            DeviceEventEmitter.emit('exploreScroll', y);
-
-            if (y <= 0 && headerOpacityAnim.value !== 1) {
-              headerTranslateYAnim.value = withTiming(0, { duration: 150 });
-              headerOpacityAnim.value = withTiming(1, { duration: 150 });
-            } else if (y > 20 && headerOpacityAnim.value !== 0) {
-              headerTranslateYAnim.value = withTiming(-10, { duration: 250 });
-              headerOpacityAnim.value = withTiming(0, { duration: 250 });
-            }
-
-            if (y > 30) {
-              if (filterTranslateY.value !== 60) {
-                filterTranslateY.value = withTiming(60, { duration: 250 });
-                filterOpacity.value = withTiming(0, { duration: 250 });
-                filterScale.value = withTiming(0.9, { duration: 250 });
-              }
-              if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
-              scrollTimeout.current = setTimeout(() => {
-                filterTranslateY.value = withTiming(0, { duration: 250 });
-                filterOpacity.value = withTiming(1, { duration: 250 });
-                filterScale.value = withTiming(1, { duration: 250 });
-              }, 1500);
-            } else {
-              if (filterTranslateY.value !== 0) {
-                filterTranslateY.value = withTiming(0, { duration: 200 });
-                filterOpacity.value = withTiming(1, { duration: 200 });
-                filterScale.value = withTiming(1, { duration: 200 });
-              }
-              if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
-            }
-          }}
-        />
-      )}
-
-      {/* ── TOP HEADER OVERLAY (SOLID FLAT DESIGN) ── */}
-      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top + 2, zIndex: 100 }} pointerEvents="box-none">
-        <LinearGradient
-          colors={['#121212', 'rgba(18, 18, 18, 0.85)', 'transparent']}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 160 }}
-          pointerEvents="none"
-        />
-
-        <Animated.View style={[styles.headerContainer, animatedHeaderStyle]} pointerEvents="box-none">
-          <View style={styles.headerTitleRow}>
-            <Text style={styles.header}>My Library</Text>
-            <View style={styles.countBadge}>
-              <Text style={styles.countBadgeText}>{filteredCurrentList.length}</Text>
+      {/* ── MAIN CONTENT LIST WRAPPER WITH HORIZONTAL SWIPE GESTURE ── */}
+      <View style={{ flex: 1 }} {...panResponder.panHandlers}>
+        <Animated.View
+          key={activeTab}
+          entering={slideDirection === 'forward' ? FadeInRight.duration(220) : FadeInLeft.duration(220)}
+          style={{ flex: 1 }}
+        >
+          {loading && !syncing ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator animating={true} size="large" color="#E50914" />
             </View>
-          </View>
-        </Animated.View>
-
-        {/* ── SOLID BORDERLESS TABS ── */}
-        <View style={styles.tabWrapper}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => {
-              setIsSearchOpen(prev => !prev);
-              if (isSearchOpen) setSearchQuery('');
-            }}
-            style={[styles.headerIconButton, isSearchOpen && styles.headerIconButtonActive]}
-          >
-            <Ionicons name={isSearchOpen ? "close" : "search"} size={18} color="#FFF" />
-          </TouchableOpacity>
-
-          <View style={styles.tabContainer}>
-            <Animated.View style={[styles.activePill, animatedTabStyle]} />
-            <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => handleTabChange(0)}>
-              <Text style={[styles.tabText, activeTab === 0 && styles.activeTabText]}>Watchlist</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => handleTabChange(1)}>
-              <Text style={[styles.tabText, activeTab === 1 && styles.activeTabText]}>Artists</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => handleTabChange(2)}>
-              <Text style={[styles.tabText, activeTab === 2 && styles.activeTabText]}>Watched</Text>
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => setIsOptionsMenuOpen(true)}
-            style={styles.headerIconButton}
-          >
-            <Feather name="more-vertical" size={20} color="#FFF" />
-          </TouchableOpacity>
-        </View>
-
-        {/* ── SOLID BORDERLESS SEARCH BAR ── */}
-        {isSearchOpen && (
-          <Animated.View entering={FadeInDown.duration(200)} style={styles.searchBarContainer}>
-            <Ionicons name="search" size={16} color="#888" style={{ marginLeft: 14 }} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search library..."
-              placeholderTextColor="#777"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              returnKeyType="search"
-              autoFocus
-              autoCapitalize="none"
-              autoCorrect={false}
+          ) : !syncing && filteredCurrentList.length === 0 ? (
+            <View style={[styles.emptyContainer, { paddingTop: insets.top + 130 }]}>
+              <View style={styles.emptyIconCircle}>
+                {activeTab === 0 ? (
+                  <MaterialIcons name="movie-filter" size={38} color="#E50914" />
+                ) : activeTab === 1 ? (
+                  <Ionicons name="people" size={38} color="#E50914" />
+                ) : (
+                  <Feather name="check-circle" size={38} color="#E50914" />
+                )}
+              </View>
+              <Text style={styles.emptyText}>
+                {searchQuery || selectedGenreIds.length > 0 || selectedMediaType !== 'all'
+                  ? "No matching items found"
+                  : activeTab === 0
+                    ? "Watchlist Empty"
+                    : activeTab === 1
+                      ? "No Favorite Artists"
+                      : "Nothing Watched Yet"
+                }
+              </Text>
+              <Text style={styles.emptySubtext}>
+                {searchQuery || selectedGenreIds.length > 0 || selectedMediaType !== 'all'
+                  ? "Try adjusting your search or clearing active filters."
+                  : activeTab === 0
+                    ? "Tap the bookmark icon on any movie or TV show to save it here."
+                    : activeTab === 1
+                      ? "Favorite cast & directors to easily track their filmographies."
+                      : "Titles you finish or mark as watched will appear in this history."
+                }
+              </Text>
+              {activeTab === 0 && !searchQuery && (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={styles.emptyActionButton}
+                  onPress={() => setIsImportModalOpen(true)}
+                >
+                  <Feather name="download-cloud" size={16} color="#FFF" />
+                  <Text style={styles.emptyActionText}>Import Existing Watchlist</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <LegendList
+              ref={flatListRef}
+              data={filteredCurrentList}
+              keyExtractor={(item) => `${activeTab}-${item.id}`}
+              renderItem={renderCard}
+              numColumns={2}
+              recycleItems={true}
+              estimatedItemSize={CARD_WIDTH * 1.5 + 20}
+              drawDistance={SCREEN_HEIGHT}
+              contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 115 }]}
+              showsVerticalScrollIndicator={false}
+              scrollEventThrottle={32}
+              onScroll={handleScroll}
             />
-            {searchQuery ? (
-              <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 8, marginRight: 4 }}>
-                <Ionicons name="close-circle" size={18} color="#999" />
-              </TouchableOpacity>
-            ) : null}
-          </Animated.View>
-        )}
+          )}
+        </Animated.View>
       </View>
 
-      {/* ── SOLID BOTTOM FILTER DOCK ── */}
-      {(activeTab === 0 || activeTab === 2) && (
-        <Animated.View style={[styles.filterSection, { bottom: insets.bottom + 95 }, animatedFilterStyle]} collapsable={false}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ marginHorizontal: 12 }}
-            contentContainerStyle={styles.filterScrollContent}
-          >
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.filterChip, sortBy !== 'default' && styles.filterChipActive]}
-              onPress={() => setIsSortModalOpen(true)}
-            >
-              <MaterialIcons name="sort" size={16} color={sortBy !== 'default' ? "#FFF" : "#A0A0A0"} />
-              <Text style={[styles.filterChipText, sortBy !== 'default' && styles.filterChipTextActive]}>
-                {sortBy === 'default' ? 'Sort' : sortBy === 'rating' ? `Rating (${sortDirection.toUpperCase()})` : sortBy === 'year' ? `Year (${sortDirection.toUpperCase()})` : `Title (${sortDirection.toUpperCase()})`}
-              </Text>
-            </TouchableOpacity>
+      {/* ── TOP HEADER OVERLAY (ISOLATED MEMOIZED COMPONENT) ── */}
+      <WatchlistHeaderTabs
+        activeTab={activeTab}
+        animatedTabStyle={animatedTabStyle}
+        animatedHeaderStyle={animatedHeaderStyle}
+        insetsTop={insets.top}
+        count={filteredCurrentList.length}
+        isSearchOpen={isSearchOpen}
+        searchQuery={searchQuery}
+        onTabChange={handleTabChange}
+        onToggleSearch={() => {
+          setIsSearchOpen((prev) => !prev);
+          if (isSearchOpen) setSearchQuery('');
+        }}
+        onChangeSearchQuery={setSearchQuery}
+        onOpenOptions={() => setIsOptionsMenuOpen(true)}
+      />
 
-            <View style={styles.chipDivider} />
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.filterChip, selectedMediaType === 'all' && styles.filterChipActive]}
-              onPress={() => setSelectedMediaType('all')}
-            >
-              <Text style={[styles.filterChipText, selectedMediaType === 'all' && styles.filterChipTextActive]}>All</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.filterChip, selectedMediaType === 'movie' && styles.filterChipActive]}
-              onPress={() => setSelectedMediaType(selectedMediaType === 'movie' ? 'all' : 'movie')}
-            >
-              <Ionicons name="film-outline" size={14} color={selectedMediaType === 'movie' ? "#FFF" : "#A0A0A0"} />
-              <Text style={[styles.filterChipText, selectedMediaType === 'movie' && styles.filterChipTextActive]}>Movies</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.filterChip, selectedMediaType === 'tv' && styles.filterChipActive]}
-              onPress={() => setSelectedMediaType(selectedMediaType === 'tv' ? 'all' : 'tv')}
-            >
-              <Ionicons name="tv-outline" size={14} color={selectedMediaType === 'tv' ? "#FFF" : "#A0A0A0"} />
-              <Text style={[styles.filterChipText, selectedMediaType === 'tv' && styles.filterChipTextActive]}>Series</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.filterChip, selectedMediaType === 'collection' && styles.filterChipActive]}
-              onPress={() => setSelectedMediaType(selectedMediaType === 'collection' ? 'all' : 'collection')}
-            >
-              <Ionicons name="albums-outline" size={14} color={selectedMediaType === 'collection' ? "#FFF" : "#A0A0A0"} />
-              <Text style={[styles.filterChipText, selectedMediaType === 'collection' && styles.filterChipTextActive]}>Collections</Text>
-            </TouchableOpacity>
-
-            <View style={styles.chipDivider} />
-
-            {GENRE_OPTIONS.map(g => {
-              const isSelected = selectedGenreIds.includes(g.id);
-              return (
-                <TouchableOpacity
-                  key={g.id}
-                  activeOpacity={0.8}
-                  style={[styles.filterChip, isSelected && styles.filterChipActive]}
-                  onPress={() => {
-                    setSelectedGenreIds(prev =>
-                      prev.includes(g.id) ? prev.filter(id => id !== g.id) : [...prev, g.id]
-                    );
-                  }}
-                >
-                  <Text style={{ fontSize: 13 }}>{g.emoji}</Text>
-                  <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
-                    {g.label}
-                  </Text>
-                  {isSelected && <Ionicons name="close" size={14} color="#FFF" />}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </Animated.View>
-      )}
+      {/* ── SOLID BOTTOM FILTER DOCK (ISOLATED MEMOIZED COMPONENT) ── */}
+      <WatchlistFilterDock
+        activeTab={activeTab}
+        bottomInset={insets.bottom}
+        animatedFilterStyle={animatedFilterStyle}
+        sortBy={sortBy}
+        sortDirection={sortDirection}
+        selectedMediaType={selectedMediaType}
+        selectedGenreIds={selectedGenreIds}
+        onOpenSort={() => setIsSortModalOpen(true)}
+        onSelectMediaType={setSelectedMediaType}
+        onToggleGenre={toggleGenre}
+      />
 
       {/* ── OPTIONS MODAL ── */}
       <Modal visible={isOptionsMenuOpen} transparent={true} animationType="fade" onRequestClose={() => setIsOptionsMenuOpen(false)}>

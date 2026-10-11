@@ -1,9 +1,10 @@
 import React, { memo, useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
-  Image, ActivityIndicator, StyleSheet, StatusBar, Keyboard,
+  ActivityIndicator, StyleSheet, StatusBar, Keyboard,
   KeyboardAvoidingView, Platform, PanResponder,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -14,7 +15,7 @@ import Animated, {
   withSequence, withDelay, Easing, interpolateColor,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { getSavedItems, getAllAiEmbeddings } from '../../src/database';
+import { getSavedItems, getAllAiEmbeddings, subscribeToSavedItemsChanges } from '../../src/database';
 
 import { getImageUrl, getFullDetails, fetchChatGemini, fetchEmbedding } from '../../src/tmdb';
 import { getUserPreferences } from '../../src/userPreferences';
@@ -277,21 +278,32 @@ const IconBtn = ({
 
 const MovieCard = memo(({
   movie, watched, onPress, lines = 2,
-}: { movie: Movie; watched: boolean; onPress: () => void; lines?: number }) => {
+}: { movie: Movie; watched: boolean; onPress: (movie: Movie) => void; lines?: number }) => {
   const title = movie.title || movie.name || 'Untitled';
   const year = (movie.release_date || movie.first_air_date)?.split('-')[0];
   const rating = Number(movie.vote_average) > 0 ? Number(movie.vote_average).toFixed(1) : null;
+
+  const handlePress = useCallback(() => {
+    onPress(movie);
+  }, [onPress, movie]);
 
   return (
     <TouchableOpacity
       activeOpacity={0.85}
       style={styles.movieCard}
-      onPress={onPress}
+      onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={`Open ${title}`}
     >
       {movie.poster_path ? (
-        <Image source={{ uri: getImageUrl(movie.poster_path, 'w185') }} style={styles.poster} resizeMode="cover" />
+        <Image
+          source={{ uri: getImageUrl(movie.poster_path, 'w185') }}
+          style={styles.poster}
+          contentFit="cover"
+          cachePolicy="disk"
+          transition={150}
+          recyclingKey={String(movie.id)}
+        />
       ) : (
         <View style={[styles.poster, styles.posterEmpty]}>
           <Ionicons name="film-outline" size={22} color={ai.textMute} />
@@ -323,6 +335,11 @@ const MovieCard = memo(({
       <Ionicons name="chevron-forward" size={16} color={ai.textMute} />
     </TouchableOpacity>
   );
+}, (prev, next) => {
+  return prev.movie.id === next.movie.id &&
+    prev.watched === next.watched &&
+    prev.lines === next.lines &&
+    prev.onPress === next.onPress;
 });
 
 // ────────────────────────────────────────────────────────────────
@@ -431,10 +448,24 @@ const AiChat = () => {
     })();
   }, []);
 
-  // Sync latest AI memory whenever this tab is focused (e.g. after clearing in Settings)
+  useEffect(() => {
+    const unsub = subscribeToSavedItemsChanges(() => {
+      try {
+        const watched = getSavedItems('history');
+        setWatchedIds(new Set(watched.map((i: any) => Number(i.id))));
+      } catch {}
+    });
+    return unsub;
+  }, []);
+
+  // Sync latest AI memory and watched items whenever this tab is focused
   useFocusEffect(
     useCallback(() => {
       getUserMemory().then(setUserMemoryState).catch(() => {});
+      try {
+        const watched = getSavedItems('history');
+        setWatchedIds(new Set(watched.map((i: any) => Number(i.id))));
+      } catch {}
     }, [])
   );
 
@@ -570,18 +601,11 @@ const AiChat = () => {
     router.push(`/movie/${full.id}?media_type=${mType}`);
   };
 
-  const openMovie = async (item: Movie) => {
-    if (openingRef.current) return;
-    openingRef.current = true;
+  const openMovie = useCallback((item: Movie) => {
+    if (!item?.id) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      navigateToDetails((await getFullDetails(item as any)) || item);
-    } catch {
-      navigateToDetails(item); // still open the page if enrichment fails
-    } finally {
-      openingRef.current = false;
-    }
-  };
+    navigateToDetails(item);
+  }, []);
 
   const navigateToCastDetails = (actor: Actor) => {
     Keyboard.dismiss();
@@ -626,7 +650,7 @@ const AiChat = () => {
             {movies.length > 0 && (
               <View style={styles.cardStack}>
                 {movies.map((item) => (
-                  <MovieCard key={String(item.id)} movie={item} watched={isMovieWatched(item)} onPress={() => openMovie(item)} />
+                  <MovieCard key={String(item.id)} movie={item} watched={isMovieWatched(item)} onPress={openMovie} />
                 ))}
               </View>
             )}
@@ -640,7 +664,7 @@ const AiChat = () => {
             {botText(m.text)}
             {!!m.movie?.id && (
               <View style={styles.cardStack}>
-                <MovieCard movie={m.movie} watched={isMovieWatched(m.movie)} onPress={() => openMovie(m.movie)} lines={4} />
+                <MovieCard movie={m.movie} watched={isMovieWatched(m.movie)} onPress={openMovie} lines={4} />
               </View>
             )}
           </View>
@@ -669,7 +693,14 @@ const AiChat = () => {
                       accessibilityLabel={item.name}
                     >
                       {item.profile_path ? (
-                        <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.actorAvatar} />
+                        <Image
+                          source={{ uri: getImageUrl(item.profile_path, 'w185') }}
+                          style={styles.actorAvatar}
+                          contentFit="cover"
+                          cachePolicy="disk"
+                          transition={150}
+                          recyclingKey={String(item.id)}
+                        />
                       ) : (
                         <View style={[styles.actorAvatar, styles.posterEmpty]}>
                           <Ionicons name="person-outline" size={24} color={ai.textMute} />
@@ -825,6 +856,10 @@ const AiChat = () => {
           contentContainerStyle={isEmpty ? { flexGrow: 1, justifyContent: 'center' } : { paddingVertical: 12, paddingBottom: 24 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          removeClippedSubviews={Platform.OS === 'android'}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          initialNumToRender={8}
           onLayout={(e) => { listHeight.current = e.nativeEvent.layout.height; }}
           onScrollToIndexFailed={() => scrollToEnd()}
           scrollEventThrottle={64}

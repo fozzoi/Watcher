@@ -1,104 +1,90 @@
 import React from 'react';
-import { View, StyleSheet, Dimensions, ScrollView, StatusBar } from 'react-native';
+import { View, StyleSheet, ScrollView, StatusBar, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ShimmerBlock } from '../shared/Shimmer';
 
-const { width } = Dimensions.get('window');
-const HEADER_HEIGHT = 460;
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
 export const MovieDetailSkeleton: React.FC = () => {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const HEADER_HEIGHT = isLandscape ? height * 0.55 : height * 0.50;
+
   return (
     <View style={styles.root}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
+      {/* Static Hero Backdrop Skeleton — Matches app/movie/[id].tsx identically */}
+      <View style={[styles.heroContainer, { height: HEADER_HEIGHT }]} pointerEvents="none">
+        <ShimmerBlock width="100%" height={HEADER_HEIGHT} borderRadius={0} style={styles.heroShimmer} />
+        <LinearGradient
+          colors={['rgba(10,10,11,0.1)', 'transparent', '#0A0A0B']}
+          locations={[0, 0.45, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
+
       {/* Top Floating Glass Buttons */}
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
         <View style={styles.glassCircle} />
-        <View style={styles.glassCircle} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
-        {/* Hero Backdrop Skeleton */}
-        <View style={styles.heroBackdrop}>
-          <ShimmerBlock width="100%" height={HEADER_HEIGHT} borderRadius={0} style={styles.heroShimmer} />
-          <LinearGradient
-            colors={['rgba(10,10,11,0.2)', 'transparent', 'rgba(10,10,11,0.6)', '#0A0A0B']}
-            locations={[0, 0.35, 0.75, 1]}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-        </View>
+      {/* Single Scroll Container with identical spacer */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+        {/* Exact same spacer height as app/movie/[id].tsx */}
+        <View style={{ height: HEADER_HEIGHT + 30 }} />
 
         {/* Card Body */}
         <View style={styles.cardTop}>
           {/* Eyebrow */}
-          <ShimmerBlock width="25%" height={11} style={{ marginBottom: 12 }} />
+          <ShimmerBlock width={110} height={12} style={{ marginBottom: 8 }} />
 
           {/* Title */}
-          <ShimmerBlock width="80%" height={26} style={{ marginBottom: 8 }} />
-          <ShimmerBlock width="45%" height={26} style={{ marginBottom: 16 }} />
+          <ShimmerBlock width="75%" height={28} style={{ marginBottom: 12 }} />
 
           {/* Meta Info Row */}
           <View style={styles.metaRow}>
-            <ShimmerBlock width={70} height={14} borderRadius={4} />
-            <ShimmerBlock width={55} height={14} borderRadius={4} />
+            <ShimmerBlock width={60} height={14} borderRadius={4} />
             <ShimmerBlock width={45} height={14} borderRadius={4} />
             <ShimmerBlock width={35} height={14} borderRadius={4} />
           </View>
 
           {/* Genre Chips Row */}
           <View style={styles.genreRow}>
-            <ShimmerBlock width={75} height={28} borderRadius={14} />
-            <ShimmerBlock width={85} height={28} borderRadius={14} />
-            <ShimmerBlock width={65} height={28} borderRadius={14} />
+            <ShimmerBlock width={80} height={32} borderRadius={20} />
+            <ShimmerBlock width={95} height={32} borderRadius={20} />
+            <ShimmerBlock width={75} height={32} borderRadius={20} />
           </View>
 
-          {/* Big Play Button */}
-          <ShimmerBlock width="100%" height={54} borderRadius={16} style={{ marginBottom: 12 }} />
+          {/* Primary Play CTA */}
+          <ShimmerBlock width="100%" height={50} borderRadius={14} style={{ marginBottom: 10 }} />
 
-          {/* 4 Action Buttons */}
+          {/* Primary Download CTA */}
+          <ShimmerBlock width="100%" height={50} borderRadius={14} style={{ marginBottom: 16 }} />
+
+          {/* Action Dock: 3 matching buttons (Watchlist, Watched, Telegram) */}
           <View style={styles.actionRow}>
-            <ShimmerBlock width="22%" height={54} borderRadius={14} />
-            <ShimmerBlock width="22%" height={54} borderRadius={14} />
-            <ShimmerBlock width="22%" height={54} borderRadius={14} />
-            <ShimmerBlock width="22%" height={54} borderRadius={14} />
+            <ShimmerBlock width="31%" height={46} borderRadius={14} />
+            <ShimmerBlock width="31%" height={46} borderRadius={14} />
+            <ShimmerBlock width="31%" height={46} borderRadius={14} />
           </View>
 
           {/* Overview Section */}
           <View style={styles.section}>
-            <ShimmerBlock width="30%" height={16} style={{ marginBottom: 10 }} />
-            <ShimmerBlock width="100%" height={13} style={{ marginBottom: 6 }} />
-            <ShimmerBlock width="95%" height={13} style={{ marginBottom: 6 }} />
-            <ShimmerBlock width="85%" height={13} style={{ marginBottom: 6 }} />
-            <ShimmerBlock width="60%" height={13} style={{ marginBottom: 24 }} />
+            <ShimmerBlock width="100%" height={14} style={{ marginBottom: 8 }} />
+            <ShimmerBlock width="95%" height={14} style={{ marginBottom: 8 }} />
+            <ShimmerBlock width="80%" height={14} style={{ marginBottom: 24 }} />
           </View>
 
           {/* Cast Section */}
           <View style={styles.section}>
-            <ShimmerBlock width="35%" height={16} style={{ marginBottom: 14 }} />
+            <ShimmerBlock width={80} height={18} style={{ marginBottom: 14 }} />
             <View style={styles.horizontalRow}>
               {[1, 2, 3, 4].map((i) => (
                 <View key={i} style={styles.castCard}>
-                  <ShimmerBlock width={95} height={135} borderRadius={12} />
+                  <ShimmerBlock width={95} height={130} borderRadius={12} />
                   <ShimmerBlock width={80} height={11} style={{ marginTop: 8 }} />
                   <ShimmerBlock width={55} height={9} style={{ marginTop: 4 }} />
-                </View>
-              ))}
-            </View>
-          </View>
-
-          {/* Directors / Crew Section */}
-          <View style={styles.section}>
-            <ShimmerBlock width="25%" height={16} style={{ marginBottom: 14 }} />
-            <View style={styles.horizontalRow}>
-              {[1, 2].map((i) => (
-                <View key={i} style={styles.directorCard}>
-                  <ShimmerBlock width={40} height={40} borderRadius={20} />
-                  <View style={{ flex: 1, gap: 6, marginLeft: 10 }}>
-                    <ShimmerBlock width="80%" height={12} />
-                    <ShimmerBlock width="50%" height={10} />
-                  </View>
                 </View>
               ))}
             </View>
@@ -125,28 +111,32 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   glassCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  heroBackdrop: {
-    height: HEADER_HEIGHT,
+  heroContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     overflow: 'hidden',
-    backgroundColor: '#000',
+    backgroundColor: '#0A0A0B',
+    zIndex: 0,
   },
   heroShimmer: {
     backgroundColor: '#111114',
   },
   cardTop: {
-    marginTop: -40,
     backgroundColor: '#0A0A0B',
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingHorizontal: 20,
     paddingTop: 24,
+    minHeight: 800,
   },
   metaRow: {
     flexDirection: 'row',
@@ -165,7 +155,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   section: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   horizontalRow: {
     flexDirection: 'row',
@@ -173,15 +163,5 @@ const styles = StyleSheet.create({
   },
   castCard: {
     width: 95,
-  },
-  directorCard: {
-    width: 170,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-    borderRadius: 14,
-    backgroundColor: '#121215',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
 });

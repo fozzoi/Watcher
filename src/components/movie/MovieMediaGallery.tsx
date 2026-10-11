@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -6,15 +6,18 @@ import {
   FlatList,
   Modal,
   StatusBar,
-  Dimensions,
   Platform,
   ToastAndroid,
   ActivityIndicator,
+  useWindowDimensions,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Image } from 'expo-image';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import { LegendList } from '@legendapp/list/react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
@@ -29,7 +32,6 @@ interface MovieMediaGalleryProps {
   title?: string;
 }
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GALLERY_CARD_HEIGHT = 180;
 
 const C = {
@@ -50,10 +52,12 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
   fallbackPoster,
   title,
 }) => {
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<'scenes' | 'posters'>('scenes');
-  const [selectedImage, setSelectedImage] = useState<{ url: string; index: number; total: number } | null>(null);
+  const [selectedPreviewIndex, setSelectedPreviewIndex] = useState<number | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const previewListRef = useRef<FlatList>(null);
 
   const showToast = useCallback((msg: string) => {
     if (Platform.OS === 'android') {
@@ -84,31 +88,53 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
 
   const currentList = activeTab === 'scenes' ? sceneList : posterList;
 
-  const handleOpenPreview = useCallback((filePath: string, index: number, total: number) => {
-    setSelectedImage({
-      url: getImageUrl(filePath, 'original'),
-      index,
-      total,
-    });
+  const handleOpenPreview = useCallback((index: number) => {
+    setSelectedPreviewIndex(index);
   }, []);
 
   const handleClosePreview = useCallback(() => {
-    setSelectedImage(null);
+    setSelectedPreviewIndex(null);
     setDownloading(false);
   }, []);
 
+  const handleScrollEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetX = e.nativeEvent.contentOffset.x;
+      const newIndex = Math.round(offsetX / screenWidth);
+      if (newIndex >= 0 && newIndex < currentList.length) {
+        setSelectedPreviewIndex(newIndex);
+      }
+    },
+    [screenWidth, currentList.length]
+  );
+
+  const handlePrevImage = useCallback(() => {
+    if (selectedPreviewIndex === null || selectedPreviewIndex <= 0) return;
+    const newIndex = selectedPreviewIndex - 1;
+    setSelectedPreviewIndex(newIndex);
+    previewListRef.current?.scrollToIndex({ index: newIndex, animated: true });
+  }, [selectedPreviewIndex]);
+
+  const handleNextImage = useCallback(() => {
+    if (selectedPreviewIndex === null || selectedPreviewIndex >= currentList.length - 1) return;
+    const newIndex = selectedPreviewIndex + 1;
+    setSelectedPreviewIndex(newIndex);
+    previewListRef.current?.scrollToIndex({ index: newIndex, animated: true });
+  }, [selectedPreviewIndex, currentList.length]);
+
   const handleDownloadImage = useCallback(async () => {
-    if (!selectedImage) return;
+    if (selectedPreviewIndex === null || !currentList[selectedPreviewIndex]) return;
+    const currentItem = currentList[selectedPreviewIndex];
+    const url = getImageUrl(currentItem.file_path, 'original');
     setDownloading(true);
     try {
       const FS = FileSystem as any;
-      const url = selectedImage.url;
       let ext = (url.split('.').pop()?.split('?')[0] || 'jpg').toLowerCase();
       if (!['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
         ext = 'jpg';
       }
       const cleanTitle = (title || 'watcher').replace(/[^a-z0-9]/gi, '_').substring(0, 30);
-      const filename = `${cleanTitle}_${selectedImage.index + 1}_${Date.now()}.${ext}`;
+      const filename = `${cleanTitle}_${selectedPreviewIndex + 1}_${Date.now()}.${ext}`;
       const cacheDir = FS.cacheDirectory || FS.documentDirectory || '';
       const tempFileUri = `${cacheDir}${filename}`;
 
@@ -132,7 +158,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
         }
       }
 
-      // 2. Also register into MediaLibrary / Photos under 'Watcher' album (requesting ONLY photo permissions, never audio)
+      // 2. Also register into MediaLibrary / Photos under 'Watcher' album (requesting ONLY photo permissions)
       let savedToMediaLibrary = false;
       try {
         let perm = await MediaLibrary.getPermissionsAsync();
@@ -203,7 +229,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
     } finally {
       setDownloading(false);
     }
-  }, [selectedImage, title, showToast]);
+  }, [selectedPreviewIndex, currentList, title, showToast]);
 
   if (sceneList.length === 0 && posterList.length === 0) {
     return null;
@@ -256,12 +282,16 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
         entering={FadeIn.duration(260)}
         style={styles.carouselWrapper}
       >
-        <FlatList
+        <LegendList
           horizontal
           data={currentList}
+          recycleItems={false}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           keyExtractor={(item, index) => `${activeTab}-${item.file_path}-${index}`}
+          estimatedItemSize={activeTab === 'scenes' ? 332 : 132}
+          decelerationRate="normal"
+          drawDistance={100}
           renderItem={({ item, index }) => {
             const isScene = activeTab === 'scenes';
             const cardWidth = isScene ? 320 : 120;
@@ -270,7 +300,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
               <TouchableOpacity
                 activeOpacity={0.88}
                 style={[styles.imageCard, { width: cardWidth, height: GALLERY_CARD_HEIGHT }]}
-                onPress={() => handleOpenPreview(item.file_path, index, currentList.length)}
+                onPress={() => handleOpenPreview(index)}
               >
                 <Image
                   source={{ uri: getImageUrl(item.file_path, isScene ? 'w780' : 'w342') }}
@@ -289,9 +319,9 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
         />
       </Animated.View>
 
-      {/* Fullscreen Preview Modal */}
+      {/* Fullscreen Preview Modal with Swipe Left / Right Paging */}
       <Modal
-        visible={Boolean(selectedImage)}
+        visible={selectedPreviewIndex !== null}
         transparent
         animationType="fade"
         onRequestClose={handleClosePreview}
@@ -299,39 +329,89 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
         <View style={styles.modalBackdrop}>
           <StatusBar barStyle="light-content" backgroundColor="#000" />
 
-          {/* Touch-to-dismiss background: tapping dark screen dismisses zoom */}
-          <TouchableOpacity
-            activeOpacity={1}
-            style={StyleSheet.absoluteFill}
-            onPress={handleClosePreview}
-          />
+          {selectedPreviewIndex !== null ? (
+            <View style={styles.modalContent}>
+              {/* Fullscreen Swipeable Image Paging Carousel */}
+              <FlatList
+                ref={previewListRef}
+                data={currentList}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                keyExtractor={(item, index) => `preview-${activeTab}-${item.file_path}-${index}`}
+                initialScrollIndex={selectedPreviewIndex}
+                getItemLayout={(_, index) => ({
+                  length: screenWidth,
+                  offset: screenWidth * index,
+                  index,
+                })}
+                onScrollToIndexFailed={(info) => {
+                  setTimeout(() => {
+                    previewListRef.current?.scrollToIndex({ index: info.index, animated: false });
+                  }, 80);
+                }}
+                onMomentumScrollEnd={handleScrollEnd}
+                renderItem={({ item, index }) => (
+                  <View style={[styles.modalPage, { width: screenWidth, height: screenHeight }]}>
+                    {/* Tapping dark backdrop dismisses preview */}
+                    <TouchableOpacity
+                      activeOpacity={1}
+                      style={StyleSheet.absoluteFill}
+                      onPress={handleClosePreview}
+                    />
+                    <View style={styles.modalImageContainer} pointerEvents="none">
+                      <Image
+                        source={{ uri: getImageUrl(item.file_path, 'original') }}
+                        style={styles.modalImage}
+                        contentFit="contain"
+                        cachePolicy="disk"
+                        priority={Math.abs(index - selectedPreviewIndex) <= 1 ? 'high' : 'normal'}
+                      />
+                    </View>
+                  </View>
+                )}
+              />
 
-          {selectedImage ? (
-            <View style={styles.modalContent} pointerEvents="box-none">
-              {/* Image Container - tapping backdrop closes */}
-              <TouchableOpacity
-                activeOpacity={1}
-                style={styles.modalImageContainer}
-                onPress={handleClosePreview}
-              >
-                <Image
-                  source={{ uri: selectedImage.url }}
-                  style={styles.modalImage}
-                  contentFit="contain"
-                  cachePolicy="disk"
-                  priority="high"
-                />
-              </TouchableOpacity>
-
-              {/* Floating Bottom Control Dock - Centered below image, safe from top notch */}
+              {/* Floating Bottom Control Dock */}
               <View style={styles.bottomDockContainer} pointerEvents="box-none">
                 <View style={styles.bottomDock}>
+                  {/* Prev Button */}
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={[styles.dockNavBtn, selectedPreviewIndex === 0 && styles.dockNavBtnDisabled]}
+                    onPress={handlePrevImage}
+                    disabled={selectedPreviewIndex === 0}
+                  >
+                    <Ionicons
+                      name="chevron-back"
+                      size={18}
+                      color={selectedPreviewIndex === 0 ? C.muted : C.white}
+                    />
+                  </TouchableOpacity>
+
                   {/* Image Counter */}
                   <View style={styles.dockCounter}>
                     <Text style={styles.dockCounterText}>
-                      {selectedImage.index + 1} / {selectedImage.total}
+                      {selectedPreviewIndex + 1} / {currentList.length}
                     </Text>
                   </View>
+
+                  {/* Next Button */}
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={[
+                      styles.dockNavBtn,
+                      selectedPreviewIndex === currentList.length - 1 && styles.dockNavBtnDisabled,
+                    ]}
+                    onPress={handleNextImage}
+                    disabled={selectedPreviewIndex === currentList.length - 1}
+                  >
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color={selectedPreviewIndex === currentList.length - 1 ? C.muted : C.white}
+                    />
+                  </TouchableOpacity>
 
                   <View style={styles.dockDivider} />
 
@@ -459,18 +539,19 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.96)',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   modalContent: {
     flex: 1,
     width: '100%',
+    height: '100%',
+  },
+  modalPage: {
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalImageContainer: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT * 0.74,
+    width: '100%',
+    height: '74%',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -491,7 +572,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(28, 28, 34, 0.94)',
     borderRadius: 28,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: 1,
     borderColor: '#353540',
@@ -501,8 +582,21 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 10,
   },
+  dockNavBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  dockNavBtnDisabled: {
+    opacity: 0.35,
+  },
   dockCounter: {
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
+    minWidth: 48,
+    alignItems: 'center',
   },
   dockCounterText: {
     color: C.mutedSoft,
