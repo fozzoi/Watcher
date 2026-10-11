@@ -38,21 +38,36 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
 
   const [activeCode, setActiveCode] = useState<string>('all');
 
+  // Interleave movies & series so both appear side-by-side
   const activeItems = useMemo(() => {
     if (!langData) return [];
+
+    const interleave = (movies: any[], series: any[]) => {
+      const result: any[] = [];
+      const maxLen = Math.max(movies.length, series.length);
+      for (let i = 0; i < maxLen; i++) {
+        if (i < movies.length) result.push({ ...movies[i], _mediaType: 'movie' });
+        if (i < series.length) result.push({ ...series[i], _mediaType: 'tv' });
+      }
+      return result;
+    };
+
     if (activeCode === 'all') {
       const combined: any[] = [];
       Object.entries(langData).forEach(([code, data]) => {
-        if (data.movies) {
-          data.movies.slice(0, 3).forEach((m) => combined.push({ ...m, _langCode: code }));
-        }
+        const m = (data.movies || []).slice(0, 2).map((item) => ({ ...item, _langCode: code }));
+        const t = (data.tv || []).slice(0, 2).map((item) => ({ ...item, _langCode: code }));
+        combined.push(...interleave(m, t));
       });
       return combined;
     }
+
     const current = langData[activeCode];
     if (!current) return [];
-    const list = [...(current.movies || []), ...(current.tv || [])];
-    return list.map((item) => ({ ...item, _langCode: activeCode }));
+
+    const m = (current.movies || []).map((item) => ({ ...item, _langCode: activeCode }));
+    const t = (current.tv || []).map((item) => ({ ...item, _langCode: activeCode }));
+    return interleave(m, t);
   }, [langData, activeCode]);
 
   const handleViewAll = useCallback(() => {
@@ -61,7 +76,7 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
 
   const handlePress = useCallback(
     (item: any) => {
-      const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+      const mediaType = item._mediaType || item.media_type || (item.first_air_date ? 'tv' : 'movie');
       router.push(`/movie/${item.id}?media_type=${mediaType}`);
     },
     [router]
@@ -72,6 +87,7 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
       const imagePath = item.poster_path || item.backdrop_path;
       const imageUrl = imagePath ? getImageUrl(imagePath, 'w342') : null;
       const year = (item.release_date || item.first_air_date || '').slice(0, 4);
+      const isTV = item._mediaType === 'tv' || Boolean(item.first_air_date);
       const isAdded = savedIds ? savedIds.has(Number(item.id)) : false;
 
       return (
@@ -86,7 +102,7 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
                 source={{ uri: imageUrl }}
                 style={StyleSheet.absoluteFill}
                 contentFit="cover"
-                cachePolicy="disk"
+                cachePolicy="memory-disk"
                 recyclingKey={imageUrl}
               />
             ) : (
@@ -118,7 +134,7 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
             {item.title || item.name}
           </Text>
           <Text style={styles.cardSubtext} numberOfLines={1}>
-            {year ? `${year} • ` : ''}International
+            {year ? `${year} • ` : ''}{isTV ? 'Series' : 'Movie'}
           </Text>
         </TouchableOpacity>
       );
@@ -130,7 +146,7 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
 
   return (
     <View style={styles.sectionContainer}>
-      {/* Tappable Header navigating to View All */}
+      {/* Tappable Header to View All */}
       <TouchableOpacity activeOpacity={0.7} onPress={handleViewAll} style={styles.headerRow}>
         <View style={styles.titleWithIcon}>
           <Text style={styles.sectionTitle}>World Cinema</Text>
@@ -139,7 +155,7 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
         <Text style={styles.langCounter}>{availableLangs.length} Languages</Text>
       </TouchableOpacity>
 
-      {/* Language Tabs */}
+      {/* Language Filter Tabs */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -171,11 +187,11 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
         })}
       </ScrollView>
 
-      {/* Clean Poster Rail */}
+      {/* Interleaved Movies + TV Rail */}
       <LegendList
         horizontal
         data={activeItems}
-        keyExtractor={(item) => `world-${item.id}-${activeCode}`}
+        keyExtractor={(item) => `world-${item._mediaType}-${item.id}-${activeCode}`}
         renderItem={renderItem}
         recycleItems={true}
         estimatedItemSize={SNAP_INTERVAL}

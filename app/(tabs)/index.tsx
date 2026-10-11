@@ -109,7 +109,7 @@ const ExplorePage = () => {
   const [forYouShelves, setForYouShelves] = useState<ForYouShelf[]>(() => getForYouShelvesSync());
 
   // Shelf windowing state: mount 5 shelves initially, stream in 3 on scroll
-  const INITIAL_SHELVES = 5;
+  const INITIAL_SHELVES = 6;
   const [visibleShelfCount, setVisibleShelfCount] = useState(INITIAL_SHELVES);
 
   useEffect(() => {
@@ -501,8 +501,8 @@ const ExplorePage = () => {
   );
 
   const loadMoreShelves = useCallback(() => {
-    setVisibleShelfCount((prev) => Math.min(prev + 3, exploreSections.length));
-  }, [exploreSections.length]);
+  setVisibleShelfCount((prev) => Math.min(prev + 1, exploreSections.length));
+}, [exploreSections.length]);
 
   const renderExploreHeader = useCallback(() => {
     if (contentLoading && !rawContent) {

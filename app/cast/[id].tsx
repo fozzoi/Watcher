@@ -1,5 +1,4 @@
-// CastDetails.tsx
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,6 +14,7 @@ import {
   ToastAndroid,
   Alert,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { hasSavedItem, addSavedItem, removeSavedItem } from '../../src/database';
 import { logTasteEvent, TASTE_WEIGHTS } from '../../src/services/tasteProfile';
@@ -171,6 +171,7 @@ export default function CastDetails() {
   const [personImages, setPersonImages] = useState<TMDBImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [isBioExpanded, setIsBioExpanded] = useState(false);
+  const [sortBy, setSortBy] = useState<'popular' | 'rating' | 'latest'>('popular');
 
   const [isLiked, setIsLiked] = useState(false);
   const likedScale = useSharedValue(1);
@@ -228,9 +229,9 @@ export default function CastDetails() {
         });
       }
 
-      const uniqueCredits = creditsData
-        .filter((v, i, a) => a.findIndex((t) => t.id === v.id) === i)
-        .sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
+      const uniqueCredits = creditsData.filter(
+        (v, i, a) => a.findIndex((t) => t.id === v.id) === i
+      );
 
       setCredits(uniqueCredits);
     } catch (error) {
@@ -239,6 +240,33 @@ export default function CastDetails() {
       setLoading(false);
     }
   };
+
+  const sortedCredits = useMemo(() => {
+    const list = [...credits];
+    if (sortBy === 'popular') {
+      return list.sort(
+        (a, b) =>
+          (b.popularity || 0) - (a.popularity || 0) ||
+          (b.vote_count || 0) - (a.vote_count || 0) ||
+          (b.vote_average || 0) - (a.vote_average || 0)
+      );
+    }
+    if (sortBy === 'rating') {
+      return list.sort(
+        (a, b) =>
+          (b.vote_average || 0) - (a.vote_average || 0) ||
+          (b.vote_count || 0) - (a.vote_count || 0)
+      );
+    }
+    if (sortBy === 'latest') {
+      return list.sort((a, b) => {
+        const dateA = a.release_date || a.first_air_date || '';
+        const dateB = b.release_date || b.first_air_date || '';
+        return dateB.localeCompare(dateA);
+      });
+    }
+    return list;
+  }, [credits, sortBy]);
 
   const handleLovePress = useCallback(async () => {
     if (!person) return;
@@ -429,14 +457,57 @@ export default function CastDetails() {
 
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Filmography</Text>
-              <View style={styles.countBadge}>
-                <Text style={styles.countBadgeText}>{credits.length}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={styles.sectionHeaderTitle}>Filmography</Text>
+                <View style={styles.countBadge}>
+                  <Text style={styles.countBadgeText}>{credits.length}</Text>
+                </View>
+              </View>
+
+              <View style={styles.sortPillsRow}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    setSortBy('popular');
+                  }}
+                  style={[styles.sortPill, sortBy === 'popular' && styles.sortPillActive]}
+                >
+                  <Text style={[styles.sortPillText, sortBy === 'popular' && styles.sortPillTextActive]}>
+                    Popular
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    setSortBy('rating');
+                  }}
+                  style={[styles.sortPill, sortBy === 'rating' && styles.sortPillActive]}
+                >
+                  <Text style={[styles.sortPillText, sortBy === 'rating' && styles.sortPillTextActive]}>
+                    Rating
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    setSortBy('latest');
+                  }}
+                  style={[styles.sortPill, sortBy === 'latest' && styles.sortPillActive]}
+                >
+                  <Text style={[styles.sortPillText, sortBy === 'latest' && styles.sortPillTextActive]}>
+                    Latest
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
 
             <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-              {credits.slice(0, creditsLimit).map((item, index) => (
+              {sortedCredits.slice(0, creditsLimit).map((item, index) => (
                 <CreditCard
                   key={`${item.id}-${index}`}
                   item={item}
@@ -682,10 +753,62 @@ const styles = StyleSheet.create({
   actionBtnText: { color: C.mutedSoft, fontSize: 11, fontWeight: '600' },
 
   section: { marginBottom: 32 },
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
-  sectionTitle: { fontSize: 15, color: C.white, fontWeight: '700', letterSpacing: -0.2, marginBottom: 14 },
-  countBadge: { backgroundColor: C.surface2, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, marginTop: -14 },
-  countBadgeText: { color: C.mutedSoft, fontSize: 11, fontWeight: '700' },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  sectionHeaderTitle: {
+    fontSize: 15,
+    color: C.white,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    color: C.white,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    marginBottom: 14,
+  },
+  countBadge: {
+    backgroundColor: C.surface2,
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  countBadgeText: {
+    color: C.mutedSoft,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  sortPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  sortPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 4.5,
+    borderRadius: 12,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  sortPillActive: {
+    backgroundColor: C.surface2,
+    borderColor: 'rgba(255, 255, 255, 0.28)',
+  },
+  sortPillText: {
+    color: C.muted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  sortPillTextActive: {
+    color: C.white,
+    fontWeight: '700',
+  },
 
   overviewText: { color: C.text, fontSize: 14.5, lineHeight: 23 },
   readMore: { color: C.white, fontWeight: '700', marginTop: 8, fontSize: 13 },

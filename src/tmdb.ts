@@ -238,6 +238,8 @@ const formatBasicItemData = (item: any): Omit<TMDBResult, 'certification' | 'cas
   poster_path: item.poster_path,
   backdrop_path: item.backdrop_path,
   vote_average: parseFloat((item.vote_average || 0).toFixed(1)),
+  vote_count: item.vote_count ?? 0,
+  popularity: item.popularity ?? 0,
   media_type: item.media_type || (item.first_air_date ? "tv" : "movie"),
   release_date: item.release_date,
   first_air_date: item.first_air_date,

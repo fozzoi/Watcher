@@ -130,7 +130,7 @@ const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMo
       style={[StyleSheet.absoluteFill, { opacity }]}
     >
       <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ scale: zoom }] }]}>
-        <Image source={{ uri: getImageUrl(item.poster_path, 'w780') }} contentFit="cover" cachePolicy="disk" style={{ width, height }} accessible={false} />
+        <Image source={{ uri: getImageUrl(item.poster_path, 'w780') }} contentFit="cover" cachePolicy="memory-disk" style={{ width, height }} accessible={false} />
       </Animated.View>
 
       <LinearGradient

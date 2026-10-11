@@ -34,7 +34,7 @@ const SpotlightCard = memo(
             source={{ uri: imageUrl }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
-            cachePolicy="disk"
+            cachePolicy="memory-disk"
             recyclingKey={imageUrl}
           />
         ) : (

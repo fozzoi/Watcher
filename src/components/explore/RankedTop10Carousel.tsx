@@ -22,13 +22,7 @@ interface RankedTop10CarouselProps {
 
 const OutlinedNumeral = memo(({ rank }: { rank: number }) => (
   <View style={styles.numeralContainer} pointerEvents="none">
-    {/* 4-way micro-offsets simulate a crisp 1.5px outer stroke */}
-    <Text style={[styles.numeralBase, styles.numeralStroke, { top: -1.5, left: -1.5 }]}>{rank}</Text>
-    <Text style={[styles.numeralBase, styles.numeralStroke, { top: -1.5, left: 1.5 }]}>{rank}</Text>
-    <Text style={[styles.numeralBase, styles.numeralStroke, { top: 1.5, left: -1.5 }]}>{rank}</Text>
-    <Text style={[styles.numeralBase, styles.numeralStroke, { top: 1.5, left: 1.5 }]}>{rank}</Text>
-    {/* Dark hollow interior */}
-    <Text style={[styles.numeralBase, styles.numeralFill]}>{rank}</Text>
+    <Text style={styles.numeralText}>{rank}</Text>
   </View>
 ));
 
@@ -59,7 +53,7 @@ const RankedCard = memo(
               source={{ uri: imageUrl }}
               style={StyleSheet.absoluteFill}
               contentFit="cover"
-              cachePolicy="disk"
+              cachePolicy="memory-disk"
               recyclingKey={imageUrl}
             />
           ) : (
@@ -285,4 +279,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 2,
   },
+  numeralText: {
+  fontSize: 72,
+  fontWeight: '900',
+  color: 'rgba(18, 18, 20, 0.85)',
+  textShadowColor: 'rgba(255, 255, 255, 0.7)',
+  textShadowOffset: { width: 0, height: 0 },
+  textShadowRadius: 2,
+  includeFontPadding: false,
+},
 });
