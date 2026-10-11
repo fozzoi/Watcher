@@ -1,0 +1,304 @@
+// src/components/explore/WorldCinemaHub.tsx
+import React, { memo, useState, useMemo, useCallback } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Image } from 'expo-image';
+import { LegendList } from '@legendapp/list/react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { getImageUrl } from '../../tmdb';
+import QuickAddButton from '../shared/QuickAddButton';
+import { HORIZONTAL_MARGIN } from './ExploreConstants';
+import { LANGUAGE_OPTIONS } from '../../userPreferences';
+
+const CARD_WIDTH = 135;
+const CARD_HEIGHT = CARD_WIDTH * 1.5;
+const GAP = 12;
+const SNAP_INTERVAL = CARD_WIDTH + GAP;
+
+interface WorldCinemaHubProps {
+  langData: Record<string, { movies?: any[]; tv?: any[] }>;
+  savedIds?: Set<number>;
+  toggleWatchlist: (item: any) => void;
+}
+
+const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinemaHubProps) => {
+  const router = useRouter();
+
+  const availableLangs = useMemo(() => {
+    if (!langData) return [];
+    const keys = Object.keys(langData).filter((k) => {
+      const d = langData[k];
+      return (d.movies && d.movies.length > 0) || (d.tv && d.tv.length > 0);
+    });
+    return keys.map((code) => {
+      const match = LANGUAGE_OPTIONS.find((opt) => opt.code === code);
+      return { code, label: match ? match.label : code.toUpperCase() };
+    });
+  }, [langData]);
+
+  const [activeCode, setActiveCode] = useState<string>('all');
+
+  const activeItems = useMemo(() => {
+    if (!langData) return [];
+    if (activeCode === 'all') {
+      const combined: any[] = [];
+      Object.entries(langData).forEach(([code, data]) => {
+        if (data.movies) {
+          data.movies.slice(0, 3).forEach((m) => combined.push({ ...m, _langCode: code }));
+        }
+      });
+      return combined;
+    }
+    const current = langData[activeCode];
+    if (!current) return [];
+    const list = [...(current.movies || []), ...(current.tv || [])];
+    return list.map((item) => ({ ...item, _langCode: activeCode }));
+  }, [langData, activeCode]);
+
+  const handleViewAll = useCallback(() => {
+    router.push(`/viewall?title=${encodeURIComponent('World Cinema')}&type=lang&lang=${activeCode}`);
+  }, [router, activeCode]);
+
+  const handlePress = useCallback(
+    (item: any) => {
+      const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
+      router.push(`/movie/${item.id}?media_type=${mediaType}`);
+    },
+    [router]
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: any }) => {
+      const imagePath = item.poster_path || item.backdrop_path;
+      const imageUrl = imagePath ? getImageUrl(imagePath, 'w342') : null;
+      const year = (item.release_date || item.first_air_date || '').slice(0, 4);
+      const isAdded = savedIds ? savedIds.has(Number(item.id)) : false;
+
+      return (
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => handlePress(item)}
+          style={styles.cardContainer}
+        >
+          <View style={styles.posterBox}>
+            {imageUrl ? (
+              <Image
+                source={{ uri: imageUrl }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                cachePolicy="disk"
+                recyclingKey={imageUrl}
+              />
+            ) : (
+              <View style={[StyleSheet.absoluteFill, styles.placeholder]}>
+                <Ionicons name="film-outline" size={24} color="#555" />
+              </View>
+            )}
+
+            {/* Quick Watchlist Heart */}
+            <View style={styles.heartOverlay}>
+              <QuickAddButton
+                item={item}
+                itemId={item.id}
+                isAdded={isAdded}
+                onPress={() => toggleWatchlist(item)}
+              />
+            </View>
+
+            {/* Rating Badge */}
+            {item.vote_average ? (
+              <View style={styles.ratingBadge}>
+                <Ionicons name="star" size={10} color="#FFD60A" />
+                <Text style={styles.ratingText}>{item.vote_average.toFixed(1)}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {item.title || item.name}
+          </Text>
+          <Text style={styles.cardSubtext} numberOfLines={1}>
+            {year ? `${year} • ` : ''}International
+          </Text>
+        </TouchableOpacity>
+      );
+    },
+    [savedIds, handlePress, toggleWatchlist]
+  );
+
+  if (!availableLangs.length) return null;
+
+  return (
+    <View style={styles.sectionContainer}>
+      {/* Tappable Header navigating to View All */}
+      <TouchableOpacity activeOpacity={0.7} onPress={handleViewAll} style={styles.headerRow}>
+        <View style={styles.titleWithIcon}>
+          <Text style={styles.sectionTitle}>World Cinema</Text>
+          <Ionicons name="chevron-forward" size={18} color="#9B9BA3" />
+        </View>
+        <Text style={styles.langCounter}>{availableLangs.length} Languages</Text>
+      </TouchableOpacity>
+
+      {/* Language Tabs */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabsContainer}
+      >
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => setActiveCode('all')}
+          style={[styles.tabChip, activeCode === 'all' && styles.tabChipActive]}
+        >
+          <Text style={[styles.tabText, activeCode === 'all' && styles.tabTextActive]}>
+            {activeCode === 'all' ? '• All' : 'All'}
+          </Text>
+        </TouchableOpacity>
+        {availableLangs.map((lang) => {
+          const isSelected = activeCode === lang.code;
+          return (
+            <TouchableOpacity
+              key={`lang-tab-${lang.code}`}
+              activeOpacity={0.8}
+              onPress={() => setActiveCode(lang.code)}
+              style={[styles.tabChip, isSelected && styles.tabChipActive]}
+            >
+              <Text style={[styles.tabText, isSelected && styles.tabTextActive]}>
+                {lang.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {/* Clean Poster Rail */}
+      <LegendList
+        horizontal
+        data={activeItems}
+        keyExtractor={(item) => `world-${item.id}-${activeCode}`}
+        renderItem={renderItem}
+        recycleItems={true}
+        estimatedItemSize={SNAP_INTERVAL}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+        decelerationRate="fast"
+        snapToInterval={SNAP_INTERVAL}
+      />
+    </View>
+  );
+});
+
+export default WorldCinemaHub;
+
+const styles = StyleSheet.create({
+  sectionContainer: {
+    marginBottom: 28,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: HORIZONTAL_MARGIN,
+    marginBottom: 10,
+  },
+  titleWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  sectionTitle: {
+    color: '#FAFAFA',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  langCounter: {
+    color: '#9B9BA3',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tabsContainer: {
+    paddingHorizontal: HORIZONTAL_MARGIN,
+    gap: 8,
+    marginBottom: 14,
+  },
+  tabChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: '#161618',
+    borderWidth: 1,
+    borderColor: '#24242A',
+  },
+  tabChipActive: {
+    backgroundColor: '#26262D',
+    borderColor: '#383842',
+  },
+  tabText: {
+    color: '#8A8A93',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tabTextActive: {
+    color: '#FAFAFA',
+    fontWeight: '700',
+  },
+  listContent: {
+    paddingHorizontal: HORIZONTAL_MARGIN,
+  },
+  cardContainer: {
+    width: CARD_WIDTH,
+    marginRight: GAP,
+  },
+  posterBox: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    borderRadius: 14,
+    backgroundColor: '#18181C',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#24242A',
+    position: 'relative',
+    marginBottom: 8,
+  },
+  placeholder: {
+    backgroundColor: '#161618',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heartOverlay: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    zIndex: 10,
+  },
+  ratingBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingHorizontal: 6,
+    paddingVertical: 2.5,
+    borderRadius: 5,
+    gap: 3,
+  },
+  ratingText: {
+    color: '#FAFAFA',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  cardTitle: {
+    color: '#FAFAFA',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  cardSubtext: {
+    color: '#9B9BA3',
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+});

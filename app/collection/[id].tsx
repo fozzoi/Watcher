@@ -59,9 +59,9 @@ const MovieCardShimmer = () => (
 
 const CollectionDetails = () => {
   const router = useRouter();
-  const { id, name } = useLocalSearchParams();
+  const { id, name, title } = useLocalSearchParams();
   const collectionId = Number(id);
-  const collectionName = (name as string) || '';
+  const collectionName = (name as string) || (title as string) || '';
 
   const watchedIds = useSelector(() => savedStore$.watchedIds.get());
   const [collection, setCollection] = useState<TMDBCollectionDetails | null>(null);
@@ -99,6 +99,10 @@ const CollectionDetails = () => {
   }, []);
 
   useEffect(() => {
+    if (!collectionId || isNaN(collectionId)) {
+      setLoading(false);
+      return;
+    }
     const fetchCollection = async () => {
       setLoading(true);
       const data = await getCollectionDetails(collectionId);

@@ -444,8 +444,16 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
 
         const [picked] = sortedCandidates.splice(bestIndex, 1);
         franchisePickedCount.set(picked._colId, (franchisePickedCount.get(picked._colId) || 0) + 1);
-        const { _score, _colId, _colName, _isStarted, ...cleanMovie } = picked;
-        selectedSagaMovies.push(cleanMovie);
+        const { _score, _isStarted, ...movieDetails } = picked;
+        selectedSagaMovies.push({
+          ...movieDetails,
+          collection_id: picked._colId,
+          collection_name: picked._colName,
+          belongs_to_collection: {
+            id: picked._colId,
+            name: picked._colName,
+          },
+        });
       }
 
       // 1. Single Unified Master "Continue The Saga" shelf

@@ -1,3 +1,4 @@
+// src/components/shared/MovieCard.tsx
 import React, { memo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
@@ -5,14 +6,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { getImageUrl } from '../../tmdb';
 import QuickAddButton from './QuickAddButton';
 import { EXPLORE_CARD_WIDTH, SEARCH_CARD_WIDTH, GAP_SIZE } from '../explore/ExploreConstants';
-
-const C = {
-  surface2: '#1C1C20',
-  white: '#FAFAFA',
-  text: '#E8E8EA',
-  mutedSoft: '#9B9BA3',
-  gold: '#FFD60A',
-};
 
 interface MovieCardProps {
   item: any;
@@ -30,10 +23,12 @@ const MovieCard = memo(
     const cardHeight = cardWidth * 1.5;
     const imagePath = item.poster_path || item.backdrop_path;
     const imageUrl = imagePath ? getImageUrl(imagePath, 'w342') : null;
+    const year = (item.release_date || item.first_air_date || '').slice(0, 4);
+    const mediaType = item.media_type === 'tv' || item.first_air_date ? 'Series' : 'Movie';
 
     return (
       <TouchableOpacity
-        activeOpacity={0.92}
+        activeOpacity={0.9}
         onPress={onPress}
         style={{
           width: cardWidth,
@@ -52,14 +47,12 @@ const MovieCard = memo(
             />
           ) : (
             <View style={[styles.placeholderCard, { width: cardWidth, height: cardHeight }]}>
-              <Ionicons name="film-outline" size={28} color={C.mutedSoft} />
-              <Text style={styles.placeholderTitle} numberOfLines={2}>
-                {item.title || item.name || 'Untitled'}
-              </Text>
+              <Ionicons name="film-outline" size={26} color="#555" />
             </View>
           )}
 
-          <View style={styles.cardAddButtonOverlay}>
+          {/* Quick Add Watchlist Heart */}
+          <View style={styles.heartOverlay}>
             <QuickAddButton
               item={item}
               itemId={item.id}
@@ -68,88 +61,87 @@ const MovieCard = memo(
             />
           </View>
 
+          {/* Rating Badge */}
           {item.vote_average ? (
-            <View style={styles.cardOverlay}>
-              <View style={styles.ratingBadgeSmall}>
-                <Ionicons name="star" size={10} color={C.gold} />
-                <Text style={styles.ratingTextSmall}>{item.vote_average.toFixed(1)}</Text>
-              </View>
+            <View style={styles.ratingBadge}>
+              <Ionicons name="star" size={10} color="#FFD60A" />
+              <Text style={styles.ratingText}>{item.vote_average.toFixed(1)}</Text>
             </View>
           ) : null}
         </View>
 
-        {isSearchMode && (
-          <Text style={styles.sectionItemTitle} numberOfLines={2}>
-            {item.title || item.name}
+        {/* 2-Line High Density Micro-Metadata */}
+        <View style={styles.metaContainer}>
+          <Text style={styles.title} numberOfLines={1}>
+            {item.title || item.name || 'Untitled'}
           </Text>
-        )}
+          <Text style={styles.subtext} numberOfLines={1}>
+            {year ? `${year} • ` : ''}
+            {mediaType}
+          </Text>
+        </View>
       </TouchableOpacity>
     );
   },
-  (prev, next) => {
-    return (
-      prev.item.id === next.item.id &&
-      prev.isAdded === next.isAdded &&
-      prev.isSearchMode === next.isSearchMode
-    );
-  }
+  (prev, next) =>
+    prev.item.id === next.item.id &&
+    prev.isAdded === next.isAdded &&
+    prev.isSearchMode === next.isSearchMode
 );
 
 export default MovieCard;
 
 const styles = StyleSheet.create({
   cardContainer: {
-    position: 'relative',
-    borderRadius: 12,
-    backgroundColor: C.surface2,
+    borderRadius: 14,
+    backgroundColor: '#18181C',
     overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#24242A',
   },
   placeholderCard: {
-    backgroundColor: C.surface2,
+    backgroundColor: '#18181C',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  placeholderTitle: {
-    color: C.mutedSoft,
-    fontSize: 11,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginTop: 6,
+  heartOverlay: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    zIndex: 10,
   },
-  cardAddButtonOverlay: {
+  ratingBadge: {
     position: 'absolute',
     top: 6,
     right: 6,
     zIndex: 10,
-  },
-  cardOverlay: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    zIndex: 5,
-  },
-  ratingBadgeSmall: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 6,
     gap: 3,
   },
-  ratingTextSmall: {
-    color: C.white,
+  ratingText: {
+    color: '#FAFAFA',
     fontSize: 10,
     fontWeight: '700',
   },
-  sectionItemTitle: {
-    color: C.text,
-    fontSize: 12.5,
-    fontWeight: '600',
+  metaContainer: {
     marginTop: 8,
-    lineHeight: 16,
+  },
+  title: {
+    color: '#FAFAFA',
+    fontSize: 12.5,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  subtext: {
+    color: '#9B9BA3',
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
   },
 });

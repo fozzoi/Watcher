@@ -51,16 +51,19 @@ import {
   searchPeople,
   searchCollections,
 } from '../../src/tmdb';
-import { getUserPreferences, LANGUAGE_OPTIONS, GENRE_OPTIONS } from '../../src/userPreferences';
+import { getUserPreferences } from '../../src/userPreferences';
 
 // --- COMPONENTS ---
 import SkeletonHero from '../../src/components/explore/SkeletonHero';
 import HeroSection, { heroScroll$ } from '../../src/components/explore/HeroSection';
 import GenreFilter from '../../src/components/explore/GenreFilter';
 import MediaCarousel from '../../src/components/shared/MediaCarousel';
+import RankedTop10Carousel from '../../src/components/explore/RankedTop10Carousel';
+import SpotlightCarousel from '../../src/components/explore/SpotlightCarousel';
+import WorldCinemaHub from '../../src/components/explore/WorldCinemaHub';
 import SearchResultsList from '../../src/components/search/SearchResultsList';
 import SearchEmptyState from '../../src/components/search/SearchEmptyState';
-import { HORIZONTAL_MARGIN, GENRE_DATA, HERO_HEIGHT } from '../../src/components/explore/ExploreConstants';
+import { HORIZONTAL_MARGIN, HERO_HEIGHT, GENRE_DATA } from '../../src/components/explore/ExploreConstants';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const SkeletonCarousel = memo(() => (
@@ -78,13 +81,19 @@ const SkeletonCarousel = memo(() => (
   </View>
 ));
 
-type ExploreSection = { key: string; title: string; type: string; data: any[] };
+type SectionLayoutType = 'ranked' | 'spotlight' | 'world_hub' | 'standard';
 
-const INITIAL_SHELVES = 5;
+type ExploreSection = {
+  key: string;
+  title: string;
+  type: string;
+  layout: SectionLayoutType;
+  data: any;
+  eyebrow?: string;
+};
 
 const ExplorePage = () => {
   const [selectedGenre, setSelectedGenre] = useState(0);
-  const [visibleShelfCount, setVisibleShelfCount] = useState(INITIAL_SHELVES);
 
   const [rawContent, setRawContent] = useState<any>(() => getExploreContentCacheSync(0));
   const [contentLoading, setContentLoading] = useState<boolean>(() => !getExploreContentCacheSync(0));
@@ -99,10 +108,15 @@ const ExplorePage = () => {
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
   const [forYouShelves, setForYouShelves] = useState<ForYouShelf[]>(() => getForYouShelvesSync());
 
-  // Watchlist IDs reactive subscription
-  const savedIds = useSelector(() => savedStore$.savedIds.get());
+  // Shelf windowing state: mount 5 shelves initially, stream in 3 on scroll
+  const INITIAL_SHELVES = 5;
+  const [visibleShelfCount, setVisibleShelfCount] = useState(INITIAL_SHELVES);
 
-  // Smoothing shared value for seamless genre switching without screen tearing
+  useEffect(() => {
+    setVisibleShelfCount(INITIAL_SHELVES);
+  }, [selectedGenre]);
+
+  const savedIds = useSelector(() => savedStore$.savedIds.get());
   const feedOpacityAnim = useSharedValue(1);
 
   useEffect(() => {
@@ -113,7 +127,6 @@ const ExplorePage = () => {
     return () => unsubscribe();
   }, []);
 
-  // Hydrate search history
   const loadSearchHistory = useCallback(async () => {
     try {
       const currentStr = await AsyncStorage.getItem('searchHistoryExpl');
@@ -210,50 +223,52 @@ const ExplorePage = () => {
 
   const lastPrefsRef = useRef<string>('');
 
-  const fetchContent = useCallback(async (genreId: number = 0, forceRefresh: boolean = false) => {
-    const requestId = ++contentRequestRef.current;
-    try {
-      const prefs = await getUserPreferences();
-      const content = await fetchPersonalisedDiscoveryContent(
-        prefs.languages,
-        prefs.genreIds,
-        genreId,
-        forceRefresh,
-        prefs.favoriteActors
-      );
-      if (requestId !== contentRequestRef.current) return;
-      if (content) {
-        setRawContent(content);
-        saveExploreContentCacheSync(genreId, content);
-      }
-      setContentLoading(false);
-      feedOpacityAnim.value = withTiming(1, { duration: 250 });
-
-      setTimeout(() => {
-        const history = getSavedItems('history');
-        if (history && history.length > 0) {
-          getSimilarForHistory(history)
-            .then((similar) => {
-              if (requestId === contentRequestRef.current) {
-                setBecauseYouWatched(similar);
-              }
-            })
-            .catch(() => {});
-        } else if (requestId === contentRequestRef.current) {
-          setBecauseYouWatched([]);
+  const fetchContent = useCallback(
+    async (genreId: number = 0, forceRefresh: boolean = false) => {
+      const requestId = ++contentRequestRef.current;
+      try {
+        const prefs = await getUserPreferences();
+        const content = await fetchPersonalisedDiscoveryContent(
+          prefs.languages,
+          prefs.genreIds,
+          genreId,
+          forceRefresh,
+          prefs.favoriteActors
+        );
+        if (requestId !== contentRequestRef.current) return;
+        if (content) {
+          setRawContent(content);
+          saveExploreContentCacheSync(genreId, content);
         }
-      }, 150);
-    } catch (err) {
-      if (requestId === contentRequestRef.current) {
-        console.error(err);
-        feedOpacityAnim.value = withTiming(1, { duration: 200 });
-      }
-    } finally {
-      if (requestId === contentRequestRef.current) setContentLoading(false);
-    }
-  }, [feedOpacityAnim]);
+        setContentLoading(false);
+        feedOpacityAnim.value = withTiming(1, { duration: 250 });
 
-  // Smooth Genre Switching: preserves current view, cross-fades gently into new data
+        setTimeout(() => {
+          const history = getSavedItems('history');
+          if (history && history.length > 0) {
+            getSimilarForHistory(history)
+              .then((similar) => {
+                if (requestId === contentRequestRef.current) {
+                  setBecauseYouWatched(similar);
+                }
+              })
+              .catch(() => {});
+          } else if (requestId === contentRequestRef.current) {
+            setBecauseYouWatched([]);
+          }
+        }, 150);
+      } catch (err) {
+        if (requestId === contentRequestRef.current) {
+          console.error(err);
+          feedOpacityAnim.value = withTiming(1, { duration: 200 });
+        }
+      } finally {
+        if (requestId === contentRequestRef.current) setContentLoading(false);
+      }
+    },
+    [feedOpacityAnim]
+  );
+
   const handleSelectGenre = useCallback(
     (genreId: number) => {
       if (genreId === selectedGenre) return;
@@ -261,13 +276,11 @@ const ExplorePage = () => {
 
       const cached = getExploreContentCacheSync(genreId);
       if (cached) {
-        // Instant cached swap with seamless crossfade
         feedOpacityAnim.value = 0.35;
         setRawContent(cached);
         setContentLoading(false);
         feedOpacityAnim.value = withTiming(1, { duration: 220 });
       } else {
-        // Retain existing content in background, soft fade while network catches up
         feedOpacityAnim.value = withTiming(0.45, { duration: 180 });
         setContentLoading(true);
       }
@@ -299,7 +312,6 @@ const ExplorePage = () => {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setVisibleShelfCount(INITIAL_SHELVES);
     try {
       await Promise.all([
         fetchContent(selectedGenre, true),
@@ -310,176 +322,178 @@ const ExplorePage = () => {
     }
   }, [selectedGenre, fetchContent]);
 
+  // =========================================================================
+  // CURATED EDITORIAL HIERARCHY
+  // - Replaces repetitive genre carousels with top chips
+  // - Elevates TV Series discovery earlier in the feed
+  // - Showcases a single featured actor row instead of stacking multiple
+  // =========================================================================
   const exploreSections = useMemo(() => {
     if (!rawContent) return [];
     const sections: ExploreSection[] = [];
     const todayStr = new Date().toISOString().split('T')[0];
-
     const selectedGenreObj = GENRE_DATA.find((g) => g.id === selectedGenre);
     const selectedGenreName = selectedGenreObj && selectedGenreObj.id !== 0 ? selectedGenreObj.name : null;
 
-    // --- Collect All Language Rails ---
-    const langSections: ExploreSection[] = [];
-    if (rawContent.langData) {
-      Object.entries(rawContent.langData).forEach(([langCode, languageData]: [string, any]) => {
-        const language = LANGUAGE_OPTIONS.find((option) => option.code === langCode);
-        const languageName = language ? language.label : langCode.toUpperCase();
-        if (languageData.movies?.length) {
-          langSections.push({
-            key: `lang-movies-${langCode}`,
-            title: selectedGenreName ? `${languageName} ${selectedGenreName} Movies` : `${languageName} Movies`,
-            type: `lang-movies-${langCode}`,
-            data: languageData.movies,
-          });
-        }
-        if (languageData.tv?.length) {
-          langSections.push({
-            key: `lang-tv-${langCode}`,
-            title: selectedGenreName ? `${languageName} ${selectedGenreName} Series` : `${languageName} TV Shows`,
-            type: `lang-tv-${langCode}`,
-            data: languageData.tv,
-          });
-        }
+    // 1. Top 10 Today (Ranked Rail with Outlined Numerals)
+    if (rawContent.trendingMovies?.length) {
+      sections.push({
+        key: 'top-10-ranked',
+        title: 'Top 10 Today',
+        type: 'ranked',
+        layout: 'ranked',
+        data: rawContent.trendingMovies.slice(0, 10),
       });
     }
 
-    // --- Collect Favorite Actor Rails ---
-    const actorSections: ExploreSection[] = [];
-    (rawContent.actorData || []).forEach((actor: any) => {
-      if (actor.items?.length) {
-        actorSections.push({
-          key: `actor-${actor.actorId}`,
-          title: `Starring ${actor.actorName}`,
-          type: `actor-${actor.actorId}`,
-          data: actor.items,
+    // 2. Personalized Franchise Spotlight (16:9 Landscape Rail)
+    if (selectedGenre === 0 && forYouShelves.length > 0) {
+      const topShelf = forYouShelves[0];
+      const validItems = (topShelf.items || []).filter((item: any) => isMediaReleased(item, todayStr));
+      if (validItems.length > 0) {
+        sections.push({
+          key: `spotlight-${topShelf.shelfId}`,
+          title: topShelf.title,
+          type: 'spotlight',
+          layout: 'spotlight',
+          eyebrow: 'CONTINUE THE SAGA',
+          data: validItems,
         });
       }
-    });
-
-    // --- Collect Preferred Genre Rails ---
-    const genreSections: ExploreSection[] = [];
-    if (selectedGenre === 0 && rawContent.genreData) {
-      rawContent.genreData.forEach((g: any) => {
-        if (g.items?.length) {
-          const genreObj = GENRE_OPTIONS.find((opt) => opt.id === g.genreId);
-          const genreName = genreObj ? genreObj.label : 'Popular';
-          genreSections.push({
-            key: `genre-${g.genreId}`,
-            title: `${genreName} Movies`,
-            type: `genre/${g.genreId}`,
-            data: g.items,
-          });
-        }
+    } else if (rawContent.heroMovies?.length) {
+      sections.push({
+        key: 'spotlight-featured',
+        title: 'Featured Spotlight',
+        type: 'spotlight',
+        layout: 'spotlight',
+        eyebrow: 'MUST WATCH',
+        data: rawContent.heroMovies,
       });
     }
 
-    // =========================================================================
-    // SECTION ORDERING HIERARCHY (Curated for maximum engagement & relevance)
-    // =========================================================================
-
-    // 1. Personalized "For You" shelves (Franchises, Director/Taste collections)
-    if (selectedGenre === 0) {
-      forYouShelves.forEach((shelf) => {
-        const items = (shelf.items || []).filter((item: any) => isMediaReleased(item, todayStr));
-        if (items.length > 0) {
-          sections.push({
-            key: `foryou-${shelf.shelfId}`,
-            title: shelf.title,
-            type: `foryou-${shelf.shelfId}`,
-            data: items,
-          });
-        }
-      });
-    }
-
-    // 2. "Because You Watched" (Continuations from user's recent watches)
-    if (selectedGenre === 0) {
-      becauseYouWatched.forEach((row, index) => {
-        if (row.items?.length) {
-          sections.push({
-            key: `byw-${index}`,
-            title: `Because you watched ${row.sourceTitle}`,
-            type: 'becauseyouwatched',
-            data: row.items,
-          });
-        }
-      });
-    }
-    // 15. Coming Soon (Future releases placed cleanly at the end)
-    if (rawContent.upcoming?.length) {
-      sections.push({ key: 'upcoming', title: 'Coming Soon', type: 'upcoming', data: rawContent.upcoming });
-    }
-    // 3. Trending Movies
-    if (rawContent.trendingMovies?.length) {
-      const title = selectedGenreName ? `Popular ${selectedGenreName} Movies` : 'Trending Movies';
-      sections.push({ key: 'trending-movies', title, type: 'trendingmovies', data: rawContent.trendingMovies });
-    }
-
-    // 4. Trending TV Shows
+    // 3. ELEVATED: Trending & Binge-Worthy TV Series
     if (rawContent.trendingTV?.length) {
-      const title = selectedGenreName ? `Popular ${selectedGenreName} Series` : 'Trending Shows';
-      sections.push({ key: 'trending-tv', title, type: 'trendingtv', data: rawContent.trendingTV });
-    }
-    if (rawContent.topRated?.length) {
-      const title = selectedGenreName ? `Top Rated ${selectedGenreName}` : 'Top Rated Movies';
-      sections.push({ key: 'top-rated', title, type: 'toprated', data: rawContent.topRated });
-    }
-
-    // 13. Nostalgic Hits (90s & 2000s Classics)
-    if (rawContent.nostalgia?.length) {
-      const title = selectedGenreName ? `90s & 2000s ${selectedGenreName}` : 'Nostalgic Hits';
-      sections.push({ key: 'nostalgia', title, type: 'nostalgia', data: rawContent.nostalgia });
+      const title = selectedGenreName ? `Top ${selectedGenreName} Series` : 'Trending Series';
+      sections.push({
+        key: 'trending-tv',
+        title,
+        type: 'trendingtv',
+        layout: 'standard',
+        data: rawContent.trendingTV,
+      });
     }
 
-    // 14. Animated Favorites
-    if (rawContent.animatedMovies?.length) {
-      const title = selectedGenreName ? `Animated ${selectedGenreName}` : 'Trending Animated';
-      sections.push({ key: 'animated-movies', title, type: 'animatedmovies', data: rawContent.animatedMovies });
+    // 4. World Cinema Hub (Collapses all international rails into one hub)
+    if (rawContent.langData && Object.keys(rawContent.langData).length > 0) {
+      sections.push({
+        key: 'world-cinema-hub',
+        title: 'World Cinema',
+        type: 'world_hub',
+        layout: 'world_hub',
+        data: rawContent.langData,
+      });
     }
 
-    // 5. User's Primary Language Content (Top 2 selected languages)
-    const primaryLangs = langSections.slice(0, 4);
-    primaryLangs.forEach((s) => sections.push(s));
-
-    // 6. Starring Favorite Actor (First Actor)
-    if (actorSections[0]) {
-      sections.push(actorSections[0]);
+    // 5. Single Featured Actor Spotlight
+    if (selectedGenre === 0 && rawContent.actorData?.length) {
+      const featuredActor = rawContent.actorData.find((a: any) => a.items && a.items.length > 0);
+      if (featuredActor) {
+        sections.push({
+          key: `actor-${featuredActor.actorId}`,
+          title: `Spotlight: ${featuredActor.actorName}`,
+          type: `actor-${featuredActor.actorId}`,
+          layout: 'standard',
+          data: featuredActor.items,
+        });
+      }
     }
 
-    // 7. Preferred Genre (First Chosen Genre)
-    if (genreSections[0]) {
-      sections.push(genreSections[0]);
+    // 6. Personalized "Because You Watched"
+    if (selectedGenre === 0 && becauseYouWatched.length > 0) {
+      const primaryRec = becauseYouWatched[0];
+      if (primaryRec?.items?.length) {
+        sections.push({
+          key: 'byw-primary',
+          title: `Because You Watched ${primaryRec.sourceTitle}`,
+          type: 'becauseyouwatched',
+          layout: 'standard',
+          data: primaryRec.items,
+        });
+      }
     }
 
-    // 8. Secondary Language Content (Next selected languages)
-    const secondaryLangs = langSections.slice(4, 8);
-    secondaryLangs.forEach((s) => sections.push(s));
+    // 7. Secondary Taste Profile Collection ("Your Sweet Spot")
+    if (selectedGenre === 0 && forYouShelves.length > 1) {
+      const secondaryShelf = forYouShelves[1];
+      const items = (secondaryShelf.items || []).filter((item: any) => isMediaReleased(item, todayStr));
+      if (items.length > 0) {
+        sections.push({
+          key: `foryou-${secondaryShelf.shelfId}`,
+          title: secondaryShelf.title,
+          type: `foryou-${secondaryShelf.shelfId}`,
+          layout: 'standard',
+          data: items,
+        });
+      }
+    }
 
-    // 9. Hidden Gems (Critically acclaimed, high-scoring gems)
+    // 8. Hidden Gems (Cult & Indie Discoveries)
     if (rawContent.hiddenGems?.length) {
-      const title = selectedGenreName ? `Hidden ${selectedGenreName} Gems` : 'Hidden Gems';
-      sections.push({ key: 'hidden-gems', title, type: 'hiddengems', data: rawContent.hiddenGems });
+      sections.push({
+        key: 'hidden-gems',
+        title: selectedGenreName ? `Hidden ${selectedGenreName} Gems` : 'Hidden Gems',
+        type: 'hiddengems',
+        layout: 'standard',
+        data: rawContent.hiddenGems,
+      });
     }
 
-    // 10. Remaining Favorite Actors & Genres
-    actorSections.slice(1).forEach((s) => sections.push(s));
-    genreSections.slice(1).forEach((s) => sections.push(s));
+    // 9. All-Time Masterpieces / Top Rated
+    if (rawContent.topRated?.length) {
+      sections.push({
+        key: 'top-rated',
+        title: selectedGenreName ? `Top Rated ${selectedGenreName}` : 'All-Time Masterpieces',
+        type: 'toprated',
+        layout: 'standard',
+        data: rawContent.topRated,
+      });
+    }
 
-    // 11. All Other Language Rails (languages 5+)
-    const remainingLangs = langSections.slice(8);
-    remainingLangs.forEach((s) => sections.push(s));
+    // 10. Nostalgic Hits
+    if (rawContent.nostalgia?.length) {
+      sections.push({
+        key: 'nostalgia',
+        title: 'Nostalgic Hits',
+        type: 'nostalgia',
+        layout: 'standard',
+        data: rawContent.nostalgia,
+      });
+    }
 
-    // 12. Top Rated Movies (All-time masterworks)
-    
+    // 11. Animated Favorites
+    if (rawContent.animatedMovies?.length) {
+      sections.push({
+        key: 'animated-movies',
+        title: 'Animated Favorites',
+        type: 'animatedmovies',
+        layout: 'standard',
+        data: rawContent.animatedMovies,
+      });
+    }
 
-    
+    // 12. Coming Soon to Theaters
+    if (rawContent.upcoming?.length) {
+      sections.push({
+        key: 'upcoming',
+        title: 'Coming Soon to Theaters',
+        type: 'upcoming',
+        layout: 'standard',
+        data: rawContent.upcoming,
+      });
+    }
+
     return sections;
   }, [rawContent, forYouShelves, becauseYouWatched, selectedGenre]);
-
-  // Reset windowed shelves when changing genres
-  useEffect(() => {
-    setVisibleShelfCount(INITIAL_SHELVES);
-  }, [selectedGenre]);
 
   const paginatedSections = useMemo(
     () => exploreSections.slice(0, visibleShelfCount),
@@ -514,21 +528,58 @@ const ExplorePage = () => {
   }, [contentLoading, rawContent, handleToggleWatchlist, selectedGenre, handleSelectGenre]);
 
   const renderExploreSection = useCallback(
-    ({ item }: { item: ExploreSection }) => (
-      <MediaCarousel
-        title={item.title}
-        type={item.type}
-        data={item.data}
-        savedIds={savedIds}
-        toggleWatchlist={handleToggleWatchlist}
-      />
-    ),
+    ({ item }: { item: ExploreSection }) => {
+      switch (item.layout) {
+        case 'ranked':
+          return (
+            <RankedTop10Carousel
+              data={item.data}
+              savedIds={savedIds}
+              toggleWatchlist={handleToggleWatchlist}
+            />
+          );
+        case 'spotlight':
+          return (
+            <SpotlightCarousel
+              title={item.title}
+              eyebrow={item.eyebrow}
+              data={item.data}
+              onExploreAll={() => {
+                router.push({
+                  pathname: '/viewall',
+                  params: {
+                    title: item.title,
+                    type: 'foryou-saga-all',
+                  },
+                });
+              }}
+            />
+          );
+        case 'world_hub':
+          return (
+            <WorldCinemaHub
+              langData={item.data}
+              savedIds={savedIds}
+              toggleWatchlist={handleToggleWatchlist}
+            />
+          );
+        case 'standard':
+        default:
+          return (
+            <MediaCarousel
+              title={item.title}
+              type={item.type}
+              data={item.data}
+              savedIds={savedIds}
+              toggleWatchlist={handleToggleWatchlist}
+            />
+          );
+      }
+    },
     [handleToggleWatchlist, savedIds]
   );
 
-  const renderFooter = useCallback(() => {
-    return <View style={{ height: 40 }} />;
-  }, []);
+  const renderFooter = useCallback(() => <View style={{ height: 40 }} />, []);
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -545,7 +596,12 @@ const ExplorePage = () => {
 
       if (currentOffset <= 0) {
         searchBarTranslateY.value = withTiming(0, { duration: 150 });
-      } else if (diff > 25 && searchBarTranslateY.value === 0 && !isSearchFocusedShared.value && !inSearchModeShared.value) {
+      } else if (
+        diff > 25 &&
+        searchBarTranslateY.value === 0 &&
+        !isSearchFocusedShared.value &&
+        !inSearchModeShared.value
+      ) {
         searchBarTranslateY.value = withTiming(-100, { duration: 180 });
       } else if (diff < -25 && searchBarTranslateY.value < 0) {
         searchBarTranslateY.value = withTiming(0, { duration: 180 });
@@ -586,7 +642,10 @@ const ExplorePage = () => {
     const trimmed = searchText.trim();
     if (!trimmed) return;
     try {
-      const updated = [trimmed, ...recentSearches.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, 15);
+      const updated = [
+        trimmed,
+        ...recentSearches.filter((item) => item.toLowerCase() !== trimmed.toLowerCase()),
+      ].slice(0, 15);
       setRecentSearches(updated);
       await AsyncStorage.setItem('searchHistoryExpl', JSON.stringify(updated));
     } catch (e) {
@@ -622,7 +681,7 @@ const ExplorePage = () => {
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      {/* Main virtualized feed with smooth cross-fade */}
+      {/* Main virtualized feed */}
       <AnimatedLegendList
         style={[{ flex: 1 }, animatedFeedStyle as any]}
         data={contentLoading && !rawContent ? [] : paginatedSections}
@@ -642,7 +701,9 @@ const ExplorePage = () => {
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />
+        }
       />
 
       {/* Interactive Search Overlay */}
@@ -650,7 +711,7 @@ const ExplorePage = () => {
         <Animated.View
           style={[
             StyleSheet.absoluteFill,
-            { zIndex: 10, backgroundColor: '#101010' },
+            { zIndex: 10, backgroundColor: '#0A0A0B' },
             animatedBgStyle,
           ]}
         >
@@ -678,11 +739,14 @@ const ExplorePage = () => {
       {/* Persistent App Header */}
       <View style={styles.headerWrapper} pointerEvents="box-none">
         <LinearGradient
-          colors={['rgba(16, 16, 16, 0.95)', 'rgba(16, 16, 16, 0.6)', 'transparent']}
+          colors={['rgba(10, 10, 11, 0.95)', 'rgba(10, 10, 11, 0.6)', 'transparent']}
           style={styles.gradientHeader}
           pointerEvents="none"
         />
-        <Animated.View style={[styles.searchBarContainer, animatedHeaderStyle]} pointerEvents="box-none">
+        <Animated.View
+          style={[styles.searchBarContainer, animatedHeaderStyle]}
+          pointerEvents="box-none"
+        >
           <View style={styles.searchRow}>
             <Animated.View style={[styles.searchInputContainer, animatedSearchStyle]}>
               <View style={styles.searchIconContainer}>
@@ -740,7 +804,7 @@ export default ExplorePage;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#101010',
+    backgroundColor: '#0A0A0B',
     overflow: 'hidden',
   },
   scrollContent: {
@@ -782,9 +846,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 24,
     height: 48,
-    backgroundColor: '#1C1C1E',
+    backgroundColor: '#18181C',
     borderWidth: 1,
-    borderColor: '#26262A',
+    borderColor: '#24242A',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
@@ -828,10 +892,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#222',
     borderRadius: 8,
     marginRight: 12,
-  },
-  footerLoader: {
-    paddingVertical: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

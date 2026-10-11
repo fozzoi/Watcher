@@ -656,6 +656,21 @@ export const getMovieCollectionId = async (movieId: number): Promise<number | nu
   }
 };
 
+export const getMovieCollectionInfo = async (movieId: number): Promise<{ id: number; name: string } | null> => {
+  try {
+    const data = await fetchWithCache(`/movie/${movieId}`);
+    if (data?.belongs_to_collection?.id) {
+      return {
+        id: Number(data.belongs_to_collection.id),
+        name: data.belongs_to_collection.name || '',
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
   try {
     let resolvedMediaType = item.media_type || (item.first_air_date ? "tv" : "movie");
