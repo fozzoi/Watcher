@@ -20,23 +20,40 @@ interface RankedTop10CarouselProps {
   toggleWatchlist: (item: any) => void;
 }
 
-const OutlinedNumeral = memo(({ rank }: { rank: number }) => (
-  <View style={styles.numeralContainer} pointerEvents="none">
-    <Text style={styles.numeralText}>{rank}</Text>
-  </View>
-));
+const NUMERAL_URIS: Record<number, string> = {};
+for (let r = 1; r <= 10; r++) {
+  const isDoubleDigit = r >= 10;
+  const viewBoxWidth = isDoubleDigit ? 95 : 65;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxWidth} 85" width="${viewBoxWidth}" height="85"><text x="2" y="70" font-size="74" font-weight="900" font-family="sans-serif" stroke="white" stroke-width="2.5" fill="none">${r}</text></svg>`;
+  NUMERAL_URIS[r] = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+const OutlinedNumeral = memo(({ rank }: { rank: number }) => {
+  const isDoubleDigit = rank >= 10;
+  const svgUri = NUMERAL_URIS[rank] || NUMERAL_URIS[1];
+
+  return (
+    <View style={styles.numeralContainer} pointerEvents="none">
+      <Image
+        source={{ uri: svgUri }}
+        style={{ width: isDoubleDigit ? 78 : 54, height: 70 }}
+        contentFit="contain"
+        cachePolicy="memory"
+      />
+    </View>
+  );
+});
 
 const RankedCard = memo(
   ({
     item,
     rank,
-    isAdded,
     onPress,
     toggleWatchlist,
   }: {
     item: any;
     rank: number;
-    isAdded: boolean;
+    isAdded?: boolean;
     onPress: () => void;
     toggleWatchlist: (item: any) => void;
   }) => {
@@ -62,12 +79,11 @@ const RankedCard = memo(
             </View>
           )}
 
-          {/* Quick-Add Heart */}
+          {/* Quick-Add Heart: granular reactivity without parent re-render */}
           <View style={styles.heartOverlay}>
             <QuickAddButton
               item={item}
               itemId={item.id}
-              isAdded={isAdded}
               onPress={() => toggleWatchlist(item)}
             />
           </View>
@@ -80,11 +96,11 @@ const RankedCard = memo(
             </View>
           )}
 
-          {/* Pure React Native Outlined Numeral on Card Surface */}
+          {/* GPU Outlined Numeral via expo-image */}
           <OutlinedNumeral rank={rank} />
         </View>
 
-        {/* Title and Metadata below the card */}
+        {/* Title and Metadata below card */}
         <View style={styles.metaContainer}>
           <Text style={styles.title} numberOfLines={1}>
             {item.title || item.name}
@@ -95,11 +111,14 @@ const RankedCard = memo(
         </View>
       </TouchableOpacity>
     );
-  }
+  },
+  (prev, next) =>
+    prev.item.id === next.item.id &&
+    prev.rank === next.rank
 );
 
 const RankedTop10Carousel = memo(
-  ({ data, savedIds, toggleWatchlist }: RankedTop10CarouselProps) => {
+  ({ data, toggleWatchlist }: RankedTop10CarouselProps) => {
     const router = useRouter();
 
     const top10Data = useMemo(() => {
@@ -120,12 +139,11 @@ const RankedTop10Carousel = memo(
         <RankedCard
           item={item}
           rank={index + 1}
-          isAdded={savedIds ? savedIds.has(Number(item.id)) : false}
           onPress={() => handlePress(item)}
           toggleWatchlist={toggleWatchlist}
         />
       ),
-      [savedIds, handlePress, toggleWatchlist]
+      [handlePress, toggleWatchlist]
     );
 
     if (!top10Data.length) return null;
@@ -147,8 +165,10 @@ const RankedTop10Carousel = memo(
           data={top10Data}
           keyExtractor={(item) => `ranked-${item.id}`}
           renderItem={renderItem}
-          recycleItems={true}
+          recycleItems={false}
+          getFixedItemSize={() => ITEM_WIDTH}
           estimatedItemSize={ITEM_WIDTH}
+          drawDistance={150}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           decelerationRate="fast"
@@ -156,7 +176,9 @@ const RankedTop10Carousel = memo(
         />
       </View>
     );
-  }
+  },
+  (prev, next) =>
+    prev.data === next.data
 );
 
 export default RankedTop10Carousel;
@@ -244,25 +266,8 @@ const styles = StyleSheet.create({
   numeralContainer: {
     position: 'absolute',
     left: 4,
-    bottom: -8,
-    width: 60,
-    height: 75,
+    bottom: -4,
     zIndex: 5,
-  },
-  numeralBase: {
-    position: 'absolute',
-    fontSize: 72,
-    fontWeight: '900',
-    fontFamily: 'System',
-    includeFontPadding: false,
-  },
-  numeralStroke: {
-    color: '#ffffff84',
-  },
-  numeralFill: {
-    top: 0,
-    left: 0,
-    color: 'rgba(1, 0, 0, 0.97)',
   },
   metaContainer: {
     marginTop: 8,
@@ -279,13 +284,4 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 2,
   },
-  numeralText: {
-  fontSize: 72,
-  fontWeight: '900',
-  color: 'rgba(18, 18, 20, 0.85)',
-  textShadowColor: 'rgba(255, 255, 255, 0.7)',
-  textShadowOffset: { width: 0, height: 0 },
-  textShadowRadius: 2,
-  includeFontPadding: false,
-},
 });

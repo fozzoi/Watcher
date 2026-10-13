@@ -91,6 +91,12 @@ const CustomTabBar = ({ targetRef, targetReady }: { targetRef: any; targetReady:
                         Animated.timing(scaleAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
                         Animated.timing(translateYAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
                     ]).start();
+                } else if (offsetY > 50 && !isShrunk.current) {
+                    isShrunk.current = true;
+                    Animated.parallel([
+                        Animated.timing(scaleAnim, { toValue: 0.8, duration: 150, useNativeDriver: true }),
+                        Animated.timing(translateYAnim, { toValue: TAB_BAR_HEIGHT * 0.1, duration: 150, useNativeDriver: true }),
+                    ]).start();
                 }
                 return;
             }

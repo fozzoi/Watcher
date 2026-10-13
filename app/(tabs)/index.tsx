@@ -18,10 +18,10 @@ import {
   Keyboard,
   TextInput,
   ActivityIndicator,
+  DeviceEventEmitter,
 } from 'react-native';
-import { AnimatedLegendList } from '@legendapp/list/reanimated';
-import { useSelector } from '@legendapp/state/react';
-import { savedStore$, toggleWatchlistGlobal, syncSavedStore } from '../../src/state/savedState';
+
+import { toggleWatchlistGlobal, syncSavedStore } from '../../src/state/savedState';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Animated, {
   useSharedValue,
@@ -29,6 +29,7 @@ import Animated, {
   withTiming,
   useAnimatedScrollHandler,
   runOnJS,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -63,8 +64,28 @@ import SpotlightCarousel from '../../src/components/explore/SpotlightCarousel';
 import WorldCinemaHub from '../../src/components/explore/WorldCinemaHub';
 import SearchResultsList from '../../src/components/search/SearchResultsList';
 import SearchEmptyState from '../../src/components/search/SearchEmptyState';
-import { HORIZONTAL_MARGIN, HERO_HEIGHT, GENRE_DATA } from '../../src/components/explore/ExploreConstants';
+import { HORIZONTAL_MARGIN, GENRE_DATA } from '../../src/components/explore/ExploreConstants';
 import { LinearGradient } from 'expo-linear-gradient';
+
+/* =========================================================================
+   PERFORMANCE HELPERS (Aligned with Movie & Cast Detail Pages)
+   ========================================================================= */
+const runAfterTransition = (cb: () => void, delayMs = 320) => {
+  let isCancelled = false;
+  let rafId: number | null = null;
+  const timer = setTimeout(() => {
+    if (isCancelled) return;
+    rafId = requestAnimationFrame(() => {
+      if (!isCancelled) cb();
+    });
+  }, delayMs);
+
+  return () => {
+    isCancelled = true;
+    clearTimeout(timer);
+    if (rafId !== null) cancelAnimationFrame(rafId);
+  };
+};
 
 const SkeletonCarousel = memo(() => (
   <View style={styles.skeletonContainer}>
@@ -92,95 +113,417 @@ type ExploreSection = {
   eyebrow?: string;
 };
 
+const emitExploreScroll = (y: number) => {
+  DeviceEventEmitter.emit('exploreScroll', y);
+};
+
+const updateHeroScrollOut = (isOut: boolean) => {
+  if (heroScroll$.isScrolledOut.peek() !== isOut) {
+    heroScroll$.isScrolledOut.set(isOut);
+  }
+};
+
+/* =========================================================================
+   MICRO-RENDERED SUB-COMPONENTS (Isolated State & Zero Root Re-renders)
+   ========================================================================= */
+
+interface ExploreHeaderProps {
+  contentLoading: boolean;
+  rawContent: any;
+  selectedGenre: number;
+  onSelectGenre: (genreId: number) => void;
+  toggleWatchlist: (item: any) => void;
+}
+
+const ExploreHeader = memo(
+  ({
+    contentLoading,
+    rawContent,
+    selectedGenre,
+    onSelectGenre,
+    toggleWatchlist,
+  }: ExploreHeaderProps) => {
+    if (contentLoading && !rawContent) {
+      return (
+        <View style={styles.headerContainer}>
+          <SkeletonHero />
+          <View style={{ marginTop: 20 }}>
+            <SkeletonCarousel />
+            <SkeletonCarousel />
+          </View>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.headerContainer}>
+        <HeroSection
+          items={rawContent?.heroMovies || rawContent?.trendingMovies || []}
+          toggleWatchlist={toggleWatchlist}
+        />
+        <GenreFilter selectedGenre={selectedGenre} onSelectGenre={onSelectGenre} />
+      </View>
+    );
+  },
+  (prev, next) =>
+    prev.contentLoading === next.contentLoading &&
+    prev.rawContent === next.rawContent &&
+    prev.selectedGenre === next.selectedGenre
+);
+
+const ExploreSectionItem = memo(
+  ({
+    item,
+    toggleWatchlist,
+    onExploreAll,
+  }: {
+    item: ExploreSection;
+    toggleWatchlist: (item: any) => void;
+    onExploreAll: (item: ExploreSection) => void;
+  }) => {
+    switch (item.layout) {
+      case 'ranked':
+        return (
+          <RankedTop10Carousel
+            data={item.data}
+            toggleWatchlist={toggleWatchlist}
+          />
+        );
+      case 'spotlight':
+        return (
+          <SpotlightCarousel
+            title={item.title}
+            eyebrow={item.eyebrow}
+            data={item.data}
+            onExploreAll={() => onExploreAll(item)}
+          />
+        );
+      case 'world_hub':
+        return (
+          <WorldCinemaHub
+            langData={item.data}
+            toggleWatchlist={toggleWatchlist}
+          />
+        );
+      case 'standard':
+      default:
+        return (
+          <MediaCarousel
+            title={item.title}
+            type={item.type}
+            data={item.data}
+            toggleWatchlist={toggleWatchlist}
+          />
+        );
+    }
+  },
+  (prev, next) =>
+    prev.item.key === next.item.key &&
+    prev.item.data === next.item.data &&
+    prev.item.title === next.item.title
+);
+
+interface ExploreSearchControllerProps {
+  isExpanded: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  animatedBgStyle: any;
+  animatedSearchStyle: any;
+  animatedHeaderStyle: any;
+  toggleWatchlist: (item: any) => void;
+  isSearchFocusedShared: SharedValue<boolean>;
+  inSearchModeShared: SharedValue<boolean>;
+}
+
+const ExploreSearchController = memo(
+  ({
+    isExpanded,
+    onOpen,
+    onClose,
+    animatedBgStyle,
+    animatedSearchStyle,
+    animatedHeaderStyle,
+    toggleWatchlist,
+    isSearchFocusedShared,
+    inSearchModeShared,
+  }: ExploreSearchControllerProps) => {
+    const router = useRouter();
+    const [query, setQuery] = useState('');
+    const [searchLoading, setSearchLoading] = useState(false);
+    const [recentSearches, setRecentSearches] = useState<string[]>([]);
+    const [tmdbResults, setTmdbResults] = useState<any[]>([]);
+    const [peopleResults, setPeopleResults] = useState<any[]>([]);
+    const searchTimeout = useRef<any>(null);
+
+    const loadSearchHistory = useCallback(async () => {
+      try {
+        const currentStr = await AsyncStorage.getItem('searchHistoryExpl');
+        if (currentStr) {
+          const parsed = JSON.parse(currentStr);
+          if (Array.isArray(parsed)) setRecentSearches(parsed);
+        }
+      } catch {}
+    }, []);
+
+    useEffect(() => {
+      loadSearchHistory();
+    }, [loadSearchHistory]);
+
+    const saveSearchToHistory = async (searchText: string) => {
+      const trimmed = searchText.trim();
+      if (!trimmed) return;
+      try {
+        const updated = [
+          trimmed,
+          ...recentSearches.filter((item) => item.toLowerCase() !== trimmed.toLowerCase()),
+        ].slice(0, 15);
+        setRecentSearches(updated);
+        await AsyncStorage.setItem('searchHistoryExpl', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const handleRemoveRecent = async (itemToRemove: string) => {
+      const updated = recentSearches.filter((i) => i !== itemToRemove);
+      setRecentSearches(updated);
+      await AsyncStorage.setItem('searchHistoryExpl', JSON.stringify(updated));
+    };
+
+    const handleClearAllRecents = async () => {
+      setRecentSearches([]);
+      await AsyncStorage.removeItem('searchHistoryExpl');
+    };
+
+    const handleSearch = useCallback(async (searchText: string) => {
+      const trimmed = searchText.trim();
+      if (!trimmed) {
+        setTmdbResults([]);
+        setPeopleResults([]);
+        setSearchLoading(false);
+        return;
+      }
+      setSearchLoading(true);
+
+      try {
+        const [movies, people, collections] = await Promise.all([
+          searchTMDB(trimmed),
+          searchPeople(trimmed),
+          searchCollections(trimmed),
+        ]);
+
+        const validMovies = movies.filter((item: any) => item.poster_path);
+        const validCollections = collections.filter((item: any) => item.poster_path);
+
+        setTmdbResults([...validCollections, ...validMovies]);
+        setPeopleResults(people.filter((item: any) => item.profile_path));
+      } catch (error) {
+        console.error('Search failed', error);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, []);
+
+    useEffect(() => {
+      const inSearch = query.trim() !== '';
+      inSearchModeShared.value = inSearch;
+      if (!query.trim()) {
+        if (searchTimeout.current) clearTimeout(searchTimeout.current);
+        setTmdbResults((prev) => (prev.length > 0 ? [] : prev));
+        setPeopleResults((prev) => (prev.length > 0 ? [] : prev));
+        setSearchLoading(false);
+        return;
+      }
+      if (searchTimeout.current) clearTimeout(searchTimeout.current);
+      searchTimeout.current = setTimeout(() => handleSearch(query), 320);
+      return () => clearTimeout(searchTimeout.current);
+    }, [query, handleSearch, inSearchModeShared]);
+
+    const handleClose = useCallback(() => {
+      Keyboard.dismiss();
+      setQuery('');
+      isSearchFocusedShared.value = false;
+      inSearchModeShared.value = false;
+      onClose();
+    }, [onClose, isSearchFocusedShared, inSearchModeShared]);
+
+    useFocusEffect(
+      useCallback(() => {
+        const onBackPress = () => {
+          if (query.trim() !== '' || isExpanded) {
+            handleClose();
+            return true;
+          }
+          return false;
+        };
+        const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+        return () => subscription.remove();
+      }, [query, isExpanded, handleClose])
+    );
+
+    return (
+      <>
+        {/* Interactive Search Overlay */}
+        {isExpanded && (
+          <Animated.View
+            style={[
+              StyleSheet.absoluteFill,
+              { zIndex: 10, backgroundColor: '#0A0A0B' },
+              animatedBgStyle,
+            ]}
+          >
+            {query.trim() === '' ? (
+              <SearchEmptyState
+                recentSearches={recentSearches}
+                onSelectQuery={(selected) => {
+                  setQuery(selected);
+                  saveSearchToHistory(selected);
+                }}
+                onRemoveRecent={handleRemoveRecent}
+                onClearAllRecents={handleClearAllRecents}
+              />
+            ) : (
+              <SearchResultsList
+                peopleResults={peopleResults}
+                tmdbResults={tmdbResults}
+                toggleWatchlist={toggleWatchlist}
+              />
+            )}
+          </Animated.View>
+        )}
+
+        {/* Persistent App Header */}
+        <View style={styles.headerWrapper} pointerEvents="box-none">
+          <LinearGradient
+            colors={['rgba(10, 10, 11, 0.95)', 'rgba(10, 10, 11, 0.6)', 'transparent']}
+            style={styles.gradientHeader}
+            pointerEvents="none"
+          />
+          <Animated.View
+            style={[styles.searchBarContainer, animatedHeaderStyle]}
+            pointerEvents="box-none"
+          >
+            <View style={styles.searchRow}>
+              <Animated.View style={[styles.searchInputContainer, animatedSearchStyle]}>
+                <View style={styles.searchIconContainer}>
+                  <Ionicons name="search" size={20} color="#FFFFFF" />
+                </View>
+                <TextInput
+                  placeholder="Discover..."
+                  placeholderTextColor="rgba(255, 255, 255, 0.6)"
+                  value={query}
+                  onChangeText={setQuery}
+                  onFocus={() => {
+                    isSearchFocusedShared.value = true;
+                    onOpen();
+                  }}
+                  onSubmitEditing={() => saveSearchToHistory(query)}
+                  style={styles.searchInput}
+                  selectionColor="#E50914"
+                  returnKeyType="search"
+                  keyboardAppearance="dark"
+                  underlineColorAndroid="transparent"
+                  cursorColor="#E50914"
+                />
+                {searchLoading ? (
+                  <View style={styles.actionIcon}>
+                    <ActivityIndicator color="#E50914" size={18} />
+                  </View>
+                ) : isExpanded ? (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={handleClose}
+                    style={styles.actionIcon}
+                  >
+                    <MaterialIcons name="close" size={22} color="#FFFFFF" />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => router.push('/settings')}
+                    style={styles.actionIcon}
+                  >
+                    <Ionicons name="settings-outline" size={22} color="#FFFFFF" />
+                  </TouchableOpacity>
+                )}
+              </Animated.View>
+            </View>
+          </Animated.View>
+        </View>
+      </>
+    );
+  },
+  (prev, next) =>
+    prev.isExpanded === next.isExpanded
+);
+
+/* =========================================================================
+   EXPLORE PAGE ROOT
+   ========================================================================= */
+
 const ExplorePage = () => {
+  const router = useRouter();
   const [selectedGenre, setSelectedGenre] = useState(0);
 
   const [rawContent, setRawContent] = useState<any>(() => getExploreContentCacheSync(0));
   const [contentLoading, setContentLoading] = useState<boolean>(() => !getExploreContentCacheSync(0));
   const [refreshing, setRefreshing] = useState(false);
-  const [query, setQuery] = useState('');
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [isExpanded, setIsExpanded] = useState(false);
 
-  const [tmdbResults, setTmdbResults] = useState<any[]>([]);
-  const [peopleResults, setPeopleResults] = useState<any[]>([]);
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
   const [forYouShelves, setForYouShelves] = useState<ForYouShelf[]>(() => getForYouShelvesSync());
 
-  // Shelf windowing state: mount 5 shelves initially, stream in 3 on scroll
-  const INITIAL_SHELVES = 6;
-  const [visibleShelfCount, setVisibleShelfCount] = useState(INITIAL_SHELVES);
+  // Progressive Staging: Tier 0 (Immediate Launch) -> Tier 1 (Post-transition) -> Tier 2 (On Scroll)
+  const [renderStage, setRenderStage] = useState<0 | 1>(0);
+  const [hasScrolledPastFold, setHasScrolledPastFold] = useState(false);
+  const hasScrolledShared = useSharedValue(false);
 
   useEffect(() => {
-    setVisibleShelfCount(INITIAL_SHELVES);
-  }, [selectedGenre]);
+    // Stage 1: Mount Tier 1 once transition lands
+    const cancel = runAfterTransition(() => {
+      setRenderStage(1);
+    }, 250);
+    return () => cancel();
+  }, []);
 
-  const savedIds = useSelector(() => savedStore$.savedIds.get());
+
   const feedOpacityAnim = useSharedValue(1);
 
+  // Deferred background taste profile subscription
   useEffect(() => {
     const unsubscribe = subscribeToForYouShelves((updatedShelves) => {
       setForYouShelves(updatedShelves);
     });
-    refreshForYouShelvesIfNeeded();
-    return () => unsubscribe();
+    const cancelTaste = runAfterTransition(() => {
+      refreshForYouShelvesIfNeeded();
+    }, 400);
+    return () => {
+      unsubscribe();
+      cancelTaste();
+    };
   }, []);
 
-  const loadSearchHistory = useCallback(async () => {
-    try {
-      const currentStr = await AsyncStorage.getItem('searchHistoryExpl');
-      if (currentStr) {
-        const parsed = JSON.parse(currentStr);
-        if (Array.isArray(parsed)) setRecentSearches(parsed);
-      }
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    loadSearchHistory();
-  }, [loadSearchHistory]);
-
-  const router = useRouter();
-  const searchTimeout = useRef<any>(null);
   const contentRequestRef = useRef(0);
-
-  const inSearchMode = query.trim() !== '';
-  const isExpanded = isSearchFocused || inSearchMode;
+  const lastPrefsRef = useRef<string>('');
 
   const bgOpacity = useSharedValue(0);
   const searchWidthAnim = useSharedValue(0);
   const searchBarTranslateY = useSharedValue(0);
-  const lastOffsetY = useSharedValue(0);
-  const wasPastHero = useSharedValue(false);
+  const isBarHidden = useSharedValue(false);
+  const isHeroOutShared = useSharedValue(false);
+  const lastScrollY = useSharedValue(0);
   const isSearchFocusedShared = useSharedValue(false);
   const inSearchModeShared = useSharedValue(false);
 
   useEffect(() => {
-    isSearchFocusedShared.value = isSearchFocused;
-  }, [isSearchFocused]);
-
-  useEffect(() => {
-    inSearchModeShared.value = inSearchMode;
-  }, [inSearchMode]);
-
-  useEffect(() => {
     if (isExpanded) {
       searchBarTranslateY.value = withTiming(0, { duration: 150 });
+      DeviceEventEmitter.emit('exploreScroll', 0);
+      isBarHidden.value = false;
     }
   }, [isExpanded]);
-
-  const updateHeroScroll = useCallback((isPastHero: boolean) => {
-    if (isPastHero !== heroScroll$.isScrolledOut.peek()) {
-      heroScroll$.isScrolledOut.set(isPastHero);
-    }
-  }, []);
 
   useEffect(() => {
     bgOpacity.value = withTiming(isExpanded ? 1 : 0, { duration: 180 });
-  }, [isExpanded]);
-
-  useEffect(() => {
     searchWidthAnim.value = withTiming(isExpanded ? 1 : 0, { duration: 180 });
   }, [isExpanded]);
 
@@ -199,29 +542,6 @@ const ExplorePage = () => {
   const animatedFeedStyle = useAnimatedStyle(() => ({
     opacity: feedOpacityAnim.value,
   }));
-
-  const queryRef = useRef(query);
-  useEffect(() => {
-    queryRef.current = query;
-  }, [query]);
-
-  useFocusEffect(
-    useCallback(() => {
-      const onBackPress = () => {
-        if (queryRef.current.trim() !== '' || isSearchFocused) {
-          Keyboard.dismiss();
-          setQuery('');
-          setIsSearchFocused(false);
-          return true;
-        }
-        return false;
-      };
-      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-      return () => subscription.remove();
-    }, [isSearchFocused])
-  );
-
-  const lastPrefsRef = useRef<string>('');
 
   const fetchContent = useCallback(
     async (genreId: number = 0, forceRefresh: boolean = false) => {
@@ -243,7 +563,8 @@ const ExplorePage = () => {
         setContentLoading(false);
         feedOpacityAnim.value = withTiming(1, { duration: 250 });
 
-        setTimeout(() => {
+        // Defer secondary history similarity computation until after transition settles
+        runAfterTransition(() => {
           const history = getSavedItems('history');
           if (history && history.length > 0) {
             getSimilarForHistory(history)
@@ -256,7 +577,7 @@ const ExplorePage = () => {
           } else if (requestId === contentRequestRef.current) {
             setBecauseYouWatched([]);
           }
-        }, 150);
+        }, 300);
       } catch (err) {
         if (requestId === contentRequestRef.current) {
           console.error(err);
@@ -273,6 +594,13 @@ const ExplorePage = () => {
     (genreId: number) => {
       if (genreId === selectedGenre) return;
       setSelectedGenre(genreId);
+      hasScrolledShared.value = false;
+      setHasScrolledPastFold(false);
+      setRenderStage(0);
+
+      const cancel = runAfterTransition(() => {
+        setRenderStage(1);
+      }, 200);
 
       const cached = getExploreContentCacheSync(genreId);
       if (cached) {
@@ -284,12 +612,16 @@ const ExplorePage = () => {
         feedOpacityAnim.value = withTiming(0.45, { duration: 180 });
         setContentLoading(true);
       }
+      return () => cancel();
     },
     [selectedGenre, feedOpacityAnim]
   );
 
   useFocusEffect(
     useCallback(() => {
+      DeviceEventEmitter.emit('exploreScroll', 0);
+      searchBarTranslateY.value = withTiming(0, { duration: 150 });
+      isBarHidden.value = false;
       syncSavedStore();
       getUserPreferences().then((prefs) => {
         const actorsKey = (prefs.favoriteActors || []).map((a: any) => a.id).join(',');
@@ -312,11 +644,17 @@ const ExplorePage = () => {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    hasScrolledShared.value = false;
+    setHasScrolledPastFold(false);
+    setRenderStage(0);
     try {
       await Promise.all([
         fetchContent(selectedGenre, true),
         refreshForYouShelvesIfNeeded(true),
       ]);
+      runAfterTransition(() => {
+        setRenderStage(1);
+      }, 200);
     } finally {
       setRefreshing(false);
     }
@@ -324,9 +662,6 @@ const ExplorePage = () => {
 
   // =========================================================================
   // CURATED EDITORIAL HIERARCHY
-  // - Replaces repetitive genre carousels with top chips
-  // - Elevates TV Series discovery earlier in the feed
-  // - Showcases a single featured actor row instead of stacking multiple
   // =========================================================================
   const exploreSections = useMemo(() => {
     if (!rawContent) return [];
@@ -349,7 +684,7 @@ const ExplorePage = () => {
     // 2. Personalized Franchise Spotlight (16:9 Landscape Rail)
     if (selectedGenre === 0 && forYouShelves.length > 0) {
       const topShelf = forYouShelves[0];
-      const validItems = (topShelf.items || []).filter((item: any) => isMediaReleased(item, todayStr));
+      const validItems = (topShelf.items || []).filter((item: any) => isMediaReleased(item, todayStr)).slice(0, 10);
       if (validItems.length > 0) {
         sections.push({
           key: `spotlight-${topShelf.shelfId}`,
@@ -367,7 +702,7 @@ const ExplorePage = () => {
         type: 'spotlight',
         layout: 'spotlight',
         eyebrow: 'MUST WATCH',
-        data: rawContent.heroMovies,
+        data: rawContent.heroMovies.slice(0, 10),
       });
     }
 
@@ -379,7 +714,7 @@ const ExplorePage = () => {
         title,
         type: 'trendingtv',
         layout: 'standard',
-        data: rawContent.trendingTV,
+        data: rawContent.trendingTV.slice(0, 15),
       });
     }
 
@@ -403,7 +738,7 @@ const ExplorePage = () => {
           title: `Spotlight: ${featuredActor.actorName}`,
           type: `actor-${featuredActor.actorId}`,
           layout: 'standard',
-          data: featuredActor.items,
+          data: featuredActor.items.slice(0, 15),
         });
       }
     }
@@ -417,7 +752,7 @@ const ExplorePage = () => {
           title: `Because You Watched ${primaryRec.sourceTitle}`,
           type: 'becauseyouwatched',
           layout: 'standard',
-          data: primaryRec.items,
+          data: primaryRec.items.slice(0, 15),
         });
       }
     }
@@ -425,376 +760,236 @@ const ExplorePage = () => {
     // 7. Secondary Taste Profile Collection ("Your Sweet Spot")
     if (selectedGenre === 0 && forYouShelves.length > 1) {
       const secondaryShelf = forYouShelves[1];
-      const items = (secondaryShelf.items || []).filter((item: any) => isMediaReleased(item, todayStr));
+      const items = (secondaryShelf.items || []).filter((item: any) => isMediaReleased(item, todayStr)).slice(0, 15);
       if (items.length > 0) {
         sections.push({
           key: `foryou-${secondaryShelf.shelfId}`,
           title: secondaryShelf.title,
           type: `foryou-${secondaryShelf.shelfId}`,
           layout: 'standard',
+          eyebrow: secondaryShelf.subtitle || undefined,
           data: items,
         });
       }
     }
 
-    // 8. Hidden Gems (Cult & Indie Discoveries)
-    if (rawContent.hiddenGems?.length) {
+    // 8. Popular / Trending
+    if (rawContent.popularMovies?.length) {
       sections.push({
-        key: 'hidden-gems',
-        title: selectedGenreName ? `Hidden ${selectedGenreName} Gems` : 'Hidden Gems',
-        type: 'hiddengems',
+        key: 'popular-movies',
+        title: selectedGenreName ? `Trending in ${selectedGenreName}` : 'Trending Movies',
+        type: 'popular',
         layout: 'standard',
-        data: rawContent.hiddenGems,
+        data: rawContent.popularMovies.slice(0, 15),
       });
     }
 
-    // 9. All-Time Masterpieces / Top Rated
+    // 9. In Theaters Now
+    if (rawContent.nowPlaying?.length) {
+      const nowPlayingReleased = rawContent.nowPlaying.filter((m: any) =>
+        isMediaReleased(m.release_date, todayStr)
+      );
+      sections.push({
+        key: 'now-playing',
+        title: 'In Theaters Now',
+        type: 'nowplaying',
+        layout: 'standard',
+        data: (nowPlayingReleased.length > 0 ? nowPlayingReleased : rawContent.nowPlaying).slice(0, 15),
+      });
+    }
+
+    // 10. All-Time Masterpieces / Top Rated
     if (rawContent.topRated?.length) {
       sections.push({
         key: 'top-rated',
         title: selectedGenreName ? `Top Rated ${selectedGenreName}` : 'All-Time Masterpieces',
         type: 'toprated',
         layout: 'standard',
-        data: rawContent.topRated,
+        data: rawContent.topRated.slice(0, 15),
       });
     }
 
-    // 10. Nostalgic Hits
+    // 11. Nostalgic Hits
     if (rawContent.nostalgia?.length) {
       sections.push({
         key: 'nostalgia',
         title: 'Nostalgic Hits',
         type: 'nostalgia',
         layout: 'standard',
-        data: rawContent.nostalgia,
+        data: rawContent.nostalgia.slice(0, 15),
       });
     }
 
-    // 11. Animated Favorites
+    // 12. Animated Favorites
     if (rawContent.animatedMovies?.length) {
       sections.push({
         key: 'animated-movies',
         title: 'Animated Favorites',
         type: 'animatedmovies',
         layout: 'standard',
-        data: rawContent.animatedMovies,
+        data: rawContent.animatedMovies.slice(0, 15),
       });
     }
 
-    // 12. Coming Soon to Theaters
+    // 13. Coming Soon to Theaters
     if (rawContent.upcoming?.length) {
       sections.push({
         key: 'upcoming',
         title: 'Coming Soon to Theaters',
         type: 'upcoming',
         layout: 'standard',
-        data: rawContent.upcoming,
+        data: rawContent.upcoming.slice(0, 15),
       });
     }
 
     return sections;
   }, [rawContent, forYouShelves, becauseYouWatched, selectedGenre]);
 
-  const paginatedSections = useMemo(
-    () => exploreSections.slice(0, visibleShelfCount),
-    [exploreSections, visibleShelfCount]
-  );
+  // Tier slicing (matching Detail Page progressive mount pattern)
+  const tier0Sections = useMemo(() => exploreSections.slice(0, 1), [exploreSections]);
+  const tier1Sections = useMemo(() => exploreSections.slice(1, 4), [exploreSections]);
+  const tier2Sections = useMemo(() => exploreSections.slice(4), [exploreSections]);
 
-  const loadMoreShelves = useCallback(() => {
-  setVisibleShelfCount((prev) => Math.min(prev + 1, exploreSections.length));
-}, [exploreSections.length]);
+  const handleExploreAll = useCallback((item: ExploreSection) => {
+    router.push({
+      pathname: '/viewall',
+      params: {
+        title: item.title,
+        type: 'foryou-saga-all',
+      },
+    });
+  }, [router]);
 
-  const renderExploreHeader = useCallback(() => {
-    if (contentLoading && !rawContent) {
-      return (
-        <View style={styles.headerContainer}>
-          <SkeletonHero />
-          <View style={{ marginTop: 20 }}>
-            <SkeletonCarousel />
-            <SkeletonCarousel />
-          </View>
-        </View>
-      );
-    }
-    return (
-      <View style={styles.headerContainer}>
-        <HeroSection
-          items={rawContent?.heroMovies || rawContent?.trendingMovies || []}
-          toggleWatchlist={handleToggleWatchlist}
-        />
-        <GenreFilter selectedGenre={selectedGenre} onSelectGenre={handleSelectGenre} />
-      </View>
-    );
-  }, [contentLoading, rawContent, handleToggleWatchlist, selectedGenre, handleSelectGenre]);
-
-  const renderExploreSection = useCallback(
-    ({ item }: { item: ExploreSection }) => {
-      switch (item.layout) {
-        case 'ranked':
-          return (
-            <RankedTop10Carousel
-              data={item.data}
-              savedIds={savedIds}
-              toggleWatchlist={handleToggleWatchlist}
-            />
-          );
-        case 'spotlight':
-          return (
-            <SpotlightCarousel
-              title={item.title}
-              eyebrow={item.eyebrow}
-              data={item.data}
-              onExploreAll={() => {
-                router.push({
-                  pathname: '/viewall',
-                  params: {
-                    title: item.title,
-                    type: 'foryou-saga-all',
-                  },
-                });
-              }}
-            />
-          );
-        case 'world_hub':
-          return (
-            <WorldCinemaHub
-              langData={item.data}
-              savedIds={savedIds}
-              toggleWatchlist={handleToggleWatchlist}
-            />
-          );
-        case 'standard':
-        default:
-          return (
-            <MediaCarousel
-              title={item.title}
-              type={item.type}
-              data={item.data}
-              savedIds={savedIds}
-              toggleWatchlist={handleToggleWatchlist}
-            />
-          );
-      }
-    },
-    [handleToggleWatchlist, savedIds]
-  );
-
-  const renderFooter = useCallback(() => <View style={{ height: 40 }} />, []);
+  const handleOpenSearch = useCallback(() => setIsExpanded(true), []);
+  const handleCloseSearch = useCallback(() => setIsExpanded(false), []);
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
       'worklet';
-      const currentOffset = event.contentOffset.y;
-      const diff = currentOffset - lastOffsetY.value;
-      lastOffsetY.value = currentOffset;
+      const currentY = event.contentOffset.y;
+      const diff = currentY - lastScrollY.value;
+      lastScrollY.value = currentY;
 
-      const isPastHero = currentOffset > HERO_HEIGHT * 0.85;
-      if (isPastHero !== wasPastHero.value) {
-        wasPastHero.value = isPastHero;
-        runOnJS(updateHeroScroll)(isPastHero);
+      // Tab bar shrink sync (0.8 scale on scroll down, restore on scroll up / top)
+      runOnJS(emitExploreScroll)(currentY);
+
+      // Pause hero autoplay and animations when scrolled completely off-screen (> 450px)
+      const isHeroOut = currentY > 450;
+      if (isHeroOut !== isHeroOutShared.value) {
+        isHeroOutShared.value = isHeroOut;
+        runOnJS(updateHeroScrollOut)(isHeroOut);
       }
 
-      if (currentOffset <= 0) {
-        searchBarTranslateY.value = withTiming(0, { duration: 150 });
-      } else if (
-        diff > 25 &&
-        searchBarTranslateY.value === 0 &&
-        !isSearchFocusedShared.value &&
-        !inSearchModeShared.value
-      ) {
-        searchBarTranslateY.value = withTiming(-100, { duration: 180 });
-      } else if (diff < -25 && searchBarTranslateY.value < 0) {
+      // Unlock Tier 2 shelves once scrolled past hero/fold
+      if (currentY > 120 && !hasScrolledShared.value) {
+        hasScrolledShared.value = true;
+        runOnJS(setHasScrolledPastFold)(true);
+      }
+
+      // 1. Always reveal search bar at the top
+      if (currentY <= 15) {
+        if (isBarHidden.value) {
+          isBarHidden.value = false;
+          searchBarTranslateY.value = withTiming(0, { duration: 180 });
+        }
+        return;
+      }
+
+      // 2. Lock search bar visible while search is open
+      if (isSearchFocusedShared.value || inSearchModeShared.value) {
+        return;
+      }
+
+      // 3. Scroll DOWN -> Hide search bar (latched: fires ONCE, not 60x/sec)
+      if (diff > 10 && !isBarHidden.value && currentY > 80) {
+        isBarHidden.value = true;
+        searchBarTranslateY.value = withTiming(-100, { duration: 200 });
+      }
+      // 4. Scroll UP -> Reveal search bar (latched: fires ONCE)
+      else if (diff < -10 && isBarHidden.value) {
+        isBarHidden.value = false;
         searchBarTranslateY.value = withTiming(0, { duration: 180 });
       }
     },
   });
 
-  const handleSearch = useCallback(async (searchText: string) => {
-    const trimmed = searchText.trim();
-    if (!trimmed) {
-      setTmdbResults([]);
-      setPeopleResults([]);
-      setSearchLoading(false);
-      return;
-    }
-    setSearchLoading(true);
-
-    try {
-      const [movies, people, collections] = await Promise.all([
-        searchTMDB(trimmed),
-        searchPeople(trimmed),
-        searchCollections(trimmed),
-      ]);
-
-      const validMovies = movies.filter((item: any) => item.poster_path);
-      const validCollections = collections.filter((item: any) => item.poster_path);
-
-      setTmdbResults([...validCollections, ...validMovies]);
-      setPeopleResults(people.filter((item: any) => item.profile_path));
-    } catch (error) {
-      console.error('Search failed', error);
-    } finally {
-      setSearchLoading(false);
-    }
-  }, []);
-
-  const saveSearchToHistory = async (searchText: string) => {
-    const trimmed = searchText.trim();
-    if (!trimmed) return;
-    try {
-      const updated = [
-        trimmed,
-        ...recentSearches.filter((item) => item.toLowerCase() !== trimmed.toLowerCase()),
-      ].slice(0, 15);
-      setRecentSearches(updated);
-      await AsyncStorage.setItem('searchHistoryExpl', JSON.stringify(updated));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleRemoveRecent = async (itemToRemove: string) => {
-    const updated = recentSearches.filter((i) => i !== itemToRemove);
-    setRecentSearches(updated);
-    await AsyncStorage.setItem('searchHistoryExpl', JSON.stringify(updated));
-  };
-
-  const handleClearAllRecents = async () => {
-    setRecentSearches([]);
-    await AsyncStorage.removeItem('searchHistoryExpl');
-  };
-
-  useEffect(() => {
-    if (!query.trim()) {
-      if (searchTimeout.current) clearTimeout(searchTimeout.current);
-      setTmdbResults((prev) => (prev.length > 0 ? [] : prev));
-      setPeopleResults((prev) => (prev.length > 0 ? [] : prev));
-      setSearchLoading(false);
-      return;
-    }
-    if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    searchTimeout.current = setTimeout(() => handleSearch(query), 320);
-    return () => clearTimeout(searchTimeout.current);
-  }, [query, handleSearch]);
-
   return (
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      {/* Main virtualized feed */}
-      <AnimatedLegendList
+      {/* Main Smooth ScrollView with Progressive Tier Mounts (Matched with Detail Page) */}
+      <Animated.ScrollView
         style={[{ flex: 1 }, animatedFeedStyle as any]}
-        data={contentLoading && !rawContent ? [] : paginatedSections}
-        renderItem={renderExploreSection}
-        keyExtractor={(item) => item.key}
-        recycleItems={false}
-        estimatedItemSize={320}
-        drawDistance={500}
-        onEndReached={loadMoreShelves}
-        onEndReachedThreshold={0.5}
-        decelerationRate="normal"
-        ListHeaderComponent={renderExploreHeader}
-        ListFooterComponent={renderFooter}
-        keyboardDismissMode="on-drag"
-        onScrollBeginDrag={() => Keyboard.dismiss()}
+        contentContainerStyle={styles.scrollContent}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        overScrollMode="never"
+        keyboardDismissMode="on-drag"
+        onScrollBeginDrag={() => Keyboard.dismiss()}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />
         }
-      />
-
-      {/* Interactive Search Overlay */}
-      {isExpanded && (
-        <Animated.View
-          style={[
-            StyleSheet.absoluteFill,
-            { zIndex: 10, backgroundColor: '#0A0A0B' },
-            animatedBgStyle,
-          ]}
-        >
-          {query.trim() === '' ? (
-            <SearchEmptyState
-              recentSearches={recentSearches}
-              onSelectQuery={(selected) => {
-                setQuery(selected);
-                saveSearchToHistory(selected);
-              }}
-              onRemoveRecent={handleRemoveRecent}
-              onClearAllRecents={handleClearAllRecents}
-            />
-          ) : (
-            <SearchResultsList
-              peopleResults={peopleResults}
-              tmdbResults={tmdbResults}
-              savedIds={savedIds}
-              toggleWatchlist={handleToggleWatchlist}
-            />
-          )}
-        </Animated.View>
-      )}
-
-      {/* Persistent App Header */}
-      <View style={styles.headerWrapper} pointerEvents="box-none">
-        <LinearGradient
-          colors={['rgba(10, 10, 11, 0.95)', 'rgba(10, 10, 11, 0.6)', 'transparent']}
-          style={styles.gradientHeader}
-          pointerEvents="none"
+      >
+        <ExploreHeader
+          contentLoading={contentLoading}
+          rawContent={rawContent}
+          selectedGenre={selectedGenre}
+          onSelectGenre={handleSelectGenre}
+          toggleWatchlist={handleToggleWatchlist}
         />
-        <Animated.View
-          style={[styles.searchBarContainer, animatedHeaderStyle]}
-          pointerEvents="box-none"
-        >
-          <View style={styles.searchRow}>
-            <Animated.View style={[styles.searchInputContainer, animatedSearchStyle]}>
-              <View style={styles.searchIconContainer}>
-                <Ionicons name="search" size={20} color="#FFFFFF" />
-              </View>
-              <TextInput
-                placeholder="Discover..."
-                placeholderTextColor="rgba(255, 255, 255, 0.6)"
-                value={query}
-                onChangeText={setQuery}
-                onFocus={() => setIsSearchFocused(true)}
-                onSubmitEditing={() => saveSearchToHistory(query)}
-                style={styles.searchInput}
-                selectionColor="#E50914"
-                returnKeyType="search"
-                keyboardAppearance="dark"
-                underlineColorAndroid="transparent"
-                cursorColor="#E50914"
+
+        {!(contentLoading && !rawContent) && (
+          <>
+            {/* TIER 0: Immediate Mount (First shelf below hero) */}
+            {tier0Sections.map((item) => (
+              <ExploreSectionItem
+                key={item.key}
+                item={item}
+                toggleWatchlist={handleToggleWatchlist}
+                onExploreAll={handleExploreAll}
               />
-              {searchLoading ? (
-                <View style={styles.actionIcon}>
-                  <ActivityIndicator color="#E50914" size={18} />
-                </View>
-              ) : isExpanded ? (
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setQuery('');
-                    setIsSearchFocused(false);
-                  }}
-                  style={styles.actionIcon}
-                >
-                  <MaterialIcons name="close" size={22} color="#FFFFFF" />
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => router.push('/settings')}
-                  style={styles.actionIcon}
-                >
-                  <Ionicons name="settings-outline" size={22} color="#FFFFFF" />
-                </TouchableOpacity>
-              )}
-            </Animated.View>
-          </View>
-        </Animated.View>
-      </View>
+            ))}
+
+            {/* TIER 1: Post-Transition Mount (250ms via runAfterTransition) */}
+            {(renderStage >= 1 || hasScrolledPastFold) &&
+              tier1Sections.map((item) => (
+                <ExploreSectionItem
+                  key={item.key}
+                  item={item}
+                  toggleWatchlist={handleToggleWatchlist}
+                  onExploreAll={handleExploreAll}
+                />
+              ))}
+
+            {/* TIER 2: Anchored to Scroll Past Fold */}
+            {hasScrolledPastFold &&
+              tier2Sections.map((item) => (
+                <ExploreSectionItem
+                  key={item.key}
+                  item={item}
+                  toggleWatchlist={handleToggleWatchlist}
+                  onExploreAll={handleExploreAll}
+                />
+              ))}
+          </>
+        )}
+
+        <View style={{ height: 40 }} />
+      </Animated.ScrollView>
+
+      {/* Micro-rendered Search Controller (Isolated state, zero feed re-renders while typing) */}
+      <ExploreSearchController
+        isExpanded={isExpanded}
+        onOpen={handleOpenSearch}
+        onClose={handleCloseSearch}
+        animatedBgStyle={animatedBgStyle}
+        animatedSearchStyle={animatedSearchStyle}
+        animatedHeaderStyle={animatedHeaderStyle}
+        toggleWatchlist={handleToggleWatchlist}
+        isSearchFocusedShared={isSearchFocusedShared}
+        inSearchModeShared={inSearchModeShared}
+      />
     </View>
   );
 };

@@ -17,13 +17,14 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { getSavedItems, getAllAiEmbeddings, subscribeToSavedItemsChanges } from '../../src/database';
 
-import { getImageUrl, getFullDetails, fetchChatGemini, fetchEmbedding } from '../../src/tmdb';
+import { getImageUrl, getFullDetails, fetchChatGemini, fetchEmbedding, updateUserMemoryWithAi } from '../../src/tmdb';
 import { getUserPreferences } from '../../src/userPreferences';
 import {
   Conversation, listConversations, saveConversation, deleteConversation,
-  titleFromFirstMessage, getUserMemory,
+  titleFromFirstMessage, getUserMemory, setUserMemory,
   getAiName, setAiName as persistAiName,
 } from '../../src/chatStorage';
+import { buildEnrichedAiContext } from '../../src/services/aiContext';
 import ChatHistorySidebar from '../../src/components/aichat/ChatHistorySidebar';
 import FormattedMarkdownText from '../../src/components/aichat/FormattedMarkdownText';
 import AiComparisonTable from '../../src/components/aichat/AiComparisonTable';
@@ -57,7 +58,7 @@ type ChatMessage =
   | { id: string; role: 'user'; kind: 'text'; text: string }
   | { id: string; role: 'bot'; kind: 'text'; text: string }
   | { id: string; role: 'bot'; kind: 'typing' }
-  | { id: string; role: 'bot'; kind: 'movies'; text?: string; movies: Movie[] }
+  | { id: string; role: 'bot'; kind: 'movies'; text?: string; movies: Movie[]; titles?: string[] }
   | { id: string; role: 'bot'; kind: 'actors'; text?: string; actors: Actor[] }
   | { id: string; role: 'bot'; kind: 'movie_detail'; text?: string; movie: Movie }
   | { id: string; role: 'bot'; kind: 'table'; title?: string; text?: string; headers: string[]; rows: (string | number)[][] }
@@ -544,7 +545,7 @@ const AiChat = () => {
 
     try {
       // Rank the watchlist by similarity to this question. Optional: failures must never block the reply.
-      let topWatchlistTitles = watchlistTitles;
+      let topWatchlistTitles = watchlistTitles.slice(0, 30);
       if (watchlistTitles.length > 0) {
         try {
           const userEmbedding = await fetchEmbedding(text);
@@ -571,17 +572,54 @@ const AiChat = () => {
       const freshMemory = await getUserMemory();
       setUserMemoryState(freshMemory);
 
-      const enrichedMemory = `${freshMemory}\n\n[System Note: The user has a total of ${watchlistTitles.length} movies/shows saved in their Watchlist, and ${watchedTitles.length} titles in their Watched history.]`;
+      const { enrichedMemory, enrichedUserPrefs, timezone } = buildEnrichedAiContext({
+        userMemory: freshMemory,
+        aiName: aiName || undefined,
+        userPrefs,
+        watchlistTitles: topWatchlistTitles,
+        watchedTitles,
+        watchlistCollections,
+      });
 
       const reply = await fetchChatGemini(
-        text, history, enrichedMemory, watchedTitles, topWatchlistTitles, watchlistCollections, userPrefs
+        text,
+        history,
+        enrichedMemory,
+        watchedTitles,
+        topWatchlistTitles,
+        watchlistCollections,
+        enrichedUserPrefs,
+        timezone
       );
 
+      console.log('🎬 [AIChat] Full AI Reply Received:', reply);
+      if (reply?.movies && reply.movies.length > 0) {
+        console.log('🎬 [AIChat] Movies received from AI:', JSON.stringify(reply.movies, null, 2));
+      } else if (reply?.movie) {
+        console.log('🎬 [AIChat] Single Movie Detail received from AI:', JSON.stringify(reply.movie, null, 2));
+      } else if (reply?.titles && reply.titles.length > 0) {
+        console.log('🎬 [AIChat] Movie Titles received from AI:', reply.titles);
+      }
+
       const bot = normalizeBotReply(reply);
+      if (bot.kind === 'movies') {
+        console.log('🎬 [AIChat] Normalized Bot Movies to display:', bot.movies);
+      } else if (bot.kind === 'movie_detail') {
+        console.log('🎬 [AIChat] Normalized Bot Movie Detail to display:', bot.movie);
+      }
+
       pendingReplyId.current = bot.id;
       setMessages((prev) => [...prev.filter((m) => m.id !== typingId), bot]);
 
-      // updateUserMemory(userMemory, text).then((updated) => { ... });
+      // Learn persistent preferences in the background without blocking the conversation
+      updateUserMemoryWithAi(freshMemory, text)
+        .then((updated) => {
+          if (updated && updated.trim() && updated !== freshMemory) {
+            setUserMemory(updated);
+            setUserMemoryState(updated);
+          }
+        })
+        .catch(() => {});
     } catch (e) {
       console.error('fetchChatGemini failed:', e);
       pendingReplyId.current = null;
@@ -593,7 +631,7 @@ const AiChat = () => {
     } finally {
       setSending(false);
     }
-  }, [input, sending, messages, userMemory, watchedTitles, watchlistTitles, watchlistCollections, userPrefs, pushMessage, scrollToEnd]);
+  }, [input, sending, messages, userMemory, aiName, watchedTitles, watchlistTitles, watchlistCollections, userPrefs, pushMessage, scrollToEnd]);
 
   const navigateToDetails = (full: any) => {
     Keyboard.dismiss();
@@ -647,13 +685,19 @@ const AiChat = () => {
         return (
           <View>
             {botText(m.text)}
-            {movies.length > 0 && (
+            {movies.length > 0 ? (
               <View style={styles.cardStack}>
                 {movies.map((item) => (
                   <MovieCard key={String(item.id)} movie={item} watched={isMovieWatched(item)} onPress={openMovie} />
                 ))}
               </View>
-            )}
+            ) : m.titles && m.titles.length > 0 ? (
+              <View style={[styles.botRow, { marginTop: 6 }]}>
+                {m.titles.map((t: string, i: number) => (
+                  <Text key={i} style={[styles.botText, { marginBottom: 4 }]}>• {t}</Text>
+                ))}
+              </View>
+            ) : null}
           </View>
         );
       }

@@ -63,82 +63,94 @@ const SpotlightCard = memo(
         </View>
       </TouchableOpacity>
     );
-  }
+  },
+  (prev, next) =>
+    prev.item.id === next.item.id &&
+    prev.eyebrow === next.eyebrow
 );
 
-const SpotlightCarousel = memo(({ title = 'Franchise Spotlight', eyebrow, data, onExploreAll }: SpotlightCarouselProps) => {
-  const router = useRouter();
+const SpotlightCarousel = memo(
+  ({ title = 'Franchise Spotlight', eyebrow, data, onExploreAll }: SpotlightCarouselProps) => {
+    const router = useRouter();
 
-  const validData = useMemo(() => {
-    if (!Array.isArray(data)) return [];
-    return data.filter((item) => Boolean(item && (item.backdrop_path || item.poster_path)));
-  }, [data]);
+    const validData = useMemo(() => {
+      if (!Array.isArray(data)) return [];
+      const filtered = data.filter((item) => Boolean(item && (item.backdrop_path || item.poster_path)));
+      return filtered.slice(0, 10);
+    }, [data]);
 
-  // Navigate to collection details page (or movie details if not in a collection)
-  const handlePress = useCallback(
-    async (item: any) => {
-      let collectionId = item.collection_id || item.belongs_to_collection?.id || item._colId;
-      let collectionName = item.collection_name || item.belongs_to_collection?.name || item._colName;
+    // Navigate to collection details page (or movie details if not in a collection)
+    const handlePress = useCallback(
+      async (item: any) => {
+        let collectionId = item.collection_id || item.belongs_to_collection?.id || item._colId;
+        let collectionName = item.collection_name || item.belongs_to_collection?.name || item._colName;
 
-      // Resilient fallback: fetch collection info if collection id wasn't attached
-      if (!collectionId && item.id) {
-        try {
-          const colInfo = await getMovieCollectionInfo(item.id);
-          if (colInfo?.id) {
-            collectionId = colInfo.id;
-            collectionName = colInfo.name || collectionName;
+        // Resilient fallback: fetch collection info if collection id wasn't attached
+        if (!collectionId && item.id) {
+          try {
+            const colInfo = await getMovieCollectionInfo(item.id);
+            if (colInfo?.id) {
+              collectionId = colInfo.id;
+              collectionName = colInfo.name || collectionName;
+            }
+          } catch {
+            // non-blocking
           }
-        } catch {
-          // non-blocking
         }
-      }
 
-      if (collectionId) {
-        const titleToPass = collectionName || item.title || item.name || '';
-        router.push(`/collection/${collectionId}?name=${encodeURIComponent(titleToPass)}&title=${encodeURIComponent(titleToPass)}`);
-      } else if (item.id) {
-        router.push(`/movie/${item.id}`);
-      }
-    },
-    [router]
-  );
+        if (collectionId) {
+          const titleToPass = collectionName || item.title || item.name || '';
+          router.push(`/collection/${collectionId}?name=${encodeURIComponent(titleToPass)}&title=${encodeURIComponent(titleToPass)}`);
+        } else if (item.id) {
+          router.push(`/movie/${item.id}`);
+        }
+      },
+      [router]
+    );
 
-  const renderItem = useCallback(
-    ({ item }: { item: any }) => (
-      <SpotlightCard item={item} eyebrow={eyebrow} onPress={() => handlePress(item)} />
-    ),
-    [eyebrow, handlePress]
-  );
+    const renderItem = useCallback(
+      ({ item }: { item: any }) => (
+        <SpotlightCard item={item} eyebrow={eyebrow} onPress={() => handlePress(item)} />
+      ),
+      [eyebrow, handlePress]
+    );
 
-  if (!validData.length) return null;
+    if (!validData.length) return null;
 
-  return (
-    <View style={styles.sectionContainer}>
-      <View style={styles.headerRow}>
-        <Text style={styles.sectionTitle}>{title}</Text>
-        {onExploreAll ? (
-          <TouchableOpacity activeOpacity={0.8} onPress={onExploreAll} style={styles.exploreAllBtn}>
-            <Text style={styles.exploreAllText}>EXPLORE ALL</Text>
-            <Ionicons name="chevron-forward" size={14} color="#E50914" />
-          </TouchableOpacity>
-        ) : null}
+    return (
+      <View style={styles.sectionContainer}>
+        <View style={styles.headerRow}>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          {onExploreAll ? (
+            <TouchableOpacity activeOpacity={0.8} onPress={onExploreAll} style={styles.exploreAllBtn}>
+              <Text style={styles.exploreAllText}>EXPLORE ALL</Text>
+              <Ionicons name="chevron-forward" size={14} color="#E50914" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        <LegendList
+          horizontal
+          data={validData}
+          keyExtractor={(item) => `spotlight-${item.id}`}
+          renderItem={renderItem}
+          recycleItems={false}
+          getFixedItemSize={() => SNAP_INTERVAL}
+          estimatedItemSize={SNAP_INTERVAL}
+          drawDistance={150}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          decelerationRate="fast"
+          snapToInterval={SNAP_INTERVAL}
+        />
       </View>
-
-      <LegendList
-        horizontal
-        data={validData}
-        keyExtractor={(item) => `spotlight-${item.id}`}
-        renderItem={renderItem}
-        recycleItems={true}
-        estimatedItemSize={SNAP_INTERVAL}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        decelerationRate="fast"
-        snapToInterval={SNAP_INTERVAL}
-      />
-    </View>
-  );
-});
+    );
+  },
+  (prev, next) =>
+    prev.title === next.title &&
+    prev.eyebrow === next.eyebrow &&
+    prev.data === next.data
+);
 
 export default SpotlightCarousel;
 

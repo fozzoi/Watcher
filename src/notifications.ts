@@ -117,9 +117,20 @@ const executeNotificationCheckInternal = async () => {
       return dateObj.isAfter(now) && dateObj.isSameOrBefore(now.add(14, 'day'));
     };
 
+    const watchedMovieIds = new Set<number>(
+      history
+        .filter((i: any) => i.media_type !== 'tv' && !i.first_air_date)
+        .map((i: any) => Number(i.id))
+        .filter((id: number) => !isNaN(id))
+    );
+
     // 1. & 2. Check TV Shows and Movies with chunking
     const tvItems = [...history, ...watchlist].filter(i => i.media_type === 'tv' || i.first_air_date);
-    const movieItems = watchlist.filter(i => i.media_type === 'movie' || (!i.first_air_date && i.media_type !== 'collection'));
+    // STRICT: Never check or alert on movies the user has already watched!
+    const movieItems = watchlist.filter(i => 
+      !watchedMovieIds.has(Number(i.id)) && 
+      (i.media_type === 'movie' || (!i.first_air_date && i.media_type !== 'collection'))
+    );
     
     // De-duplicate
     const itemsToCheck = Array.from(new Map([...tvItems, ...movieItems].map(item => [item.id, item])).values());
@@ -267,22 +278,27 @@ const executeNotificationCheckInternal = async () => {
         );
         
         if (content && content.trendingMovies && content.trendingMovies.length > 0) {
-          const topPick = content.trendingMovies[0];
-          if (isAdultContent(topPick)) {
+          // Strictly find an unwatched, unnotified pick
+          const topPick = content.trendingMovies.find((m: any) => 
+            !watchedMovieIds.has(Number(m.id)) && 
+            !notifiedMediaIds.includes(`rec_${m.id}`) && 
+            !isAdultContent(m)
+          );
+          if (topPick) {
+            const notifyKey = `rec_${topPick.id}`;
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: `A pick for you 🌟`,
+                body: `You might like ${topPick.title} based on your taste.`,
+                data: { mediaId: topPick.id, mediaType: 'movie', notificationType: 'recommendation' },
+                ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+              },
+              trigger: null,
+            });
+            notifiedMediaIds.push(notifyKey);
             await AsyncStorage.setItem('last_daily_foryou', now.toISOString());
-            return newNotifications;
+            newNotifications++;
           }
-          await Notifications.scheduleNotificationAsync({
-            content: {
-            title: `A pick for you 🌟`,
-            body: `You might like ${topPick.title} based on your taste.`,
-            data: { mediaId: topPick.id, mediaType: 'movie', notificationType: 'recommendation' },
-            ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-          },
-          trigger: null,
-          });
-          await AsyncStorage.setItem('last_daily_foryou', now.toISOString());
-          newNotifications++;
         }
       }
     } catch (e) {

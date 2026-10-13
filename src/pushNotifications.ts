@@ -4,7 +4,8 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { getSavedItems } from './database';
+import { getSavedItems, getRecentTasteEvents } from './database';
+import { calculateTasteProfile } from './services/tasteProfile';
 import { getUserPreferences } from './userPreferences';
 
 const WATCHER_API_BASE = 'https://watcher-api-rho.vercel.app';
@@ -36,6 +37,9 @@ export interface PushTokenPayload {
   watched: PushSubscriptionItem[];
   favouritePeople: PushSubscriptionPerson[];
   country: string;
+  languages?: string[];
+  genreIds?: number[];
+  topGenres?: string[];
 }
 
 const toMediaSubscription = (item: any): PushSubscriptionItem => ({
@@ -140,12 +144,31 @@ export async function syncPushTokenAndWatchlist(tokenOverride?: string): Promise
       return false;
     }
 
-    const watchlist = getSavedItems('watchlist').map(toMediaSubscription);
-    const history = getSavedItems('history').map(toMediaSubscription);
+    const rawWatchlist = getSavedItems('watchlist') || [];
+    const rawHistory = getSavedItems('history') || [];
+    const watchedMovieIds = new Set<number>(
+      rawHistory
+        .filter((i: any) => i.media_type !== 'tv' && !i.first_air_date)
+        .map((i: any) => Number(i.id))
+        .filter((id: number) => !isNaN(id))
+    );
+
+    // Filter out already watched movies from active watchlist check
+    const watchlist = rawWatchlist
+      .filter((i: any) => !watchedMovieIds.has(Number(i.id)))
+      .map(toMediaSubscription);
+    const history = rawHistory.map(toMediaSubscription);
     const preferences = await getUserPreferences();
     const favouritePeople = preferences.favoriteActors
       .filter((person) => Number.isFinite(Number(person.id)))
       .map((person) => ({ id: Number(person.id), name: person.name || '' }));
+
+    let topGenres: string[] = [];
+    try {
+      const recentEvents = getRecentTasteEvents(60);
+      const profile = calculateTasteProfile(recentEvents);
+      topGenres = profile.topGenres || [];
+    } catch {}
 
     const payload: PushTokenPayload = {
       token,
@@ -154,7 +177,10 @@ export async function syncPushTokenAndWatchlist(tokenOverride?: string): Promise
       history,
       watched: history,
       favouritePeople,
-      country: preferences.country,
+      country: preferences.country || 'US',
+      languages: preferences.languages || ['en'],
+      genreIds: preferences.genreIds || [],
+      topGenres,
     };
 
     await axios.post(

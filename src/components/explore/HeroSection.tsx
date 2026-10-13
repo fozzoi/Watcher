@@ -10,7 +10,6 @@ import QuickAddButton from '../shared/QuickAddButton';
 import { HERO_HEIGHT, HORIZONTAL_MARGIN } from './ExploreConstants';
 import { observable } from '@legendapp/state';
 import { useSelector } from '@legendapp/state/react';
-import { savedStore$ } from '../../state/savedState';
 
 export const heroScroll$ = observable({ isScrolledOut: false });
 
@@ -88,9 +87,9 @@ const LiquidIndicator = memo(function LiquidIndicator({
 });
 
 // ── Slide ────────────────────────────────────────────────────────────────────
-const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMotion, width, height, isAdded, onToggle, onPress }: {
+const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMotion, width, height, onToggle, onPress }: {
   item: TMDBResult; active: boolean; shouldRender: boolean; reduceMotion: boolean; width: number; height: number;
-  isAdded: boolean; onToggle: (item: TMDBResult) => void; onPress: (item: TMDBResult) => void;
+  onToggle: (item: TMDBResult) => void; onPress: (item: TMDBResult) => void;
 }) {
   const opacity = useRef(new Animated.Value(active ? 1 : 0)).current;
   const zoom = useRef(new Animated.Value(1.08)).current;
@@ -147,7 +146,7 @@ const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMo
       >
         <View style={styles.titleRow}>
           <Text style={styles.title} numberOfLines={2}>{title}</Text>
-          <QuickAddButton item={item} itemId={item.id} isAdded={isAdded} onPress={() => onToggle(item)} />
+          <QuickAddButton item={item} itemId={item.id} onPress={() => onToggle(item)} />
         </View>
         <View style={styles.meta}>
           {rating ? (
@@ -177,7 +176,6 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [reduceMotion, setReduceMotion] = useState(true);
   const isScrolledOut = useSelector(() => heroScroll$.isScrolledOut.get());
-  const savedIds = useSelector(() => savedStore$.savedIds.get());
   const paused = userPaused || dragging || isScrolledOut;
   const activeIndex = slides.length ? Math.min(index, slides.length - 1) : 0;
 
@@ -222,7 +220,6 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
     <View style={[styles.root, { width, height: HERO_HEIGHT }]} {...pan.panHandlers}>
       {slides.map((item, i) => {
         const isNearby = Math.abs(i - activeIndex) <= 1 || (activeIndex === 0 && i === slides.length - 1) || (activeIndex === slides.length - 1 && i === 0);
-        const isAdded = savedIds ? savedIds.has(Number(item.id)) : false;
         return (
           <FilmLayer
             key={`${item.media_type || 'movie'}-${item.id}`}
@@ -232,7 +229,6 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
             reduceMotion={reduceMotion || !focused || !foreground || isScrolledOut}
             width={width}
             height={HERO_HEIGHT}
-            isAdded={isAdded}
             onToggle={toggleWatchlist}
             onPress={open}
           />

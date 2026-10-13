@@ -74,7 +74,8 @@
     "react-native-web": "^0.21.0",
     "react-native-webview": "13.16.1",
     "react-native-worklets": "0.10.1",
-    "react-native-worklets-core": "^1.6.3"
+    "react-native-worklets-core": "^1.6.3",
+    "vercel": "^63.1.2"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",

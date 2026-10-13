@@ -1225,6 +1225,80 @@ export const getGeminiMoviesSimilarTo = async (title: string, mediaType: 'movie'
   }
 };
 
+export const cleanTitleAndExtractYear = (rawTitle: string): { cleanTitle: string; year?: string } => {
+  if (!rawTitle || typeof rawTitle !== 'string') return { cleanTitle: '' };
+
+  // 1. Remove leading list numbering / bullets: "1. ", "1) ", "- ", "• "
+  let cleaned = rawTitle.replace(/^[\d]+[\.\)]\s*/, '').replace(/^[-•*]\s*/, '').trim();
+
+  // 2. Remove markdown formatting asterisks, underscores, backticks
+  cleaned = cleaned.replace(/[*_`]/g, '').trim();
+
+  // 3. Extract 4-digit year in parentheses or brackets: "(2016)", "[2010]", etc.
+  let year: string | undefined;
+  const yearMatch = cleaned.match(/[\(\[]\s*(\b\d{4}\b)\s*[\)\]]/);
+  if (yearMatch) {
+    year = yearMatch[1];
+    cleaned = cleaned.replace(/[\(\[]\s*\b\d{4}\b\s*[\)\]]/, '').trim();
+  }
+
+  // 4. Strip surrounding quotation marks
+  cleaned = cleaned.replace(/^["'“‘]+/, '').replace(/["'”’]+$/, '').trim();
+
+  // 5. Strip trailing punctuation
+  cleaned = cleaned.replace(/[-–—:]\s*$/, '').trim();
+
+  return { cleanTitle: cleaned || rawTitle.trim(), year };
+};
+
+export const resolveMovieFromTitle = async (rawTitle: string): Promise<TMDBResult | null> => {
+  if (!rawTitle || typeof rawTitle !== 'string') return null;
+  const { cleanTitle, year } = cleanTitleAndExtractYear(rawTitle);
+
+  try {
+    // 1. Primary search with cleaned title
+    let results = await searchTMDB(cleanTitle);
+
+    // 2. Fallback to rawTitle if cleaned returned empty and differed
+    if ((!results || results.length === 0) && cleanTitle !== rawTitle.trim()) {
+      results = await searchTMDB(rawTitle.trim());
+    }
+
+    // 3. Subtitle / colon split fallback (e.g. "Kubo: Two Strings" -> "Kubo")
+    if ((!results || results.length === 0) && (cleanTitle.includes(':') || cleanTitle.includes(' - '))) {
+      const primaryPart = cleanTitle.split(/[:\-]/)[0].trim();
+      if (primaryPart.length > 2) {
+        results = await searchTMDB(primaryPart);
+      }
+    }
+
+    if (!results || results.length === 0) return null;
+
+    // Filter to media items (movies or TV, avoiding person results)
+    const mediaResults = results.filter((m) => m && m.id && (m.media_type === 'movie' || m.media_type === 'tv' || m.poster_path));
+    const candidateList = mediaResults.length > 0 ? mediaResults : results;
+
+    // If year was extracted, prioritize exact year match with a poster
+    if (year) {
+      const yearMatch = candidateList.find((m) => {
+        const releaseYear = (m.release_date || m.first_air_date || '').slice(0, 4);
+        return releaseYear === year;
+      });
+      if (yearMatch && (yearMatch.poster_path || yearMatch.backdrop_path)) {
+        return yearMatch;
+      }
+      if (yearMatch) {
+        return yearMatch;
+      }
+    }
+
+    // Return the best match with a poster, or first candidate
+    return candidateList.find((m) => m.poster_path) || candidateList[0] || null;
+  } catch (err) {
+    return null;
+  }
+};
+
 export const fetchChatGemini = async (
   message: string,
   history: any[] = [],
@@ -1232,18 +1306,21 @@ export const fetchChatGemini = async (
   watchedTitles: string[] = [],
   watchlistTitles: string[] = [],
   watchlistCollections: string[] = [],
-  userPreferences: any = null
+  userPreferences: any = null,
+  timezone?: string
 ): Promise<any> => {
   try {
+    const tz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     const response = await axios.post('https://watcher-api-rho.vercel.app/api/gemini', {
       action: 'chat',
       message,
       history,
       userMemory,
-      watchedTitles,
-      watchlistTitles,
-      watchlistCollections,
+      watchedTitles: Array.isArray(watchedTitles) ? watchedTitles.slice(0, 50) : [],
+      watchlistTitles: Array.isArray(watchlistTitles) ? watchlistTitles.slice(0, 50) : [],
+      watchlistCollections: Array.isArray(watchlistCollections) ? watchlistCollections.slice(0, 20) : [],
       userPreferences,
+      timezone: tz,
       customApiKey: GLOBAL_CONFIG.customApiKey,
     });
 
@@ -1274,12 +1351,19 @@ export const fetchChatGemini = async (
 
     if (reply.kind === 'movies' && Array.isArray(reply.titles) && reply.titles.length > 0) {
       const moviePromises = reply.titles.map(async (t: string) => {
-        try {
-          const results = await searchTMDB(t);
-          return results.find((m) => m.poster_path) || results[0] || null;
-        } catch {
-          return null;
-        }
+        const { cleanTitle } = cleanTitleAndExtractYear(t);
+        const existing = (reply.movies || []).find(
+          (m: any) =>
+            m &&
+            m.id &&
+            m.poster_path &&
+            (m.title?.toLowerCase() === cleanTitle.toLowerCase() ||
+              m.name?.toLowerCase() === cleanTitle.toLowerCase() ||
+              m.title?.toLowerCase() === t.toLowerCase())
+        );
+        if (existing) return existing;
+
+        return await resolveMovieFromTitle(t);
       });
       const resolvedMovies = await Promise.all(moviePromises);
       reply.movies = resolvedMovies.filter(Boolean);
@@ -1288,7 +1372,8 @@ export const fetchChatGemini = async (
     if (reply.kind === 'actors' && Array.isArray(reply.names) && reply.names.length > 0) {
       const actorPromises = reply.names.map(async (n: string) => {
         try {
-          const results = await searchPeople(n, 1);
+          const cleanName = n.replace(/^[\d]+[\.\)]\s*/, '').replace(/[*_`]/g, '').trim();
+          const results = await searchPeople(cleanName, 1);
           return results[0] || null;
         } catch {
           return null;
@@ -1300,8 +1385,7 @@ export const fetchChatGemini = async (
 
     if (reply.kind === 'movie_detail' && reply.title) {
       try {
-        const results = await searchTMDB(reply.title);
-        reply.movie = results.find((m) => m.poster_path) || results[0] || null;
+        reply.movie = await resolveMovieFromTitle(reply.title);
       } catch {
         reply.movie = null;
       }

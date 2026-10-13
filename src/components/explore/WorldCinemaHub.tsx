@@ -59,7 +59,7 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
         const t = (data.tv || []).slice(0, 2).map((item) => ({ ...item, _langCode: code }));
         combined.push(...interleave(m, t));
       });
-      return combined;
+      return combined.slice(0, 16);
     }
 
     const current = langData[activeCode];
@@ -67,7 +67,7 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
 
     const m = (current.movies || []).map((item) => ({ ...item, _langCode: activeCode }));
     const t = (current.tv || []).map((item) => ({ ...item, _langCode: activeCode }));
-    return interleave(m, t);
+    return interleave(m, t).slice(0, 16);
   }, [langData, activeCode]);
 
   const handleViewAll = useCallback(() => {
@@ -88,7 +88,6 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
       const imageUrl = imagePath ? getImageUrl(imagePath, 'w342') : null;
       const year = (item.release_date || item.first_air_date || '').slice(0, 4);
       const isTV = item._mediaType === 'tv' || Boolean(item.first_air_date);
-      const isAdded = savedIds ? savedIds.has(Number(item.id)) : false;
 
       return (
         <TouchableOpacity
@@ -111,12 +110,11 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
               </View>
             )}
 
-            {/* Quick Watchlist Heart */}
+            {/* Quick Watchlist Heart: granular reactivity without parent re-render */}
             <View style={styles.heartOverlay}>
               <QuickAddButton
                 item={item}
                 itemId={item.id}
-                isAdded={isAdded}
                 onPress={() => toggleWatchlist(item)}
               />
             </View>
@@ -139,7 +137,7 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
         </TouchableOpacity>
       );
     },
-    [savedIds, handlePress, toggleWatchlist]
+    [handlePress, toggleWatchlist]
   );
 
   if (!availableLangs.length) return null;
@@ -193,8 +191,10 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
         data={activeItems}
         keyExtractor={(item) => `world-${item._mediaType}-${item.id}-${activeCode}`}
         renderItem={renderItem}
-        recycleItems={true}
+        recycleItems={false}
+        getFixedItemSize={() => SNAP_INTERVAL}
         estimatedItemSize={SNAP_INTERVAL}
+        drawDistance={150}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         decelerationRate="fast"
@@ -202,7 +202,10 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
       />
     </View>
   );
-});
+},
+(prev, next) =>
+  prev.langData === next.langData
+);
 
 export default WorldCinemaHub;
 
