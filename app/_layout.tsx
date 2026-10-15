@@ -6,7 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as Brightness from 'expo-brightness';
 import { Image as ExpoImage } from 'expo-image';
 
-import { isOnboardingComplete } from '@/src/userPreferences';
+import { isOnboardingComplete, setOnPreferencesChangedListener } from '@/src/userPreferences';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { setupNotificationChannel, registerBackgroundFetchAsync, isNotificationsEnabled } from '@/src/notifications';
@@ -105,6 +105,11 @@ export default function RootLayout() {
         console.log('Watchlist push sync error:', err)
       );
       queueCloudMutation(mutation);
+    });
+    setOnPreferencesChangedListener(() => {
+      syncPushTokenAndWatchlist().catch((err) =>
+        console.log('Preference push sync error:', err)
+      );
     });
 
     const syncIfActive = () => {

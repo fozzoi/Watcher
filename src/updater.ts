@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, Linking } from 'react-native';
 import Constants from 'expo-constants';
+import { hasSyncedPushToken, syncPushTokenAndWatchlist } from './pushNotifications';
 
 export const GITHUB_REPO = 'fozzoi/Watcher';
 const NOTIFY_UPDATES_KEY = 'settings_notify_updates';
@@ -55,6 +56,7 @@ export const isUpdateNotificationEnabled = async (): Promise<boolean> => {
 export const setUpdateNotificationEnabled = async (enabled: boolean): Promise<void> => {
   try {
     await AsyncStorage.setItem(NOTIFY_UPDATES_KEY, enabled ? 'true' : 'false');
+    await syncPushTokenAndWatchlist();
   } catch (e) {
     console.error('Failed to save update notification setting:', e);
   }
@@ -197,7 +199,7 @@ export const checkAndNotifyUpdate = async (): Promise<UpdateCheckResult | null> 
     const result = await checkForAppUpdate();
     if (result.updateAvailable) {
       const lastNotified = await AsyncStorage.getItem(LAST_NOTIFIED_TAG_KEY);
-      if (lastNotified !== result.latestVersion) {
+      if (lastNotified !== result.latestVersion && !(await hasSyncedPushToken())) {
         await sendUpdateNotification(result);
       }
       return result;

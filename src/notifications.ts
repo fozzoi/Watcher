@@ -12,11 +12,13 @@ import { getMediaDetails, fetchPersonalisedDiscoveryContent } from './tmdb';
 import { getUserPreferences } from './userPreferences';
 import { checkAndNotifyUpdate } from './updater';
 import { isAdultContent, containsAdultContent } from './contentSafety';
+import { hasSyncedPushToken, syncPushTokenAndWatchlist } from './pushNotifications';
 
 const BACKGROUND_FETCH_TASK = 'background-fetch-releases';
 const NOTIFS_ENABLED_KEY = 'smart_notifications_enabled';
 const CHANNEL_ID = 'watcher-releases-v2';
 const NOTIFICATION_TASK = 'watcher-notification-handler';
+const MAX_RELEASE_ALERTS_PER_DAY = 3;
 let notificationCheckPromise: Promise<number> | null = null;
 
 Notifications.setNotificationHandler({
@@ -61,6 +63,7 @@ export const isNotificationsEnabled = async (): Promise<boolean> => {
 
 export const setNotificationsEnabled = async (enabled: boolean): Promise<void> => {
   await AsyncStorage.setItem(NOTIFS_ENABLED_KEY, enabled ? 'true' : 'false');
+  await syncPushTokenAndWatchlist();
   if (enabled) {
     await registerBackgroundFetchAsync();
   } else {
@@ -79,6 +82,10 @@ const executeNotificationCheckInternal = async () => {
 
     const enabled = await isNotificationsEnabled();
     if (!enabled) return 0;
+
+    // Remote push is the canonical sender for registered devices; local checks
+    // remain as a fallback for devices that cannot register an Expo token.
+    if (await hasSyncedPushToken()) return 0;
 
     await setupNotificationChannel();
     const now = dayjs();
@@ -107,15 +114,37 @@ const executeNotificationCheckInternal = async () => {
 
     let newNotifications = 0;
 
-    // Helper to check if a release date is "recent" (within the last 7 days or today)
+    // Only alert for releases dated today or yesterday; older dates become noisy catch-up alerts.
     const isRecentRelease = (dateObj: dayjs.Dayjs) => {
-      return dateObj.isAfter(now.subtract(7, 'day')) && dateObj.isSameOrBefore(now.add(1, 'day'));
+      return dateObj.isValid() && !dateObj.isBefore(now.subtract(1, 'day').startOf('day')) && !dateObj.isAfter(now.endOf('day'));
     };
 
     // Helper to check if a release date is "upcoming" (within the next 14 days)
     const isUpcomingRelease = (dateObj: dayjs.Dayjs) => {
-      return dateObj.isAfter(now) && dateObj.isSameOrBefore(now.add(14, 'day'));
+      return dateObj.isValid() && dateObj.isAfter(now.endOf('day')) && dateObj.isSameOrBefore(now.add(14, 'day').endOf('day'));
     };
+
+    // Bound catch-up bursts when the OS delays background fetch or many saved titles release together.
+    const dailyAlertKey = `release_alert_count_${now.format('YYYY-MM-DD')}`;
+    const storedDailyAlertCount = Number(await AsyncStorage.getItem(dailyAlertKey));
+    let dailyAlertCount = Number.isFinite(storedDailyAlertCount) ? storedDailyAlertCount : 0;
+    const scheduleReleaseAlert = async (content: Notifications.NotificationContentInput): Promise<boolean> => {
+      if (dailyAlertCount >= MAX_RELEASE_ALERTS_PER_DAY) return false;
+      dailyAlertCount++;
+      try {
+        await Notifications.scheduleNotificationAsync({
+          content: { ...content, ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}) },
+          trigger: null,
+        });
+        await AsyncStorage.setItem(dailyAlertKey, String(dailyAlertCount));
+        return true;
+      } catch (error) {
+        dailyAlertCount--;
+        throw error;
+      }
+    };
+
+    const prefs = await getUserPreferences();
 
     const watchedMovieIds = new Set<number>(
       history
@@ -142,7 +171,7 @@ const executeNotificationCheckInternal = async () => {
       await Promise.all(chunk.map(async (item) => {
         try {
           const mType = item.media_type === 'tv' || item.first_air_date ? 'tv' : 'movie';
-          const details = await getMediaDetails(item.id, mType);
+          const details = await getMediaDetails(item.id, mType, prefs.country || 'IN');
           if (isAdultContent(details)) return;
           
           if (mType === 'tv') {
@@ -152,17 +181,15 @@ const executeNotificationCheckInternal = async () => {
               const notifyKey = `tv_${item.id}_${lastAirDateStr}`;
 
               if (isRecentRelease(lastAirDate) && !notifiedMediaIds.includes(notifyKey)) {
-                await Notifications.scheduleNotificationAsync({
-                  content: {
+                const sent = await scheduleReleaseAlert({
                     title: `New Episode: ${details.title || details.name}`,
                     body: `A new episode aired on ${lastAirDate.format('MMM D, YYYY')}!`,
                     data: { mediaId: item.id, mediaType: 'tv' },
-                    ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-                  },
-                  trigger: null,
                 });
-                notifiedMediaIds.push(notifyKey);
-                newNotifications++;
+                if (sent) {
+                  notifiedMediaIds.push(notifyKey);
+                  newNotifications++;
+                }
               }
             }
           } else {
@@ -172,52 +199,46 @@ const executeNotificationCheckInternal = async () => {
               const digitalDate = dayjs(details.digital_release_date);
               const notifyKey = `movie_ott_${item.id}`;
               if (isRecentRelease(digitalDate) && !notifiedMediaIds.includes(notifyKey)) {
-                await Notifications.scheduleNotificationAsync({
-                  content: {
+                const sent = await scheduleReleaseAlert({
                     title: `Now on OTT! 🍿`,
                     body: `${details.title || details.name} is now available on streaming/digital.`,
                     data: { mediaId: item.id, mediaType: 'movie' },
-                    ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-                  },
-                  trigger: null,
                 });
-                notifiedMediaIds.push(notifyKey);
-                newNotifications++;
+                if (sent) {
+                  notifiedMediaIds.push(notifyKey);
+                  newNotifications++;
+                }
               }
             }
             
             // 2. Theatrical Release
-            if (details.release_date) {
-              const releaseDate = dayjs(details.release_date);
+            if (details.theatrical_release_date) {
+              const releaseDate = dayjs(details.theatrical_release_date);
               const notifyKey = `movie_theater_${item.id}`;
               if (isRecentRelease(releaseDate) && !notifiedMediaIds.includes(notifyKey)) {
-                await Notifications.scheduleNotificationAsync({
-                  content: {
+                const sent = await scheduleReleaseAlert({
                     title: `In Theaters! 🎬`,
                     body: `${details.title || details.name} is now released.`,
                     data: { mediaId: item.id, mediaType: 'movie' },
-                    ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-                  },
-                  trigger: null,
                 });
-                notifiedMediaIds.push(notifyKey);
-                newNotifications++;
+                if (sent) {
+                  notifiedMediaIds.push(notifyKey);
+                  newNotifications++;
+                }
               }
               
               const upcomingKey = `upcoming_movie_${item.id}`;
               if (isUpcomingRelease(releaseDate) && !notifiedMediaIds.includes(upcomingKey)) {
                 const daysAway = releaseDate.diff(now, 'day');
-                await Notifications.scheduleNotificationAsync({
-                  content: {
+                const sent = await scheduleReleaseAlert({
                     title: `Premiere Soon 🍿`,
                     body: `${details.title || details.name} releases in ${daysAway} days (${releaseDate.format('MMM D')})!`,
                     data: { mediaId: item.id, mediaType: 'movie' },
-                    ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-                  },
-                  trigger: null,
                 });
-                notifiedMediaIds.push(upcomingKey);
-                newNotifications++;
+                if (sent) {
+                  notifiedMediaIds.push(upcomingKey);
+                  newNotifications++;
+                }
               }
             }
           }
@@ -237,17 +258,15 @@ const executeNotificationCheckInternal = async () => {
 
           if (partReleaseDate && isRecentRelease(partReleaseDate) && !notifiedMediaIds.includes(notifyKey)) {
             if (isAdultContent(part)) continue;
-            await Notifications.scheduleNotificationAsync({
-              content: {
+            const sent = await scheduleReleaseAlert({
                 title: `New in ${item.name}! 🌟`,
                 body: `${part.title} is now out.`,
                 data: { mediaId: part.id, mediaType: 'movie' },
-                ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-              },
-              trigger: null,
             });
-            notifiedMediaIds.push(notifyKey);
-            newNotifications++;
+            if (sent) {
+              notifiedMediaIds.push(notifyKey);
+              newNotifications++;
+            }
           }
         }
       }
@@ -268,7 +287,6 @@ const executeNotificationCheckInternal = async () => {
       const lastDaily = lastDailyStr ? dayjs(lastDailyStr) : dayjs(0);
       
       if (now.diff(lastDaily, 'day') >= 1) {
-        const prefs = await getUserPreferences();
         const content = await fetchPersonalisedDiscoveryContent(
           prefs.languages,
           prefs.genreIds,
@@ -278,8 +296,21 @@ const executeNotificationCheckInternal = async () => {
         );
         
         if (content && content.trendingMovies && content.trendingMovies.length > 0) {
-          // Strictly find an unwatched, unnotified pick
-          const topPick = content.trendingMovies.find((m: any) => 
+          // Prefer titles tied to saved actor, genre, and language preferences before broad trends.
+          const personalizedCandidates = [
+            ...(content.actorData || []).flatMap((group: any) => group?.items || []),
+            ...(content.genreData || []).flatMap((group: any) => group?.items || []),
+            ...(prefs.languages || []).flatMap((language: string) => content.langData?.[language]?.movies || []),
+            ...(content.trendingMovies || []),
+          ];
+          const uniqueCandidates = Array.from(new Map(
+            personalizedCandidates
+              .filter((m: any) => m?.id && (m.media_type === 'movie' || !m.media_type))
+              .map((m: any) => [m.id, m])
+          ).values());
+
+          // Strictly find an unwatched, unnotified movie pick
+          const topPick = uniqueCandidates.find((m: any) =>
             !watchedMovieIds.has(Number(m.id)) && 
             !notifiedMediaIds.includes(`rec_${m.id}`) && 
             !isAdultContent(m)

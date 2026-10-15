@@ -10,6 +10,9 @@ import { getUserPreferences } from './userPreferences';
 
 const WATCHER_API_BASE = 'https://watcher-api-rho.vercel.app';
 const STORAGE_KEY_TOKEN = 'expo_push_token';
+const STORAGE_KEY_SYNCED_TOKEN = 'expo_push_token_synced';
+const SMART_NOTIFICATIONS_KEY = 'smart_notifications_enabled';
+const UPDATE_NOTIFICATIONS_KEY = 'settings_notify_updates';
 
 export const CHANNELS = {
   RELEASES: 'watcher-releases-v2',
@@ -40,6 +43,10 @@ export interface PushTokenPayload {
   languages?: string[];
   genreIds?: number[];
   topGenres?: string[];
+  timeZone: string;
+  releaseNotificationsEnabled: boolean;
+  recommendationsEnabled: boolean;
+  appUpdatesEnabled: boolean;
 }
 
 const toMediaSubscription = (item: any): PushSubscriptionItem => ({
@@ -181,6 +188,10 @@ export async function syncPushTokenAndWatchlist(tokenOverride?: string): Promise
       languages: preferences.languages || ['en'],
       genreIds: preferences.genreIds || [],
       topGenres,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      releaseNotificationsEnabled: (await AsyncStorage.getItem(SMART_NOTIFICATIONS_KEY)) !== 'false',
+      recommendationsEnabled: (await AsyncStorage.getItem(SMART_NOTIFICATIONS_KEY)) !== 'false',
+      appUpdatesEnabled: (await AsyncStorage.getItem(UPDATE_NOTIFICATIONS_KEY)) !== 'false',
     };
 
     await axios.post(
@@ -188,6 +199,7 @@ export async function syncPushTokenAndWatchlist(tokenOverride?: string): Promise
       payload,
       { timeout: 8000 }
     );
+    await AsyncStorage.setItem(STORAGE_KEY_SYNCED_TOKEN, token);
 
     return true;
   } catch (error: any) {
@@ -201,6 +213,14 @@ export async function syncPushTokenAndWatchlist(tokenOverride?: string): Promise
  */
 export async function getCachedPushToken(): Promise<string | null> {
   return AsyncStorage.getItem(STORAGE_KEY_TOKEN);
+}
+
+export async function hasSyncedPushToken(): Promise<boolean> {
+  const [token, syncedToken] = await Promise.all([
+    AsyncStorage.getItem(STORAGE_KEY_TOKEN),
+    AsyncStorage.getItem(STORAGE_KEY_SYNCED_TOKEN),
+  ]);
+  return !!token && token === syncedToken;
 }
 
 export interface RemotePushTestResult {

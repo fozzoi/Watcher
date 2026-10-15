@@ -160,6 +160,7 @@ export interface TMDBResult {
   vote_average: number;
   media_type: "movie" | "tv";
   release_date?: string;
+  theatrical_release_date?: string | null;
   first_air_date?: string;
   digital_release_date?: string | null;
   certification?: string;
@@ -673,7 +674,7 @@ export const getMovieCollectionInfo = async (movieId: number): Promise<{ id: num
   }
 };
 
-export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
+export const getFullDetails = async (item: TMDBResult, preferredCountry = 'US'): Promise<TMDBResult> => {
   try {
     let resolvedMediaType = item.media_type || (item.first_air_date ? "tv" : "movie");
     const append = "credits,release_dates,content_ratings,external_ids,videos,images";
@@ -690,19 +691,23 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
 
     let certification = null;
     let digital_release_date = null;
+    let theatrical_release_date = null;
     if (resolvedMediaType === "movie") {
-      const usRelease = data.release_dates?.results?.find((r: any) => r.iso_3166_1 === "US");
-      certification = usRelease?.release_dates?.[0]?.certification || null;
-      
       const allReleases = data.release_dates?.results || [];
-      for (const country of allReleases) {
-        const dates = country.release_dates || [];
-        const digitalDate = dates.find((d: any) => d.type === 4 || d.type === 5); // 4 = Digital, 5 = Physical
-        if (digitalDate && digitalDate.release_date) {
-          digital_release_date = digitalDate.release_date;
-          break;
-        }
-      }
+      const regionalReleases = allReleases.find((r: any) => r.iso_3166_1 === preferredCountry)?.release_dates || [];
+      const usRelease = allReleases.find((r: any) => r.iso_3166_1 === "US");
+      certification = usRelease?.release_dates?.[0]?.certification || null;
+
+      // Keep alert dates territory-specific so another country's premiere isn't reported as local.
+      // TMDB release types: 2 = limited theatrical, 3 = theatrical, 4 = digital.
+      const theatrical = regionalReleases
+        .filter((d: any) => (d.type === 2 || d.type === 3) && d.release_date)
+        .sort((a: any, b: any) => a.release_date.localeCompare(b.release_date));
+      const digital = regionalReleases
+        .filter((d: any) => d.type === 4 && d.release_date)
+        .sort((a: any, b: any) => a.release_date.localeCompare(b.release_date));
+      theatrical_release_date = theatrical[0]?.release_date || null;
+      digital_release_date = digital[0]?.release_date || null;
     } else {
       const usRating = data.content_ratings?.results?.find((r: any) => r.iso_3166_1 === "US");
       certification = usRating?.rating || null;
@@ -746,6 +751,7 @@ export const getFullDetails = async (item: TMDBResult): Promise<TMDBResult> => {
       media_type: resolvedMediaType,
       genres: data.genres || [],
       certification,
+      theatrical_release_date,
       digital_release_date,
       cast,
       director,
@@ -775,9 +781,9 @@ export const getMediaImages = async (
   }
 };
 
-export const getMediaDetails = async (id: number, mediaType: "movie" | "tv"): Promise<TMDBResult> => {
+export const getMediaDetails = async (id: number, mediaType: "movie" | "tv", preferredCountry = 'US'): Promise<TMDBResult> => {
   try {
-    return await getFullDetails({ id, media_type: mediaType } as TMDBResult);
+    return await getFullDetails({ id, media_type: mediaType } as TMDBResult, preferredCountry);
   } catch (error) {
     throw error;
   }
