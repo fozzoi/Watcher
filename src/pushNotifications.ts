@@ -79,6 +79,15 @@ export async function setupPushNotificationChannels(): Promise<void> {
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#007AFF',
     });
+
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Default',
+      description: 'Standard notifications and alerts',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+      enableVibrate: true,
+    });
   }
 }
 

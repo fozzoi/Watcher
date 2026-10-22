@@ -199,7 +199,7 @@ export const checkAndNotifyUpdate = async (): Promise<UpdateCheckResult | null> 
     const result = await checkForAppUpdate();
     if (result.updateAvailable) {
       const lastNotified = await AsyncStorage.getItem(LAST_NOTIFIED_TAG_KEY);
-      if (lastNotified !== result.latestVersion && !(await hasSyncedPushToken())) {
+      if (lastNotified !== result.latestVersion) {
         await sendUpdateNotification(result);
       }
       return result;

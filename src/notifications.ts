@@ -32,10 +32,12 @@ Notifications.setNotificationHandler({
       overview: data?.title,
     }) || containsAdultContent(data?.title);
     return {
-    shouldShowBanner: !blocked,
-    shouldShowList: !blocked,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
+      shouldShowAlert: !blocked,
+      shouldShowBanner: !blocked,
+      shouldShowList: !blocked,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      priority: Notifications.AndroidNotificationPriority.HIGH,
     };
   },
 });
@@ -47,6 +49,25 @@ export const setupNotificationChannel = async () => {
       description: 'New episodes and releases for your library',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+      enableVibrate: true,
+    });
+
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Default',
+      description: 'Standard notifications and alerts',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+      enableVibrate: true,
+    });
+
+    await Notifications.setNotificationChannelAsync('watcher-updates', {
+      name: 'App Updates',
+      description: 'Notifications when a new version or APK build is published',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#007AFF',
       enableVibrate: true,
     });
   }
@@ -83,9 +104,8 @@ const executeNotificationCheckInternal = async () => {
     const enabled = await isNotificationsEnabled();
     if (!enabled) return 0;
 
-    // Remote push is the canonical sender for registered devices; local checks
-    // remain as a fallback for devices that cannot register an Expo token.
-    if (await hasSyncedPushToken()) return 0;
+    // Both remote push and local background checks share `notifiedMediaIds`
+    // to guarantee no duplicate notifications while providing reliable alerts.
 
     await setupNotificationChannel();
     const now = dayjs();

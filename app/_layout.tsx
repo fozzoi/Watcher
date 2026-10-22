@@ -8,6 +8,7 @@ import { Image as ExpoImage } from 'expo-image';
 
 import { isOnboardingComplete, setOnPreferencesChangedListener } from '@/src/userPreferences';
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { setupNotificationChannel, registerBackgroundFetchAsync, isNotificationsEnabled } from '@/src/notifications';
 import { registerForPushNotificationsAsync, syncPushTokenAndWatchlist } from '@/src/pushNotifications';
@@ -159,8 +160,23 @@ export default function RootLayout() {
       })
       .catch((error) => console.warn('Failed to handle initial notification:', error));
 
+    const receivedSubscription = Notifications.addNotificationReceivedListener(notification => {
+      const data: any = notification?.request?.content?.data;
+      if (data?.eventId || data?.mediaId) {
+        AsyncStorage.getItem('notifiedMediaIds').then(str => {
+          const list: string[] = str ? JSON.parse(str) : [];
+          const key = data.eventId || (data.releaseType ? `movie_${data.releaseType}_${data.mediaId}` : `item_${data.mediaId}`);
+          if (!list.includes(key)) {
+            list.push(key);
+            AsyncStorage.setItem('notifiedMediaIds', JSON.stringify(list.slice(-500))).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    });
+
     return () => {
       subscription.remove();
+      receivedSubscription.remove();
       clearInterval(syncTimer);
       appStateSubscription.remove();
       setOnSavedItemsChangedListener(null);

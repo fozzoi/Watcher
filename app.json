@@ -3,7 +3,6 @@
     "name": "Watcher",
     "slug": "Watcher",
     "version": "3.1.5",
-    "newArchEnabled": true,
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "myapp",
@@ -20,7 +19,6 @@
       "runtimeVersion": {
         "policy": "appVersion"
       },
-      "requestLegacyExternalStorage": true,
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
@@ -78,11 +76,19 @@
       "expo-font",
       "expo-sharing",
       "expo-status-bar",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#ffffff",
+          "defaultChannel": "watcher-releases-v2"
+        }
+      ],
       "react-native-nitro-google-signin",
       "expo-router",
       "expo-image",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-sqlite"
     ],
     "extra": {
       "eas": {
