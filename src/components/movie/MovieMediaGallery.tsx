@@ -298,14 +298,14 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
         style={styles.carouselWrapper}
       >
         {Platform.OS === 'android' ? (
-          <Host style={{ width: '100%', height: activeTab === 'scenes' ? 180 : 240 }}>
+          <Host colorScheme="dark" style={{ width: '100%', height: GALLERY_CARD_HEIGHT }}>
             <HorizontalCenteredHeroCarousel 
-              preferredItemWidth={activeTab === 'scenes' ? 320 : 155} 
+              preferredItemWidth={activeTab === 'scenes' ? 320 : 120} 
               itemSpacing={activeTab === 'scenes' ? 12 : 8}
             >
               {currentList.map((item, index) => {
                 const isScene = activeTab === 'scenes';
-                const cardHeight = isScene ? 180 : 240;
+                const cardHeight = GALLERY_CARD_HEIGHT;
                 const imageUrl = getImageUrl(item.file_path, isScene ? 'w780' : 'w500');
 
                 return (

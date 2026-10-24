@@ -21,7 +21,7 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { LegendList } from '@legendapp/list/react-native';
 import { useSelector } from '@legendapp/state/react';
-import { savedStore$, syncSavedStore } from '../../src/state/savedState';
+import { savedStore$, syncSavedStore, toggleWatchlistGlobal } from '../../src/state/savedState';
 import {
   getImageUrl,
   getSimilarMedia,
@@ -263,23 +263,7 @@ const MovieActionDock = React.memo(({ movie }: MovieActionDockProps) => {
 
   const toggleWatchlist = useCallback(() => {
     if (!movie) return;
-    const exists = hasSavedItem(movie.id, 'watchlist');
-    if (exists) {
-      removeSavedItem(movie.id, 'watchlist');
-    } else {
-      addSavedItem(movie, 'watchlist');
-      logTasteEvent({
-        entity_type: movie.media_type === 'tv' ? 'tv' : 'movie',
-        entity_id: movie.id,
-        entity_name: movie.title || movie.name,
-        genres: movie.genres,
-        weight: TASTE_WEIGHTS.WATCHLIST_ADD,
-      });
-    }
-    syncSavedStore();
-    if (Platform.OS === 'android') {
-      ToastAndroid.show(exists ? 'Removed from Watchlist' : 'Added to Watchlist', ToastAndroid.SHORT);
-    }
+    toggleWatchlistGlobal(movie);
   }, [movie]);
 
   const toggleWatched = useCallback(async () => {

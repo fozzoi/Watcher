@@ -25,6 +25,7 @@ import {
   subscribeToSavedItemsChanges,
 } from '../../src/database';
 import { syncSavedStore } from '../../src/state/savedState';
+import { snackbarService } from '../../src/services/snackbar';
 import { getImageUrl, searchTMDB, GLOBAL_CONFIG, setGlobalConfig } from '../../src/tmdb';
 import { isAdultContent } from '../../src/contentSafety';
 import { GENRE_OPTIONS } from '../../src/userPreferences';
@@ -775,20 +776,59 @@ const WatchListPage = () => {
   const handleRemove = useCallback((id: number, type: 'watchlist' | 'artist' | 'history') => {
     if (type === 'watchlist') {
       setWatchlist(prev => {
+        const itemToRemove = prev.find(item => item.id === id);
         const newList = prev.filter(item => item.id !== id);
         removeSavedItem(id, 'watchlist');
+        if (itemToRemove) {
+          snackbarService.show({
+            message: `Removed from Watchlist: ${itemToRemove.title || itemToRemove.name || 'Movie'}`,
+            actionLabel: 'Undo',
+            duration: 'short',
+            onAction: () => {
+              addSavedItem(itemToRemove, 'watchlist');
+              setWatchlist(current => [itemToRemove, ...current]);
+              syncSavedStore();
+            },
+          });
+        }
         return newList;
       });
     } else if (type === 'artist') {
       setArtists(prev => {
+        const itemToRemove = prev.find(item => item.id === id);
         const newList = prev.filter(item => item.id !== id);
         removeSavedItem(id, 'artist');
+        if (itemToRemove) {
+          snackbarService.show({
+            message: `Removed from Favorite Artists: ${itemToRemove.name || 'Artist'}`,
+            actionLabel: 'Undo',
+            duration: 'short',
+            onAction: () => {
+              addSavedItem(itemToRemove, 'artist');
+              setArtists(current => [itemToRemove, ...current]);
+              syncSavedStore();
+            },
+          });
+        }
         return newList;
       });
     } else if (type === 'history') {
       setWatched(prev => {
+        const itemToRemove = prev.find(item => item.id === id);
         const newList = prev.filter(item => item.id !== id);
         removeSavedItem(id, 'history');
+        if (itemToRemove) {
+          snackbarService.show({
+            message: `Removed from History: ${itemToRemove.title || itemToRemove.name || 'Movie'}`,
+            actionLabel: 'Undo',
+            duration: 'short',
+            onAction: () => {
+              addSavedItem(itemToRemove, 'history');
+              setWatched(current => [itemToRemove, ...current]);
+              syncSavedStore();
+            },
+          });
+        }
         return newList;
       });
     }

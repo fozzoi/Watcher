@@ -1,18 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Switch, Platform, StyleSheet, DeviceEventEmitter, ToastAndroid } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Switch, Platform, StyleSheet, DeviceEventEmitter, ToastAndroid, RefreshControl } from 'react-native';
 import {
   Host,
   Switch as ComposeSwitch,
-  SnackbarHost,
-  SnackbarHostRef,
-  PullToRefreshBox,
   LoadingIndicator,
-  ListItem,
-  Card as ComposeCard,
-  HorizontalDivider,
-  Text as ComposeText,
 } from '@expo/ui/jetpack-compose';
-import { clickable, fillMaxWidth } from '@expo/ui/jetpack-compose/modifiers';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -44,6 +36,7 @@ import { DEFAULT_PLAYER_PREFERENCES, getPlayerPreferences, PlayerPreferences, sa
 import { cloudSync, MobileUserProfile, queueCloudValue } from '../src/cloudSync';
 import { signInWithNativeGoogle } from '../src/nativeGoogleAuth';
 import { notifyForYouListeners } from '../src/services/tasteProfile';
+import { snackbarService } from '../src/services/snackbar';
 
 // Google OAuth via expo-auth-session
 import * as WebBrowser from 'expo-web-browser';
@@ -81,16 +74,14 @@ const Settings = () => {
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
 
-  // Jetpack Compose Native States
-  const snackbarHostRef = useRef<SnackbarHostRef>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const showNativeSnackbar = (message: string, actionLabel: string = "Dismiss") => {
-    if (Platform.OS === 'android' && snackbarHostRef.current) {
-      snackbarHostRef.current.showSnackbar({ message, actionLabel });
-    } else if (Platform.OS === 'android') {
-      ToastAndroid.show(message, ToastAndroid.SHORT);
-    }
+    snackbarService.show({
+      message,
+      actionLabel,
+      duration: 'short',
+    });
   };
 
   const handleRefresh = async () => {
@@ -675,81 +666,32 @@ const Settings = () => {
   // ── Reusable row components ──
 
   const ToggleRow = ({ title, subtitle, value, onValueChange }: any) => {
-    if (Platform.OS === 'android') {
-      return (
-        <Host seedColor="#8E24AA" colorScheme="dark" matchContents>
-          <ListItem
-            colors={{
-              containerColor: '#1C1C1E',
-              contentColor: '#FFFFFF',
-              supportingContentColor: '#8E8E93',
-            }}
-          >
-            <ListItem.HeadlineContent>
-              <ComposeText color="#FFFFFF" style={{ fontSize: 15, fontWeight: '600' }}>
-                {title}
-              </ComposeText>
-            </ListItem.HeadlineContent>
-            <ListItem.SupportingContent>
-              <ComposeText color="#8E8E93" style={{ fontSize: 12.5 }}>
-                {subtitle}
-              </ComposeText>
-            </ListItem.SupportingContent>
-            <ListItem.TrailingContent>
-              <ComposeSwitch 
-                value={value} 
-                onCheckedChange={onValueChange} 
-              />
-            </ListItem.TrailingContent>
-          </ListItem>
-        </Host>
-      );
-    }
     return (
       <View style={styles.row}>
         <View style={styles.rowText}>
           <Text style={styles.rowTitle}>{title}</Text>
           <Text style={styles.rowSubtitle}>{subtitle}</Text>
         </View>
-        <Switch 
-          trackColor={{ false: '#3A3A3C', true: '#E50914' }} 
-          thumbColor="#FFFFFF"
-          onValueChange={onValueChange} 
-          value={value} 
-        />
+        {Platform.OS === 'android' ? (
+          <Host colorScheme="dark" matchContents style={{ width: 52, height: 32 }}>
+            <ComposeSwitch 
+              value={value} 
+              onCheckedChange={onValueChange} 
+            />
+          </Host>
+        ) : (
+          <Switch 
+            trackColor={{ false: '#3A3A3C', true: '#E50914' }} 
+            thumbColor="#FFFFFF"
+            onValueChange={onValueChange} 
+            value={value} 
+          />
+        )}
       </View>
     );
   };
 
   const ActionRow = ({ title, subtitle, onPress, destructive }: any) => {
-    if (Platform.OS === 'android') {
-      return (
-        <Host seedColor="#8E24AA" colorScheme="dark" matchContents>
-          <ListItem
-            colors={{
-              containerColor: '#1C1C1E',
-              contentColor: destructive ? '#FF453A' : '#FFFFFF',
-              supportingContentColor: '#8E8E93',
-            }}
-            modifiers={[clickable(onPress)]}
-          >
-            <ListItem.HeadlineContent>
-              <ComposeText color={destructive ? '#FF453A' : '#FFFFFF'} style={{ fontSize: 15, fontWeight: '600' }}>
-                {title}
-              </ComposeText>
-            </ListItem.HeadlineContent>
-            <ListItem.SupportingContent>
-              <ComposeText color="#8E8E93" style={{ fontSize: 12.5 }}>
-                {subtitle}
-              </ComposeText>
-            </ListItem.SupportingContent>
-            <ListItem.TrailingContent>
-              <Feather name="chevron-right" size={20} color="#3A3A3C" />
-            </ListItem.TrailingContent>
-          </ListItem>
-        </Host>
-      );
-    }
     return (
       <TouchableOpacity activeOpacity={0.6} onPress={onPress} style={styles.row}>
         <View style={styles.rowText}>
@@ -762,31 +704,7 @@ const Settings = () => {
   };
 
   const SettingSeparator = () => {
-    if (Platform.OS === 'android') {
-      return (
-        <Host seedColor="#8E24AA" colorScheme="dark" matchContents>
-          <HorizontalDivider color="#2C2C2E" thickness={0.8} />
-        </Host>
-      );
-    }
     return <View style={styles.separator} />;
-  };
-
-  const SettingsRefreshWrapper = ({ children }: { children: React.ReactNode }) => {
-    if (Platform.OS === 'android') {
-      return (
-        <Host seedColor="#8E24AA" colorScheme="dark" style={{ flex: 1 }}>
-          <PullToRefreshBox
-            isRefreshing={refreshing}
-            onRefresh={handleRefresh}
-            indicator={{ color: "#8E24AA" }}
-          >
-            {children}
-          </PullToRefreshBox>
-        </Host>
-      );
-    }
-    return <>{children}</>;
   };
 
   return (
@@ -795,6 +713,15 @@ const Settings = () => {
         showsVerticalScrollIndicator={false} 
         contentContainerStyle={{ paddingBottom: tabBarHeight + 60 }}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#E50914']}
+            progressBackgroundColor="#1C1C1E"
+            progressViewOffset={10}
+          />
+        }
       >
         <Text style={styles.header}>Settings</Text>
 
@@ -952,88 +879,46 @@ const Settings = () => {
             onValueChange={toggleUpdateNotifs} 
           />
           <SettingSeparator />
-          {Platform.OS === 'android' ? (
-            <Host seedColor="#8E24AA" colorScheme="dark" matchContents>
-              <ListItem
-                colors={{
-                  containerColor: '#1C1C1E',
-                  contentColor: '#FFFFFF',
-                  supportingContentColor: updateResult?.updateAvailable ? '#30D158' : '#8E8E93',
-                }}
-                modifiers={[clickable(() => {
-                  if (updateResult?.updateAvailable) {
-                    setUpdateModalVisible(true);
-                  } else {
-                    handleCheckUpdate(false);
-                  }
-                })]}
-              >
-                <ListItem.HeadlineContent>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <ComposeText color="#FFFFFF" style={{ fontSize: 15, fontWeight: '600' }}>
-                      Check for Updates
-                    </ComposeText>
-                    {updateResult?.updateAvailable && (
-                      <View style={styles.badgeNew}>
-                        <Text style={styles.badgeNewText}>NEW</Text>
-                      </View>
-                    )}
+          <TouchableOpacity 
+            activeOpacity={0.7} 
+            onPress={() => {
+              if (updateResult?.updateAvailable) {
+                setUpdateModalVisible(true);
+              } else {
+                handleCheckUpdate(false);
+              }
+            }} 
+            style={styles.row}
+          >
+            <View style={styles.rowText}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={styles.rowTitle}>Check for Updates</Text>
+                {updateResult?.updateAvailable && (
+                  <View style={styles.badgeNew}>
+                    <Text style={styles.badgeNewText}>NEW</Text>
                   </View>
-                </ListItem.HeadlineContent>
-                <ListItem.SupportingContent>
-                  <ComposeText color={updateResult?.updateAvailable ? '#30D158' : '#8E8E93'} style={{ fontSize: 12.5 }}>
-                    {checkingUpdate 
-                      ? "Checking GitHub for updates..." 
-                      : updateResult?.updateAvailable 
-                        ? `Update available: ${updateResult.latestVersion}` 
-                        : `Version ${appVersion} (Latest)`}
-                  </ComposeText>
-                </ListItem.SupportingContent>
-                <ListItem.TrailingContent>
-                  {checkingUpdate ? (
-                    <LoadingIndicator color="#8E24AA" />
-                  ) : (
-                    <Feather name="refresh-cw" size={18} color="#8E8E93" />
-                  )}
-                </ListItem.TrailingContent>
-              </ListItem>
-            </Host>
-          ) : (
-            <TouchableOpacity 
-              activeOpacity={0.7} 
-              onPress={() => {
-                if (updateResult?.updateAvailable) {
-                  setUpdateModalVisible(true);
-                } else {
-                  handleCheckUpdate(false);
-                }
-              }} 
-              style={styles.row}
-            >
-              <View style={styles.rowText}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={styles.rowTitle}>Check for Updates</Text>
-                  {updateResult?.updateAvailable && (
-                    <View style={styles.badgeNew}>
-                      <Text style={styles.badgeNewText}>NEW</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={[styles.rowSubtitle, updateResult?.updateAvailable && { color: '#30D158' }]}>
-                  {checkingUpdate 
-                    ? "Checking GitHub for updates..." 
-                    : updateResult?.updateAvailable 
-                      ? `Update available: ${updateResult.latestVersion}` 
-                      : `Version ${appVersion} (Latest)`}
-                </Text>
+                )}
               </View>
-              {checkingUpdate ? (
-                <ActivityIndicator size="small" color="#E50914" />
+              <Text style={[styles.rowSubtitle, updateResult?.updateAvailable && { color: '#30D158' }]}>
+                {checkingUpdate 
+                  ? "Checking GitHub for updates..." 
+                  : updateResult?.updateAvailable 
+                    ? `Update available: ${updateResult.latestVersion}` 
+                    : `Version ${appVersion} (Latest)`}
+              </Text>
+            </View>
+            {checkingUpdate ? (
+              Platform.OS === 'android' ? (
+                <Host colorScheme="dark" matchContents style={{ width: 24, height: 24 }}>
+                  <LoadingIndicator />
+                </Host>
               ) : (
-                <Feather name="refresh-cw" size={18} color="#8E8E93" />
-              )}
-            </TouchableOpacity>
-          )}
+                <ActivityIndicator size="small" color="#E50914" />
+              )
+            ) : (
+              <Feather name="refresh-cw" size={18} color="#8E8E93" />
+            )}
+          </TouchableOpacity>
         </View>
 
 

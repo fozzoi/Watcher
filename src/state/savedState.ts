@@ -1,6 +1,7 @@
 import { observable, opaqueObject } from '@legendapp/state';
 import { getSavedItems, subscribeToSavedItemsChanges, addSavedItem, removeSavedItem, hasSavedItem } from '../database';
 import { logTasteEvent, TASTE_WEIGHTS } from '../services/tasteProfile';
+import { snackbarService } from '../services/snackbar';
 
 export interface SavedState {
   savedIds: Set<number>;
@@ -50,7 +51,10 @@ try {
   syncSavedStore();
 } catch {}
 
-export const toggleWatchlistGlobal = (item: any) => {
+export const toggleWatchlistGlobal = (
+  item: any,
+  options?: { skipSnackbar?: boolean }
+) => {
   if (!item) return;
   const rawId = item.id ?? item.media_id;
   if (rawId === undefined || rawId === null) return;
@@ -77,12 +81,28 @@ export const toggleWatchlistGlobal = (item: any) => {
           entity_type: item.media_type || (item.first_air_date ? 'tv' : 'movie'),
           entity_id: numId,
           entity_name: item.title || item.name,
-          genres: item.genre_ids,
+          genres: item.genres || item.genre_ids,
           weight: TASTE_WEIGHTS.WATCHLIST_ADD,
         });
       }
     }
     syncSavedStore();
+
+    if (!options?.skipSnackbar) {
+      const title = item.title || item.name || (isPerson ? 'Artist' : 'Item');
+      const targetName = isPerson ? 'Favorite Artists' : 'Watchlist';
+      const actionText = exists ? 'Removed from' : 'Added to';
+      const message = `${actionText} ${targetName}: ${title}`;
+
+      snackbarService.show({
+        message,
+        actionLabel: 'Undo',
+        duration: 'short',
+        onAction: () => {
+          toggleWatchlistGlobal(item, { skipSnackbar: true });
+        },
+      });
+    }
   } catch (e) {
     console.error('toggleWatchlistGlobal error:', e);
   }

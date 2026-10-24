@@ -15,7 +15,7 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { hasSavedItem, addSavedItem, removeSavedItem, subscribeToSavedItemsChanges } from '../../src/database';
-import { savedStore$, syncSavedStore } from '../../src/state/savedState';
+import { savedStore$, syncSavedStore, toggleWatchlistGlobal } from '../../src/state/savedState';
 import { useSelector } from '@legendapp/state/react';
 import {
   getCollectionDetails,
@@ -142,14 +142,7 @@ const CollectionDetails = () => {
 
   const toggleWatchlist = () => {
     if (!collection) return;
-    const exists = hasSavedItem(collection.id, 'watchlist');
-    if (exists) {
-      removeSavedItem(collection.id, 'watchlist');
-    } else {
-      addSavedItem(collection, 'watchlist');
-    }
-    setIsInWatchlist(!exists);
-    syncSavedStore();
+    toggleWatchlistGlobal(collection);
   };
 
   const toggleWatched = () => {

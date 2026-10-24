@@ -14,6 +14,7 @@ import { setupNotificationChannel, registerBackgroundFetchAsync, isNotifications
 import { registerForPushNotificationsAsync, syncPushTokenAndWatchlist } from '@/src/pushNotifications';
 import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
+import GlobalSnackbar from '@/src/components/shared/GlobalSnackbar';
 import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, setOnSavedItemsChangedListener } from '@/src/database';
 import { loadGlobalConfig, GLOBAL_CONFIG, fetchEmbeddingsBatch } from '@/src/tmdb';
 import { pollCloudChanges, prepareCloudSessionOnStartup, queueCloudMutation } from '@/src/cloudSync';
@@ -308,6 +309,7 @@ export default function RootLayout() {
         onClose={() => setShowUpdateModal(false)}
         updateResult={updateResult}
       />
+      <GlobalSnackbar />
     </SafeAreaProvider>
   );
 }

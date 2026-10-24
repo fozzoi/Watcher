@@ -16,6 +16,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import { hasSavedItem, addSavedItem, removeSavedItem } from '../src/database';
+import { toggleWatchlistGlobal } from '../src/state/savedState';
 import { 
   fetchMoreContentByType, 
   getImageUrl, 
@@ -283,14 +284,9 @@ const ListDetails = ({ route }: any) => {
 
   const toggleWatchlist = () => {
     if (!selectedMovie) return;
-    const exists = hasSavedItem(selectedMovie.id, 'watchlist');
-    if (exists) {
-      removeSavedItem(selectedMovie.id, 'watchlist');
-      setIsInWatchlist(false);
-    } else {
-      addSavedItem(selectedMovie, 'watchlist');
-      setIsInWatchlist(true);
-    }
+    const willExist = !hasSavedItem(selectedMovie.id, 'watchlist');
+    setIsInWatchlist(willExist);
+    toggleWatchlistGlobal(selectedMovie);
   };
 
   const openTelegramSearch = () => {

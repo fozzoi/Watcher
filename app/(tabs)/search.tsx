@@ -19,7 +19,13 @@ import { searchTorrents } from '../../src/Scraper';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
-import { Host, DockedSearchBar, Text as ComposeText } from '@expo/ui/jetpack-compose';
+import {
+  Host,
+  DockedSearchBar,
+  Text as ComposeText,
+  CircularProgressIndicator,
+} from '@expo/ui/jetpack-compose';
+import { size } from '@expo/ui/jetpack-compose/modifiers';
 
 
 
@@ -310,7 +316,13 @@ export default function Index() {
               disabled={isDownloadingThis}
             >
               {isDownloadingThis ? (
-                <ActivityIndicator size="small" color="#FFF" />
+                Platform.OS === 'android' ? (
+                  <Host colorScheme="dark" matchContents style={{ width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>
+                    <CircularProgressIndicator strokeWidth={2.5} modifiers={[size(18, 18)]} />
+                  </Host>
+                ) : (
+                  <ActivityIndicator size="small" color="#FFF" />
+                )
               ) : (
                 <>
                   <Feather name="share-2" size={15} color="#E5E5EB" style={{ marginRight: 6 }} />
@@ -373,10 +385,10 @@ export default function Index() {
 
         <View style={[styles.searchSection, hasSearched && styles.searchSectionActive]}>
             {Platform.OS === 'android' ? (
-                <Host seedColor="#8E24AA" colorScheme="dark" matchContents style={{ width: '100%' }}>
+                <Host colorScheme="dark" matchContents style={{ width: '100%' }}>
                     <DockedSearchBar onQueryChange={setSearchQuery}>
                         <DockedSearchBar.Placeholder>
-                            <ComposeText color="#8E8E93" style={{ fontSize: 14 }}>
+                            <ComposeText style={{ fontSize: 14 }}>
                                 Search movies, shows, anime...
                             </ComposeText>
                         </DockedSearchBar.Placeholder>
@@ -432,7 +444,13 @@ export default function Index() {
 
                 {loading ? (
                     <View style={styles.loaderContainer}>
-                        <ActivityIndicator size="large" color="#E50914" />
+                        {Platform.OS === 'android' ? (
+                            <Host colorScheme="dark" matchContents style={{ alignItems: 'center', justifyContent: 'center' }}>
+                                <CircularProgressIndicator strokeWidth={3.5} modifiers={[size(44, 44)]} />
+                            </Host>
+                        ) : (
+                            <ActivityIndicator size="large" color="#E50914" />
+                        )}
                         <Text style={styles.loadingText}>Scraping sources...</Text>
                     </View>
                 ) : (

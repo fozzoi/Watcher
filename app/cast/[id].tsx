@@ -16,7 +16,8 @@ import {
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { hasSavedItem, addSavedItem, removeSavedItem } from '../../src/database';
+import { hasSavedItem, addSavedItem, removeSavedItem, subscribeToSavedItemsChanges } from '../../src/database';
+import { toggleWatchlistGlobal, syncSavedStore } from '../../src/state/savedState';
 import { logTasteEvent, TASTE_WEIGHTS } from '../../src/services/tasteProfile';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -202,6 +203,10 @@ export default function CastDetails() {
   useEffect(() => {
     loadData();
     checkIfLiked();
+    const unsub = subscribeToSavedItemsChanges(() => {
+      checkIfLiked();
+    });
+    return unsub;
   }, [personId]);
 
   const checkIfLiked = () => {
@@ -279,24 +284,13 @@ export default function CastDetails() {
     );
 
     try {
-      if (newValue) {
-        const artistToSave = {
-          id: person.id,
-          name: person.name,
-          profile_path: person.profile_path,
-          known_for_department: person.known_for_department,
-          popularity: person.popularity,
-        };
-        addSavedItem(artistToSave, 'artist');
-        logTasteEvent({
-          entity_type: 'cast',
-          entity_id: person.id,
-          entity_name: person.name,
-          weight: TASTE_WEIGHTS.FAVORITE_ARTIST,
-        });
-      } else {
-        removeSavedItem(person.id, 'artist');
-      }
+      toggleWatchlistGlobal({
+        id: person.id,
+        name: person.name,
+        profile_path: person.profile_path,
+        known_for_department: person.known_for_department,
+        popularity: person.popularity,
+      });
     } catch {
       setIsLiked(!newValue);
     }

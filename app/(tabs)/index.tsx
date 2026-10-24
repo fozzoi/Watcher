@@ -19,6 +19,7 @@ import {
   TextInput,
   ActivityIndicator,
   DeviceEventEmitter,
+  Platform,
 } from 'react-native';
 
 import { toggleWatchlistGlobal, syncSavedStore } from '../../src/state/savedState';
@@ -46,7 +47,6 @@ import {
   isMediaReleased,
 } from '../../src/services/tasteProfile';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Host, PullToRefreshBox } from '@expo/ui/jetpack-compose';
 import {
   fetchPersonalisedDiscoveryContent,
   getSimilarForHistory,
@@ -940,44 +940,30 @@ const ExplorePage = () => {
     },
   });
 
-  const ExploreRefreshWrapper = ({ children }: { children: React.ReactNode }) => {
-    if (Platform.OS === 'android') {
-      return (
-        <Host seedColor="#8E24AA" colorScheme="dark" style={{ flex: 1, paddingTop: insets.top }}>
-          <PullToRefreshBox
-            isRefreshing={refreshing}
-            onRefresh={onRefresh}
-            indicator={{ color: "#8E24AA" }}
-          >
-            {children}
-          </PullToRefreshBox>
-        </Host>
-      );
-    }
-    return <>{children}</>;
-  };
-
   return (
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       {/* Main Smooth ScrollView with Progressive Tier Mounts (Matched with Detail Page) */}
-      <ExploreRefreshWrapper>
-        <Animated.ScrollView
-          style={[{ flex: 1 }, animatedFeedStyle as any]}
-          contentContainerStyle={styles.scrollContent}
-          onScroll={scrollHandler}
-          scrollEventThrottle={16}
-          showsVerticalScrollIndicator={false}
-          overScrollMode="never"
-          keyboardDismissMode="on-drag"
-          onScrollBeginDrag={() => Keyboard.dismiss()}
-          refreshControl={
-            Platform.OS !== 'android' ? (
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />
-            ) : undefined
-          }
-        >
+      <Animated.ScrollView
+        style={[{ flex: 1 }, animatedFeedStyle as any]}
+        contentContainerStyle={styles.scrollContent}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        overScrollMode="never"
+        keyboardDismissMode="on-drag"
+        onScrollBeginDrag={() => Keyboard.dismiss()}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#E50914']}
+            progressBackgroundColor="#1C1C1E"
+            progressViewOffset={insets.top + 10}
+          />
+        }
+      >
           <ExploreHeader
             contentLoading={contentLoading}
             rawContent={rawContent}
@@ -1026,7 +1012,6 @@ const ExplorePage = () => {
 
         <View style={{ height: 40 }} />
       </Animated.ScrollView>
-      </ExploreRefreshWrapper>
 
       {/* Micro-rendered Search Controller (Isolated state, zero feed re-renders while typing) */}
       <ExploreSearchController

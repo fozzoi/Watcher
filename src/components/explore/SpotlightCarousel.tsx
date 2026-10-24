@@ -149,7 +149,7 @@ const SpotlightCarousel = memo(
         </View>
 
         {Platform.OS === 'android' ? (
-          <Host style={{ width: '100%', height: SPOTLIGHT_HEIGHT }}>
+          <Host colorScheme="dark" style={{ width: '100%', height: SPOTLIGHT_HEIGHT }}>
             <HorizontalCenteredHeroCarousel preferredItemWidth={310} itemSpacing={12}>
               {validData.map((item, index) => {
                 const backdropPath = item.backdrop_path || item.poster_path;
