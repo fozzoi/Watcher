@@ -417,6 +417,21 @@ export const getTrendingTV = async (page: number = 1, genreId?: number): Promise
     } catch (error) { return []; }
 };
 
+export const getTrendingToday = async (mediaType: "all" | "movie" | "tv" = "all", page: number = 1): Promise<TMDBResult[]> => {
+    const endpoint = `/trending/${mediaType}/day`;
+    const params: any = { page };
+    try {
+      const data = await fetchWithCache(endpoint, params);
+      const results = data.results || [];
+      return results.map((item: any) => ({
+        ...formatBasicItemData(item),
+        media_type: item.media_type || (item.first_air_date ? "tv" : "movie"),
+      }));
+    } catch (error) {
+      return await getTrendingMovies(page);
+    }
+};
+
 export const getTopRated = async (page: number = 1, genreId?: number): Promise<TMDBResult[]> => {
     const endpoint = genreId ? "/discover/movie" : "/movie/top_rated";
     const params: any = {};

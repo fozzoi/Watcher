@@ -1,11 +1,30 @@
 // src/components/explore/SpotlightCarousel.tsx
 import React, { memo, useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { LegendList } from '@legendapp/list/react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  Host,
+  HorizontalCenteredHeroCarousel,
+  Box,
+  Column,
+  Text as ComposeText,
+  Image as ComposeImage,
+} from '@expo/ui/jetpack-compose';
+import {
+  size,
+  height,
+  background,
+  maskClip,
+  Shapes,
+  clickable,
+  fillMaxSize,
+  fillMaxWidth,
+  padding,
+} from '@expo/ui/jetpack-compose/modifiers';
 import { getImageUrl, getMovieCollectionInfo } from '../../tmdb';
 import { HORIZONTAL_MARGIN } from './ExploreConstants';
 
@@ -129,20 +148,86 @@ const SpotlightCarousel = memo(
           ) : null}
         </View>
 
-        <LegendList
-          horizontal
-          data={validData}
-          keyExtractor={(item) => `spotlight-${item.id}`}
-          renderItem={renderItem}
-          recycleItems={false}
-          getFixedItemSize={() => SNAP_INTERVAL}
-          estimatedItemSize={SNAP_INTERVAL}
-          drawDistance={150}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          decelerationRate="fast"
-          snapToInterval={SNAP_INTERVAL}
-        />
+        {Platform.OS === 'android' ? (
+          <Host style={{ width: '100%', height: SPOTLIGHT_HEIGHT }}>
+            <HorizontalCenteredHeroCarousel preferredItemWidth={310} itemSpacing={12}>
+              {validData.map((item, index) => {
+                const backdropPath = item.backdrop_path || item.poster_path;
+                const imageUrl = backdropPath ? getImageUrl(backdropPath, 'w780') : null;
+                const titleText = item.collection_name || item.belongs_to_collection?.name || item.title || item.name;
+                const year = (item.release_date || item.first_air_date || '').slice(0, 4);
+                const subtitleText = item.collection_name && item.title ? `${item.title}` : (year ? `${year}` : '');
+
+                return (
+                  <Box
+                    key={`compose-spotlight-${item.id}-${index}`}
+                    contentAlignment="bottomStart"
+                    modifiers={[
+                      fillMaxSize(),
+                      height(SPOTLIGHT_HEIGHT),
+                      maskClip(Shapes.RoundedCorner(24)),
+                      background('#161618'),
+                      clickable(() => handlePress(item)),
+                    ]}
+                  >
+                    {imageUrl && (
+                      <ComposeImage
+                        source={{ uri: imageUrl }}
+                        contentScale="crop"
+                        modifiers={[fillMaxSize()]}
+                      />
+                    )}
+                    <Box
+                      modifiers={[
+                        fillMaxSize(),
+                        background('rgba(10, 10, 11, 0.45)'),
+                      ]}
+                    />
+                    <Column modifiers={[fillMaxWidth(), padding(14, 0, 14, 12)]}>
+                      <ComposeText
+                        color="#E50914"
+                        style={{ fontSize: 10, fontWeight: '800', letterSpacing: 0.8 }}
+                      >
+                        {eyebrow || 'COLLECTION SPOTLIGHT'}
+                      </ComposeText>
+                      <ComposeText
+                        color="#FAFAFA"
+                        maxLines={1}
+                        style={{ fontSize: 15, fontWeight: '700', letterSpacing: -0.2 }}
+                      >
+                        {titleText}
+                      </ComposeText>
+                      {subtitleText ? (
+                        <ComposeText
+                          color="#9B9BA3"
+                          maxLines={1}
+                          style={{ fontSize: 11.5, fontWeight: '500' }}
+                        >
+                          {subtitleText}
+                        </ComposeText>
+                      ) : null}
+                    </Column>
+                  </Box>
+                );
+              })}
+            </HorizontalCenteredHeroCarousel>
+          </Host>
+        ) : (
+          <LegendList
+            horizontal
+            data={validData}
+            keyExtractor={(item) => `spotlight-${item.id}`}
+            renderItem={renderItem}
+            recycleItems={false}
+            getFixedItemSize={() => SNAP_INTERVAL}
+            estimatedItemSize={SNAP_INTERVAL}
+            drawDistance={150}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            decelerationRate="fast"
+            snapToInterval={SNAP_INTERVAL}
+          />
+        )}
       </View>
     );
   },

@@ -41,7 +41,7 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
   const [messages, setMessages] = useState<{ id: string; role: 'user' | 'assistant'; text: string }[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<any>(null);
 
   const sendMessage = useCallback(async (customText?: string) => {
     const text = (customText || input).trim();

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Watcher",
     "slug": "Watcher",
-    "version": "3.1.5",
+    "version": "3.1.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "myapp",
@@ -15,7 +15,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.thewatcher.dev",
+      "package": "com.thewatcher",
       "runtimeVersion": {
         "policy": "appVersion"
       },
@@ -88,7 +88,8 @@
       "expo-router",
       "expo-image",
       "expo-web-browser",
-      "expo-sqlite"
+      "expo-sqlite",
+      "./plugins/withGradleMemory"
     ],
     "extra": {
       "eas": {

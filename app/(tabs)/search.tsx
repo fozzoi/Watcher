@@ -19,6 +19,7 @@ import { searchTorrents } from '../../src/Scraper';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
+import { Host, DockedSearchBar, Text as ComposeText } from '@expo/ui/jetpack-compose';
 
 
 
@@ -371,30 +372,42 @@ export default function Index() {
         )}
 
         <View style={[styles.searchSection, hasSearched && styles.searchSectionActive]}>
-            <View style={styles.inputWrapper}>
-                {prefillQuery || fromMovieId ? (
-                    <TouchableOpacity activeOpacity={0.7} onPress={handleGoBack} style={{ paddingLeft: 14, paddingRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                        <Ionicons name="arrow-back" size={22} color="#FFF" />
-                    </TouchableOpacity>
-                ) : (
-                    <Ionicons name="search" size={20} color="#666" style={{ marginLeft: 16 }} />
-                )}
-                <TextInput
-                    style={styles.input}
-                    placeholder="Search movies, shows, anime..."
-                    placeholderTextColor="#666"
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    onSubmitEditing={() => handleSearch()}
-                    returnKeyType="search"
-                    keyboardAppearance="dark"
-                />
-                {searchQuery.length > 0 && (
-                    <TouchableOpacity activeOpacity={0.95} onPress={handleClear} style={{ padding: 10 }}>
-                        <Ionicons name="close-circle" size={18} color="#666" />
-                    </TouchableOpacity>
-                )}
-            </View>
+            {Platform.OS === 'android' ? (
+                <Host seedColor="#8E24AA" colorScheme="dark" matchContents style={{ width: '100%' }}>
+                    <DockedSearchBar onQueryChange={setSearchQuery}>
+                        <DockedSearchBar.Placeholder>
+                            <ComposeText color="#8E8E93" style={{ fontSize: 14 }}>
+                                Search movies, shows, anime...
+                            </ComposeText>
+                        </DockedSearchBar.Placeholder>
+                    </DockedSearchBar>
+                </Host>
+            ) : (
+                <View style={styles.inputWrapper}>
+                    {prefillQuery || fromMovieId ? (
+                        <TouchableOpacity activeOpacity={0.7} onPress={handleGoBack} style={{ paddingLeft: 14, paddingRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                            <Ionicons name="arrow-back" size={22} color="#FFF" />
+                        </TouchableOpacity>
+                    ) : (
+                        <Ionicons name="search" size={20} color="#666" style={{ marginLeft: 16 }} />
+                    )}
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Search movies, shows, anime..."
+                        placeholderTextColor="#666"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        onSubmitEditing={() => handleSearch()}
+                        returnKeyType="search"
+                        keyboardAppearance="dark"
+                    />
+                    {searchQuery.length > 0 && (
+                        <TouchableOpacity activeOpacity={0.95} onPress={handleClear} style={{ padding: 10 }}>
+                            <Ionicons name="close-circle" size={18} color="#666" />
+                        </TouchableOpacity>
+                    )}
+                </View>
+            )}
         </View>
 
         {hasSearched && (

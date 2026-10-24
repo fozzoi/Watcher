@@ -45,12 +45,15 @@ import {
   ForYouShelf,
   isMediaReleased,
 } from '../../src/services/tasteProfile';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Host, PullToRefreshBox } from '@expo/ui/jetpack-compose';
 import {
   fetchPersonalisedDiscoveryContent,
   getSimilarForHistory,
   searchTMDB,
   searchPeople,
   searchCollections,
+  getTrendingToday,
 } from '../../src/tmdb';
 import { getUserPreferences } from '../../src/userPreferences';
 
@@ -130,15 +133,18 @@ const updateHeroScrollOut = (isOut: boolean) => {
 interface ExploreHeaderProps {
   contentLoading: boolean;
   rawContent: any;
+  heroItems?: any[];
   selectedGenre: number;
   onSelectGenre: (genreId: number) => void;
   toggleWatchlist: (item: any) => void;
+  onOpenSearch?: () => void;
 }
 
 const ExploreHeader = memo(
   ({
     contentLoading,
     rawContent,
+    heroItems,
     selectedGenre,
     onSelectGenre,
     toggleWatchlist,
@@ -157,7 +163,7 @@ const ExploreHeader = memo(
     return (
       <View style={styles.headerContainer}>
         <HeroSection
-          items={rawContent?.heroMovies || rawContent?.trendingMovies || []}
+          items={heroItems && heroItems.length ? heroItems : (rawContent?.heroMovies || rawContent?.trendingMovies || [])}
           toggleWatchlist={toggleWatchlist}
         />
         <GenreFilter selectedGenre={selectedGenre} onSelectGenre={onSelectGenre} />
@@ -167,6 +173,7 @@ const ExploreHeader = memo(
   (prev, next) =>
     prev.contentLoading === next.contentLoading &&
     prev.rawContent === next.rawContent &&
+    prev.heroItems === next.heroItems &&
     prev.selectedGenre === next.selectedGenre
 );
 
@@ -462,12 +469,31 @@ const ExploreSearchController = memo(
 
 const ExplorePage = () => {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [selectedGenre, setSelectedGenre] = useState(0);
 
   const [rawContent, setRawContent] = useState<any>(() => getExploreContentCacheSync(0));
   const [contentLoading, setContentLoading] = useState<boolean>(() => !getExploreContentCacheSync(0));
   const [refreshing, setRefreshing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [trendingToday, setTrendingToday] = useState<any[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const today = await getTrendingToday('all', 1);
+        if (isMounted && today && today.length > 0) {
+          setTrendingToday(today.slice(0, 10));
+        }
+      } catch (err) {
+        console.warn('Error fetching trending today for hero:', err);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
   const [forYouShelves, setForYouShelves] = useState<ForYouShelf[]>(() => getForYouShelvesSync());
@@ -651,6 +677,7 @@ const ExplorePage = () => {
       await Promise.all([
         fetchContent(selectedGenre, true),
         refreshForYouShelvesIfNeeded(true),
+        getTrendingToday('all', 1).then((res) => res && setTrendingToday(res.slice(0, 10))).catch(() => null),
       ]);
       runAfterTransition(() => {
         setRenderStage(1);
@@ -913,31 +940,53 @@ const ExplorePage = () => {
     },
   });
 
+  const ExploreRefreshWrapper = ({ children }: { children: React.ReactNode }) => {
+    if (Platform.OS === 'android') {
+      return (
+        <Host seedColor="#8E24AA" colorScheme="dark" style={{ flex: 1, paddingTop: insets.top }}>
+          <PullToRefreshBox
+            isRefreshing={refreshing}
+            onRefresh={onRefresh}
+            indicator={{ color: "#8E24AA" }}
+          >
+            {children}
+          </PullToRefreshBox>
+        </Host>
+      );
+    }
+    return <>{children}</>;
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       {/* Main Smooth ScrollView with Progressive Tier Mounts (Matched with Detail Page) */}
-      <Animated.ScrollView
-        style={[{ flex: 1 }, animatedFeedStyle as any]}
-        contentContainerStyle={styles.scrollContent}
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
-        showsVerticalScrollIndicator={false}
-        overScrollMode="never"
-        keyboardDismissMode="on-drag"
-        onScrollBeginDrag={() => Keyboard.dismiss()}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />
-        }
-      >
-        <ExploreHeader
-          contentLoading={contentLoading}
-          rawContent={rawContent}
-          selectedGenre={selectedGenre}
-          onSelectGenre={handleSelectGenre}
-          toggleWatchlist={handleToggleWatchlist}
-        />
+      <ExploreRefreshWrapper>
+        <Animated.ScrollView
+          style={[{ flex: 1 }, animatedFeedStyle as any]}
+          contentContainerStyle={styles.scrollContent}
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
+          overScrollMode="never"
+          keyboardDismissMode="on-drag"
+          onScrollBeginDrag={() => Keyboard.dismiss()}
+          refreshControl={
+            Platform.OS !== 'android' ? (
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E50914" />
+            ) : undefined
+          }
+        >
+          <ExploreHeader
+            contentLoading={contentLoading}
+            rawContent={rawContent}
+            heroItems={trendingToday.length ? trendingToday : undefined}
+            selectedGenre={selectedGenre}
+            onSelectGenre={handleSelectGenre}
+            toggleWatchlist={handleToggleWatchlist}
+            onOpenSearch={handleOpenSearch}
+          />
 
         {!(contentLoading && !rawContent) && (
           <>
@@ -977,6 +1026,7 @@ const ExplorePage = () => {
 
         <View style={{ height: 40 }} />
       </Animated.ScrollView>
+      </ExploreRefreshWrapper>
 
       {/* Micro-rendered Search Controller (Isolated state, zero feed re-renders while typing) */}
       <ExploreSearchController

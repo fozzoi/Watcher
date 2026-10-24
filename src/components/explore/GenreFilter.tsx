@@ -85,7 +85,7 @@ const persistentLayouts: Record<number, { x: number; width: number }> = {};
 
 const GenreFilter = memo(({ selectedGenre, onSelectGenre }: GenreFilterProps) => {
   const { width: windowWidth } = useWindowDimensions();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<any>(null);
   const isInitialCenteringDone = useRef(false);
 
   const centerChip = useCallback(

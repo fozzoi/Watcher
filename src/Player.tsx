@@ -114,7 +114,7 @@ export default function Player() {
   };
 
   const handleAppStateChange = (nextAppState: any) => {
-    if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+    if (appState.current?.match(/inactive|background/) && nextAppState === 'active') {
       if (Platform.OS === 'android') NavigationBar.setVisibilityAsync("hidden").catch(() => {});
       setStatusBarHidden(true, 'none');
     }

@@ -203,7 +203,7 @@ export default function Player() {
     if (nextAppState.match(/inactive|background/)) {
       void flushProgress();
     }
-    if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+    if (appState.current?.match(/inactive|background/) && nextAppState === 'active') {
       if (Platform.OS === 'android') NavigationBar.setVisibilityAsync("hidden").catch(() => {});
       setStatusBarHidden(true, 'none');
     }

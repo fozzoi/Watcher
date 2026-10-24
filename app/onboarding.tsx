@@ -205,7 +205,7 @@ const ActorStep = ({
             <View style={styles.actorEmpty}>
               <Text style={styles.actorEmptyText}>Start typing to search for actors, directors and more</Text>
             </View>
-          ) : null
+          ) : undefined
         }
       />
     </View>

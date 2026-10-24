@@ -1,5 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Switch, Platform, StyleSheet, DeviceEventEmitter, ToastAndroid } from 'react-native';
+import {
+  Host,
+  Switch as ComposeSwitch,
+  SnackbarHost,
+  SnackbarHostRef,
+  PullToRefreshBox,
+  LoadingIndicator,
+  ListItem,
+  Card as ComposeCard,
+  HorizontalDivider,
+  Text as ComposeText,
+} from '@expo/ui/jetpack-compose';
+import { clickable, fillMaxWidth } from '@expo/ui/jetpack-compose/modifiers';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -67,6 +80,31 @@ const Settings = () => {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
+
+  // Jetpack Compose Native States
+  const snackbarHostRef = useRef<SnackbarHostRef>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const showNativeSnackbar = (message: string, actionLabel: string = "Dismiss") => {
+    if (Platform.OS === 'android' && snackbarHostRef.current) {
+      snackbarHostRef.current.showSnackbar({ message, actionLabel });
+    } else if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.SHORT);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const res = await checkForAppUpdate();
+      setUpdateResult(res);
+      showNativeSnackbar("Settings & updates checked", "OK");
+    } catch (e) {
+      // ignore
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Themed Dialog State
   const [dialogConfig, setDialogConfig] = useState<DialogConfig>({
@@ -426,7 +464,7 @@ const Settings = () => {
           await FileSystem.makeDirectoryAsync(exportDir, { intermediates: true });
           const targetUri = `${exportDir}${fileName}`;
           await FileSystem.writeAsStringAsync(targetUri, fileContent, { encoding: FileSystem.EncodingType.UTF8 });
-          ToastAndroid.show(`Saved to Download/Watcher/export/${fileName}`, ToastAndroid.LONG);
+          showNativeSnackbar(`Saved to Download/Watcher/export/${fileName}`, "OK");
           return;
         } catch (exportErr) {
           console.warn('Direct Download/Watcher/export write failed, trying SAF:', exportErr);
@@ -451,7 +489,7 @@ const Settings = () => {
               const mimeType = format === 'json' ? 'application/json' : 'text/plain';
               const safFileUri = await SAF.createFileAsync(targetDirUri, fileName, mimeType);
               await SAF.writeAsStringAsync(safFileUri, fileContent, { encoding: FileSystem.EncodingType.UTF8 });
-              ToastAndroid.show(`Saved to Download/Watcher/export/${fileName}`, ToastAndroid.LONG);
+              showNativeSnackbar(`Saved to Download/Watcher/export/${fileName}`, "OK");
               return;
             }
           } catch (safErr) {
@@ -636,30 +674,120 @@ const Settings = () => {
 
   // ── Reusable row components ──
 
-  const ToggleRow = ({ title, subtitle, value, onValueChange }: any) => (
-    <View style={styles.row}>
-      <View style={styles.rowText}>
-        <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowSubtitle}>{subtitle}</Text>
+  const ToggleRow = ({ title, subtitle, value, onValueChange }: any) => {
+    if (Platform.OS === 'android') {
+      return (
+        <Host seedColor="#8E24AA" colorScheme="dark" matchContents>
+          <ListItem
+            colors={{
+              containerColor: '#1C1C1E',
+              contentColor: '#FFFFFF',
+              supportingContentColor: '#8E8E93',
+            }}
+          >
+            <ListItem.HeadlineContent>
+              <ComposeText color="#FFFFFF" style={{ fontSize: 15, fontWeight: '600' }}>
+                {title}
+              </ComposeText>
+            </ListItem.HeadlineContent>
+            <ListItem.SupportingContent>
+              <ComposeText color="#8E8E93" style={{ fontSize: 12.5 }}>
+                {subtitle}
+              </ComposeText>
+            </ListItem.SupportingContent>
+            <ListItem.TrailingContent>
+              <ComposeSwitch 
+                value={value} 
+                onCheckedChange={onValueChange} 
+              />
+            </ListItem.TrailingContent>
+          </ListItem>
+        </Host>
+      );
+    }
+    return (
+      <View style={styles.row}>
+        <View style={styles.rowText}>
+          <Text style={styles.rowTitle}>{title}</Text>
+          <Text style={styles.rowSubtitle}>{subtitle}</Text>
+        </View>
+        <Switch 
+          trackColor={{ false: '#3A3A3C', true: '#E50914' }} 
+          thumbColor="#FFFFFF"
+          onValueChange={onValueChange} 
+          value={value} 
+        />
       </View>
-      <Switch 
-        trackColor={{ false: '#3A3A3C', true: '#E50914' }} 
-        thumbColor="#FFFFFF"
-        onValueChange={onValueChange} 
-        value={value} 
-      />
-    </View>
-  );
+    );
+  };
 
-  const ActionRow = ({ title, subtitle, onPress, destructive }: any) => (
-    <TouchableOpacity activeOpacity={0.6} onPress={onPress} style={styles.row}>
-      <View style={styles.rowText}>
-        <Text style={[styles.rowTitle, destructive && styles.destructiveText]}>{title}</Text>
-        <Text style={styles.rowSubtitle}>{subtitle}</Text>
-      </View>
-      <Feather name="chevron-right" size={20} color="#3A3A3C" />
-    </TouchableOpacity>
-  );
+  const ActionRow = ({ title, subtitle, onPress, destructive }: any) => {
+    if (Platform.OS === 'android') {
+      return (
+        <Host seedColor="#8E24AA" colorScheme="dark" matchContents>
+          <ListItem
+            colors={{
+              containerColor: '#1C1C1E',
+              contentColor: destructive ? '#FF453A' : '#FFFFFF',
+              supportingContentColor: '#8E8E93',
+            }}
+            modifiers={[clickable(onPress)]}
+          >
+            <ListItem.HeadlineContent>
+              <ComposeText color={destructive ? '#FF453A' : '#FFFFFF'} style={{ fontSize: 15, fontWeight: '600' }}>
+                {title}
+              </ComposeText>
+            </ListItem.HeadlineContent>
+            <ListItem.SupportingContent>
+              <ComposeText color="#8E8E93" style={{ fontSize: 12.5 }}>
+                {subtitle}
+              </ComposeText>
+            </ListItem.SupportingContent>
+            <ListItem.TrailingContent>
+              <Feather name="chevron-right" size={20} color="#3A3A3C" />
+            </ListItem.TrailingContent>
+          </ListItem>
+        </Host>
+      );
+    }
+    return (
+      <TouchableOpacity activeOpacity={0.6} onPress={onPress} style={styles.row}>
+        <View style={styles.rowText}>
+          <Text style={[styles.rowTitle, destructive && styles.destructiveText]}>{title}</Text>
+          <Text style={styles.rowSubtitle}>{subtitle}</Text>
+        </View>
+        <Feather name="chevron-right" size={20} color="#3A3A3C" />
+      </TouchableOpacity>
+    );
+  };
+
+  const SettingSeparator = () => {
+    if (Platform.OS === 'android') {
+      return (
+        <Host seedColor="#8E24AA" colorScheme="dark" matchContents>
+          <HorizontalDivider color="#2C2C2E" thickness={0.8} />
+        </Host>
+      );
+    }
+    return <View style={styles.separator} />;
+  };
+
+  const SettingsRefreshWrapper = ({ children }: { children: React.ReactNode }) => {
+    if (Platform.OS === 'android') {
+      return (
+        <Host seedColor="#8E24AA" colorScheme="dark" style={{ flex: 1 }}>
+          <PullToRefreshBox
+            isRefreshing={refreshing}
+            onRefresh={handleRefresh}
+            indicator={{ color: "#8E24AA" }}
+          >
+            {children}
+          </PullToRefreshBox>
+        </Host>
+      );
+    }
+    return <>{children}</>;
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -692,13 +820,13 @@ const Settings = () => {
                   </Text>
                 </View>
               </View>
-              <View style={styles.separator} />
+              <SettingSeparator />
               <ActionRow
                 title="Sync with Cloud"
                 subtitle={isSyncingCloud ? "Synchronizing library data..." : "Merge Watchlist & History with cloud"}
                 onPress={handleManualCloudSync}
               />
-              <View style={styles.separator} />
+              <SettingSeparator />
               <ActionRow
                 title="Sign Out"
                 subtitle="Disconnect from cloud sync on this device"
@@ -723,7 +851,7 @@ const Settings = () => {
                   {isSyncingCloud ? 'Signing in...' : 'Sign in with Google'}
                 </Text>
               </TouchableOpacity>
-              <View style={styles.separator} />
+              <SettingSeparator />
               <ActionRow
                 title="Demo Account (No Account Needed)"
                 subtitle="1-Click test sync across Desktop, Web & Mobile"
@@ -742,14 +870,14 @@ const Settings = () => {
             value={isHiRes} 
             onValueChange={toggleHiRes} 
           />
-          <View style={styles.separator} />
+          <SettingSeparator />
           <ToggleRow 
             title="NSFW Filter" 
             subtitle="Hide explicit and adult content" 
             value={isNsfwFilter} 
             onValueChange={toggleNsfw} 
           />
-          <View style={styles.separator} />
+          <SettingSeparator />
           <ActionRow 
             title="Change Content Preferences" 
             subtitle="Update your languages, genres and favorite actors" 
@@ -766,7 +894,7 @@ const Settings = () => {
             value={playerPreferences.muted}
             onValueChange={(value: boolean) => updatePlayerPreference({ muted: value })}
           />
-          <View style={styles.separator} />
+          <SettingSeparator />
           <ActionRow
             title="Audio Track"
             subtitle={playerPreferences.audioTrack || "Default audio"}
@@ -775,7 +903,7 @@ const Settings = () => {
               { label: "Original", value: "original" },
             ], "audioTrack")}
           />
-          <View style={styles.separator} />
+          <SettingSeparator />
           <ActionRow
             title="Subtitle Track"
             subtitle={playerPreferences.subtitleTrack || "Subtitles off"}
@@ -784,7 +912,7 @@ const Settings = () => {
               { label: "English", value: "en" },
             ], "subtitleTrack")}
           />
-          <View style={styles.separator} />
+          <SettingSeparator />
           <ActionRow
             title="Video Quality"
             subtitle={playerPreferences.quality.toUpperCase()}
@@ -806,7 +934,7 @@ const Settings = () => {
             value={isSmartNotifs} 
             onValueChange={toggleSmartNotifs} 
           />
-          <View style={styles.separator} />
+          <SettingSeparator />
           <ActionRow 
             title="Send Test Notification" 
             subtitle="Verify background notifications on this device" 
@@ -823,41 +951,89 @@ const Settings = () => {
             value={isUpdateNotifs} 
             onValueChange={toggleUpdateNotifs} 
           />
-          <View style={styles.separator} />
-          <TouchableOpacity 
-            activeOpacity={0.7} 
-            onPress={() => {
-              if (updateResult?.updateAvailable) {
-                setUpdateModalVisible(true);
-              } else {
-                handleCheckUpdate(false);
-              }
-            }} 
-            style={styles.row}
-          >
-            <View style={styles.rowText}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.rowTitle}>Check for Updates</Text>
-                {updateResult?.updateAvailable && (
-                  <View style={styles.badgeNew}>
-                    <Text style={styles.badgeNewText}>NEW</Text>
+          <SettingSeparator />
+          {Platform.OS === 'android' ? (
+            <Host seedColor="#8E24AA" colorScheme="dark" matchContents>
+              <ListItem
+                colors={{
+                  containerColor: '#1C1C1E',
+                  contentColor: '#FFFFFF',
+                  supportingContentColor: updateResult?.updateAvailable ? '#30D158' : '#8E8E93',
+                }}
+                modifiers={[clickable(() => {
+                  if (updateResult?.updateAvailable) {
+                    setUpdateModalVisible(true);
+                  } else {
+                    handleCheckUpdate(false);
+                  }
+                })]}
+              >
+                <ListItem.HeadlineContent>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <ComposeText color="#FFFFFF" style={{ fontSize: 15, fontWeight: '600' }}>
+                      Check for Updates
+                    </ComposeText>
+                    {updateResult?.updateAvailable && (
+                      <View style={styles.badgeNew}>
+                        <Text style={styles.badgeNewText}>NEW</Text>
+                      </View>
+                    )}
                   </View>
-                )}
+                </ListItem.HeadlineContent>
+                <ListItem.SupportingContent>
+                  <ComposeText color={updateResult?.updateAvailable ? '#30D158' : '#8E8E93'} style={{ fontSize: 12.5 }}>
+                    {checkingUpdate 
+                      ? "Checking GitHub for updates..." 
+                      : updateResult?.updateAvailable 
+                        ? `Update available: ${updateResult.latestVersion}` 
+                        : `Version ${appVersion} (Latest)`}
+                  </ComposeText>
+                </ListItem.SupportingContent>
+                <ListItem.TrailingContent>
+                  {checkingUpdate ? (
+                    <LoadingIndicator color="#8E24AA" />
+                  ) : (
+                    <Feather name="refresh-cw" size={18} color="#8E8E93" />
+                  )}
+                </ListItem.TrailingContent>
+              </ListItem>
+            </Host>
+          ) : (
+            <TouchableOpacity 
+              activeOpacity={0.7} 
+              onPress={() => {
+                if (updateResult?.updateAvailable) {
+                  setUpdateModalVisible(true);
+                } else {
+                  handleCheckUpdate(false);
+                }
+              }} 
+              style={styles.row}
+            >
+              <View style={styles.rowText}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={styles.rowTitle}>Check for Updates</Text>
+                  {updateResult?.updateAvailable && (
+                    <View style={styles.badgeNew}>
+                      <Text style={styles.badgeNewText}>NEW</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={[styles.rowSubtitle, updateResult?.updateAvailable && { color: '#30D158' }]}>
+                  {checkingUpdate 
+                    ? "Checking GitHub for updates..." 
+                    : updateResult?.updateAvailable 
+                      ? `Update available: ${updateResult.latestVersion}` 
+                      : `Version ${appVersion} (Latest)`}
+                </Text>
               </View>
-              <Text style={[styles.rowSubtitle, updateResult?.updateAvailable && { color: '#30D158' }]}>
-                {checkingUpdate 
-                  ? "Checking GitHub for updates..." 
-                  : updateResult?.updateAvailable 
-                    ? `Update available: ${updateResult.latestVersion}` 
-                    : `Version ${appVersion} (Latest)`}
-              </Text>
-            </View>
-            {checkingUpdate ? (
-              <ActivityIndicator size="small" color="#E50914" />
-            ) : (
-              <Feather name="refresh-cw" size={18} color="#8E8E93" />
-            )}
-          </TouchableOpacity>
+              {checkingUpdate ? (
+                <ActivityIndicator size="small" color="#E50914" />
+              ) : (
+                <Feather name="refresh-cw" size={18} color="#8E8E93" />
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
 
@@ -880,13 +1056,13 @@ const Settings = () => {
             subtitle="Save Watchlist & History to your phone" 
             onPress={handleExportPrompt} 
           />
-          <View style={styles.separator} />
+          <SettingSeparator />
           <ActionRow 
             title="Restore Backup" 
             subtitle="Import from a .json backup file" 
             onPress={handleRestoreBackup} 
           />
-          <View style={styles.separator} />
+          <SettingSeparator />
           <ActionRow 
             title="Clear Cache" 
             subtitle="Free up local storage space" 

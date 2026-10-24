@@ -236,7 +236,7 @@ const localStyles = StyleSheet.create({
 });
 
 export default function TabLayout() {
-    const targetRef = useRef<View | null>(null);
+    const targetRef = useRef<any>(null);
     const [targetReady, setTargetReady] = useState(false);
 
     useEffect(() => {
