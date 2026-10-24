@@ -5,6 +5,7 @@ import { Platform, Dimensions, View, StyleSheet, TouchableOpacity, DeviceEventEm
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { BlurView, BlurTargetView } from 'expo-blur';
+import { useAppTheme } from '../../src/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DOCK_MARGIN_BOTTOM = Platform.OS === 'ios' ? 40 : 35;
@@ -54,9 +55,9 @@ const TABS = [
                 }}
             >
                 <Ionicons
-                    name={focused ? 'sparkles' : 'sparkles-outline'}
+                    name={'sparkles-outline'}
                     size={size - 2}
-                    color={focused ? '#A78BFA' : 'rgba(255,255,255,0.6)'}
+                    color={color}
                 />
             </View>
         ),
@@ -66,6 +67,7 @@ const TABS = [
 const CustomTabBar = ({ targetRef, targetReady }: { targetRef: any; targetReady: boolean }) => {
     const pathname = usePathname();
     const router = useRouter();
+    const { colors, isDark } = useAppTheme();
 
     const scaleAnim = useRef(new Animated.Value(1)).current;
     const translateYAnim = useRef(new Animated.Value(0)).current;
@@ -131,28 +133,34 @@ const CustomTabBar = ({ targetRef, targetReady }: { targetRef: any; targetReady:
     return (
         <View style={localStyles.overlayContainer} pointerEvents="box-none">
             <LinearGradient
-                colors={['transparent', 'rgba(10,10,10,0.3)', 'rgba(10,10,10,0.75)']}
+                colors={isDark ? ['transparent', 'rgba(10,10,10,0.3)', 'rgba(10,10,10,0.75)'] : ['transparent', 'rgba(240,240,242,0.3)', 'rgba(240,240,242,0.85)']}
                 style={localStyles.bottomGradient}
                 pointerEvents="none"
             />
             <Animated.View
                 style={[
                     localStyles.pillContainer,
-                    { transform: [{ scale: scaleAnim }, { translateY: translateYAnim }] },
+                    { 
+                        borderColor: colors.divider,
+                        transform: [{ scale: scaleAnim }, { translateY: translateYAnim }] 
+                    },
                 ]}
             >
                 {blurEnabled && (
                     <BlurView
                         key="tab-bar-blur"
                         intensity={40}
-                        tint="dark"
+                        tint={isDark ? 'dark' : 'light'}
                         style={StyleSheet.absoluteFill}
                         blurTarget={targetRef}
                         blurMethod="dimezisBlurView"
                     />
                 )}
                 <View
-                    style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(28, 28, 30, 0.45)' }]}
+                    style={[
+                        StyleSheet.absoluteFill, 
+                        { backgroundColor: isDark ? 'rgba(28, 28, 30, 0.45)' : 'rgba(255, 255, 255, 0.70)' }
+                    ]}
                     pointerEvents="none"
                 />
                 <View style={localStyles.tabBarInner}>
@@ -169,7 +177,7 @@ const CustomTabBar = ({ targetRef, targetReady }: { targetRef: any; targetReady:
                             }
                         };
 
-                        const iconColor = isFocused ? '#E50914' : 'rgba(255,255,255,0.6)';
+                        const iconColor = isFocused ? colors.primary : (isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)');
 
                         return (
                             <TouchableOpacity
@@ -236,6 +244,7 @@ const localStyles = StyleSheet.create({
 });
 
 export default function TabLayout() {
+    const { colors } = useAppTheme();
     const targetRef = useRef<any>(null);
     const [targetReady, setTargetReady] = useState(false);
 
@@ -250,7 +259,7 @@ export default function TabLayout() {
     }, []);
 
     return (
-        <View style={{ flex: 1, backgroundColor: '#141414' }}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
             {/* Target captures only the screens */}
             <BlurTargetView ref={targetRef} style={{ flex: 1 }} collapsable={false}>
                 <Tabs

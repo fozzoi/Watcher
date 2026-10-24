@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { 
   View, StyleSheet, Linking, StatusBar, 
   ScrollView, TouchableOpacity, TextInput, 
-  Keyboard, ActivityIndicator, Text, BackHandler,
+  Keyboard, Text, BackHandler,
   LayoutAnimation, Platform, UIManager, Dimensions,
   ToastAndroid
 } from "react-native";
@@ -19,6 +19,8 @@ import { searchTorrents } from '../../src/Scraper';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
+import { useAppTheme } from '../../src/theme';
+import { LoadingIndicator } from '../../src/components/shared/LoadingIndicator';
 import {
   Host,
   DockedSearchBar,
@@ -51,6 +53,7 @@ export default function Index() {
     fromMediaType?: string;
   }>();
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useAppTheme();
   
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [results, setResults] = useState<Result[]>([]);
@@ -316,13 +319,7 @@ export default function Index() {
               disabled={isDownloadingThis}
             >
               {isDownloadingThis ? (
-                Platform.OS === 'android' ? (
-                  <Host colorScheme="dark" matchContents style={{ width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>
-                    <CircularProgressIndicator strokeWidth={2.5} modifiers={[size(18, 18)]} />
-                  </Host>
-                ) : (
-                  <ActivityIndicator size="small" color="#FFF" />
-                )
+                <LoadingIndicator size={18} color="#FFF" />
               ) : (
                 <>
                   <Feather name="share-2" size={15} color="#E5E5EB" style={{ marginRight: 6 }} />
@@ -356,9 +353,9 @@ export default function Index() {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <LinearGradient colors={['#0F0F0F', '#000']} style={StyleSheet.absoluteFill} />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
+      <LinearGradient colors={isDark ? ['#0F0F0F', colors.background] : [colors.surfaceVariant, colors.background]} style={StyleSheet.absoluteFill} />
 
       <View style={[
           styles.contentWrapper,
@@ -385,7 +382,7 @@ export default function Index() {
 
         <View style={[styles.searchSection, hasSearched && styles.searchSectionActive]}>
             {Platform.OS === 'android' ? (
-                <Host colorScheme="dark" matchContents style={{ width: '100%' }}>
+                <Host colorScheme={isDark ? 'dark' : 'light'} matchContents style={{ width: '100%' }}>
                     <DockedSearchBar onQueryChange={setSearchQuery}>
                         <DockedSearchBar.Placeholder>
                             <ComposeText style={{ fontSize: 14 }}>
@@ -444,13 +441,7 @@ export default function Index() {
 
                 {loading ? (
                     <View style={styles.loaderContainer}>
-                        {Platform.OS === 'android' ? (
-                            <Host colorScheme="dark" matchContents style={{ alignItems: 'center', justifyContent: 'center' }}>
-                                <CircularProgressIndicator strokeWidth={3.5} modifiers={[size(44, 44)]} />
-                            </Host>
-                        ) : (
-                            <ActivityIndicator size="large" color="#E50914" />
-                        )}
+                        <LoadingIndicator size={44} color={colors.primary} />
                         <Text style={styles.loadingText}>Scraping sources...</Text>
                     </View>
                 ) : (
@@ -503,7 +494,7 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#1A1A1A', width: '100%', height: 52,
-    borderRadius: 26, borderWidth: 1, borderColor: '#333',
+    borderRadius: 26,
     shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 4.65, elevation: 8,
   },

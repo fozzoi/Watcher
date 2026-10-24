@@ -17,10 +17,17 @@ import {
   BackHandler,
   Keyboard,
   TextInput,
-  ActivityIndicator,
   DeviceEventEmitter,
   Platform,
 } from 'react-native';
+
+import {
+  Host,
+  LoadingIndicator,
+  CircularProgressIndicator,
+} from '@expo/ui/jetpack-compose';
+import { size } from '@expo/ui/jetpack-compose/modifiers';
+import { LoadingIndicator as SharedLoadingIndicator } from '../../src/components/shared/LoadingIndicator';
 
 import { toggleWatchlistGlobal, syncSavedStore } from '../../src/state/savedState';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -69,6 +76,7 @@ import SearchResultsList from '../../src/components/search/SearchResultsList';
 import SearchEmptyState from '../../src/components/search/SearchEmptyState';
 import { HORIZONTAL_MARGIN, GENRE_DATA } from '../../src/components/explore/ExploreConstants';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useAppTheme } from '../../src/theme';
 
 /* =========================================================================
    PERFORMANCE HELPERS (Aligned with Movie & Cast Detail Pages)
@@ -153,10 +161,7 @@ const ExploreHeader = memo(
       return (
         <View style={styles.headerContainer}>
           <SkeletonHero />
-          <View style={{ marginTop: 20 }}>
-            <SkeletonCarousel />
-            <SkeletonCarousel />
-          </View>
+          <GenreFilter selectedGenre={selectedGenre} onSelectGenre={onSelectGenre} />
         </View>
       );
     }
@@ -239,6 +244,8 @@ interface ExploreSearchControllerProps {
   toggleWatchlist: (item: any) => void;
   isSearchFocusedShared: SharedValue<boolean>;
   inSearchModeShared: SharedValue<boolean>;
+  trendingItems?: any[];
+  personalizedItems?: any[];
 }
 
 const ExploreSearchController = memo(
@@ -252,8 +259,11 @@ const ExploreSearchController = memo(
     toggleWatchlist,
     isSearchFocusedShared,
     inSearchModeShared,
+    trendingItems,
+    personalizedItems,
   }: ExploreSearchControllerProps) => {
     const router = useRouter();
+    const { colors, isDark } = useAppTheme();
     const [query, setQuery] = useState('');
     const [searchLoading, setSearchLoading] = useState(false);
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -374,7 +384,7 @@ const ExploreSearchController = memo(
           <Animated.View
             style={[
               StyleSheet.absoluteFill,
-              { zIndex: 10, backgroundColor: '#0A0A0B' },
+              { zIndex: 10, backgroundColor: colors.background },
               animatedBgStyle,
             ]}
           >
@@ -387,6 +397,9 @@ const ExploreSearchController = memo(
                 }}
                 onRemoveRecent={handleRemoveRecent}
                 onClearAllRecents={handleClearAllRecents}
+                trendingItems={trendingItems}
+                personalizedItems={personalizedItems}
+                toggleWatchlist={toggleWatchlist}
               />
             ) : (
               <SearchResultsList
@@ -401,7 +414,7 @@ const ExploreSearchController = memo(
         {/* Persistent App Header */}
         <View style={styles.headerWrapper} pointerEvents="box-none">
           <LinearGradient
-            colors={['rgba(10, 10, 11, 0.95)', 'rgba(10, 10, 11, 0.6)', 'transparent']}
+            colors={isDark ? ['rgba(10, 10, 11, 0.95)', 'rgba(10, 10, 11, 0.6)', 'transparent'] : ['rgba(248, 249, 250, 0.95)', 'rgba(248, 249, 250, 0.6)', 'transparent']}
             style={styles.gradientHeader}
             pointerEvents="none"
           />
@@ -410,13 +423,13 @@ const ExploreSearchController = memo(
             pointerEvents="box-none"
           >
             <View style={styles.searchRow}>
-              <Animated.View style={[styles.searchInputContainer, animatedSearchStyle]}>
+              <Animated.View style={[styles.searchInputContainer, animatedSearchStyle, { backgroundColor: colors.surfaceContainer }]}>
                 <View style={styles.searchIconContainer}>
-                  <Ionicons name="search" size={20} color="#FFFFFF" />
+                  <Ionicons name="search" size={20} color={colors.textSecondary} />
                 </View>
                 <TextInput
                   placeholder="Discover..."
-                  placeholderTextColor="rgba(255, 255, 255, 0.6)"
+                  placeholderTextColor={colors.textSecondary}
                   value={query}
                   onChangeText={setQuery}
                   onFocus={() => {
@@ -424,16 +437,16 @@ const ExploreSearchController = memo(
                     onOpen();
                   }}
                   onSubmitEditing={() => saveSearchToHistory(query)}
-                  style={styles.searchInput}
-                  selectionColor="#E50914"
+                  style={[styles.searchInput, { color: colors.text }]}
+                  selectionColor={colors.primary}
                   returnKeyType="search"
-                  keyboardAppearance="dark"
+                  keyboardAppearance={isDark ? "dark" : "light"}
                   underlineColorAndroid="transparent"
-                  cursorColor="#E50914"
+                  cursorColor={colors.primary}
                 />
                 {searchLoading ? (
                   <View style={styles.actionIcon}>
-                    <ActivityIndicator color="#E50914" size={18} />
+                    <SharedLoadingIndicator size={22} color={colors.primary} />
                   </View>
                 ) : isExpanded ? (
                   <TouchableOpacity
@@ -441,7 +454,7 @@ const ExploreSearchController = memo(
                     onPress={handleClose}
                     style={styles.actionIcon}
                   >
-                    <MaterialIcons name="close" size={22} color="#FFFFFF" />
+                    <MaterialIcons name="close" size={22} color={colors.text} />
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
@@ -449,7 +462,7 @@ const ExploreSearchController = memo(
                     onPress={() => router.push('/settings')}
                     style={styles.actionIcon}
                   >
-                    <Ionicons name="settings-outline" size={22} color="#FFFFFF" />
+                    <Ionicons name="settings-outline" size={22} color={colors.text} />
                   </TouchableOpacity>
                 )}
               </Animated.View>
@@ -460,7 +473,9 @@ const ExploreSearchController = memo(
     );
   },
   (prev, next) =>
-    prev.isExpanded === next.isExpanded
+    prev.isExpanded === next.isExpanded &&
+    prev.trendingItems === next.trendingItems &&
+    prev.personalizedItems === next.personalizedItems
 );
 
 /* =========================================================================
@@ -470,6 +485,7 @@ const ExploreSearchController = memo(
 const ExplorePage = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useAppTheme();
   const [selectedGenre, setSelectedGenre] = useState(0);
 
   const [rawContent, setRawContent] = useState<any>(() => getExploreContentCacheSync(0));
@@ -572,6 +588,10 @@ const ExplorePage = () => {
   const fetchContent = useCallback(
     async (genreId: number = 0, forceRefresh: boolean = false) => {
       const requestId = ++contentRequestRef.current;
+      const cached = getExploreContentCacheSync(genreId);
+      if (!cached || forceRefresh) {
+        setContentLoading(true);
+      }
       try {
         const prefs = await getUserPreferences();
         const content = await fetchPersonalisedDiscoveryContent(
@@ -635,7 +655,7 @@ const ExplorePage = () => {
         setContentLoading(false);
         feedOpacityAnim.value = withTiming(1, { duration: 220 });
       } else {
-        feedOpacityAnim.value = withTiming(0.45, { duration: 180 });
+        feedOpacityAnim.value = withTiming(0.25, { duration: 180 });
         setContentLoading(true);
       }
       return () => cancel();
@@ -941,8 +961,8 @@ const ExplorePage = () => {
   });
 
   return (
-    <View style={styles.container}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Main Smooth ScrollView with Progressive Tier Mounts (Matched with Detail Page) */}
       <Animated.ScrollView
@@ -958,9 +978,9 @@ const ExplorePage = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#E50914']}
-            progressBackgroundColor="#1C1C1E"
-            progressViewOffset={insets.top + 10}
+            colors={[colors.primary]}
+            progressBackgroundColor={colors.surfaceContainer}
+            progressViewOffset={(StatusBar.currentHeight || insets.top) + 72}
           />
         }
       >
@@ -1013,6 +1033,15 @@ const ExplorePage = () => {
         <View style={{ height: 40 }} />
       </Animated.ScrollView>
 
+      {/* Jetpack Compose LoadingIndicator in the Middle of the Screen when Genre / Content is Loading */}
+      {!isExpanded && contentLoading && (
+        <View style={styles.centerLoadingOverlay} pointerEvents="box-none">
+          <View style={[styles.centerLoadingCard, { backgroundColor: colors.surfaceContainer }]}>
+            <SharedLoadingIndicator size={36} color={colors.primary} />
+          </View>
+        </View>
+      )}
+
       {/* Micro-rendered Search Controller (Isolated state, zero feed re-renders while typing) */}
       <ExploreSearchController
         isExpanded={isExpanded}
@@ -1024,6 +1053,8 @@ const ExplorePage = () => {
         toggleWatchlist={handleToggleWatchlist}
         isSearchFocusedShared={isSearchFocusedShared}
         inSearchModeShared={inSearchModeShared}
+        trendingItems={trendingToday.length > 0 ? trendingToday : (rawContent?.trendingMovies || [])}
+        personalizedItems={becauseYouWatched.length > 0 ? becauseYouWatched[0]?.items : (forYouShelves[0]?.items || [])}
       />
     </View>
   );
@@ -1039,7 +1070,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: (StatusBar.currentHeight || 0) + 70,
-    paddingBottom: 110,
+    paddingBottom: 80,
   },
   headerContainer: {
     width: '100%',
@@ -1056,7 +1087,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: (StatusBar.currentHeight || 0) + 80,
+    height: (StatusBar.currentHeight || 0) + 60,
   },
   searchBarContainer: {
     paddingHorizontal: HORIZONTAL_MARGIN,
@@ -1077,8 +1108,6 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     height: 48,
     backgroundColor: '#18181C',
-    borderWidth: 1,
-    borderColor: '#24242A',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
@@ -1105,6 +1134,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  searchLoadingHost: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   skeletonContainer: {
     marginBottom: 24,
     paddingLeft: HORIZONTAL_MARGIN,
@@ -1122,5 +1157,33 @@ const styles = StyleSheet.create({
     backgroundColor: '#222',
     borderRadius: 8,
     marginRight: 12,
+  },
+  centerLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 90,
+  },
+  centerLoadingCard: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  centerLoadingHost: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

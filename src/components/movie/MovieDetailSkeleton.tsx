@@ -2,17 +2,19 @@ import React from 'react';
 import { View, StyleSheet, ScrollView, StatusBar, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ShimmerBlock } from '../shared/Shimmer';
+import { useAppTheme } from '../../theme';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
 export const MovieDetailSkeleton: React.FC = () => {
+  const { colors, isDark } = useAppTheme();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const HEADER_HEIGHT = isLandscape ? height * 0.55 : height * 0.50;
 
   return (
-    <View style={styles.root}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Static Hero Backdrop Skeleton — Matches app/movie/[id].tsx identically */}
       <View style={[styles.heroContainer, { height: HEADER_HEIGHT }]} pointerEvents="none">
@@ -35,7 +37,7 @@ export const MovieDetailSkeleton: React.FC = () => {
         <View style={{ height: HEADER_HEIGHT + 30 }} />
 
         {/* Card Body */}
-        <View style={styles.cardTop}>
+        <View style={[styles.cardTop, { backgroundColor: colors.background }]}>
           {/* Eyebrow */}
           <ShimmerBlock width={110} height={12} style={{ marginBottom: 8 }} />
 

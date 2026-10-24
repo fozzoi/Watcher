@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { 
   View, Text, Modal, ScrollView, TouchableOpacity, 
-  ActivityIndicator, StyleSheet, Dimensions 
+  StyleSheet, Dimensions 
 } from 'react-native';
+import { LoadingIndicator } from './LoadingIndicator';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { UpdateCheckResult, downloadAndInstallApk } from '../../updater';
 import { ThemedDialog } from './ThemedDialog';
@@ -103,7 +104,7 @@ const AppUpdateModal = ({ visible, onClose, updateResult }: AppUpdateModalProps)
               style={[styles.modalConfirmBtn, downloading && { opacity: 0.7 }]}
             >
               {downloading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <LoadingIndicator size="small" color="#FFFFFF" />
               ) : (
                 <Text style={styles.modalConfirmText}>Download & Install</Text>
               )}

@@ -8,12 +8,17 @@ import {
   StatusBar,
   Modal,
   TextInput,
-  ActivityIndicator,
   ScrollView,
   DeviceEventEmitter,
   Pressable,
   PanResponder,
+  Platform,
 } from 'react-native';
+import {
+  Host,
+  ModalBottomSheet,
+  RNHostView,
+} from '@expo/ui/jetpack-compose';
 import { LegendList } from '@legendapp/list/react-native';
 import { Image } from 'expo-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -26,6 +31,7 @@ import {
 } from '../../src/database';
 import { syncSavedStore } from '../../src/state/savedState';
 import { snackbarService } from '../../src/services/snackbar';
+import { LoadingIndicator } from '../../src/components/shared/LoadingIndicator';
 import { getImageUrl, searchTMDB, GLOBAL_CONFIG, setGlobalConfig } from '../../src/tmdb';
 import { isAdultContent } from '../../src/contentSafety';
 import { GENRE_OPTIONS } from '../../src/userPreferences';
@@ -34,6 +40,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons, Feather } from '@expo/vector-icons';
 import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useAppTheme } from '../../src/theme';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -141,22 +148,24 @@ const WatchlistHeaderTabs = React.memo(({
   onChangeSearchQuery,
   onOpenOptions,
 }: WatchlistHeaderTabsProps) => {
+  const { colors, isDark } = useAppTheme();
+
   return (
     <View
       style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insetsTop + 2, zIndex: 100 }}
       pointerEvents="box-none"
     >
       <LinearGradient
-        colors={['#121212', 'rgba(18, 18, 18, 0.85)', 'transparent']}
+        colors={isDark ? ['#121212', 'rgba(18, 18, 18, 0.85)', 'transparent'] : [colors.background, 'rgba(248, 249, 250, 0.85)', 'transparent']}
         style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insetsTop + 160 }}
         pointerEvents="none"
       />
 
       <Animated.View style={[styles.headerContainer, animatedHeaderStyle]} pointerEvents="box-none">
         <View style={styles.headerTitleRow}>
-          <Text style={styles.header}>My Library</Text>
-          <View style={styles.countBadge}>
-            <Text style={styles.countBadgeText}>{count}</Text>
+          <Text style={[styles.header, { color: colors.text }]}>My Library</Text>
+          <View style={[styles.countBadge, { backgroundColor: colors.surfaceContainer }]}>
+            <Text style={[styles.countBadgeText, { color: colors.textSecondary }]}>{count}</Text>
           </View>
         </View>
       </Animated.View>
@@ -166,39 +175,46 @@ const WatchlistHeaderTabs = React.memo(({
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={onToggleSearch}
-          style={[styles.headerIconButton, isSearchOpen && styles.headerIconButtonActive]}
+          style={[
+            styles.headerIconButton,
+            { backgroundColor: isSearchOpen ? colors.primary : colors.surfaceContainer },
+          ]}
         >
-          <Ionicons name={isSearchOpen ? 'close' : 'search'} size={18} color="#FFF" />
+          <Ionicons name={isSearchOpen ? 'close' : 'search'} size={18} color={isSearchOpen ? colors.onPrimary : colors.text} />
         </TouchableOpacity>
 
-        <View style={styles.tabContainer}>
-          <Animated.View style={[styles.activePill, animatedTabStyle]} />
+        <View style={[styles.tabContainer, { backgroundColor: colors.surfaceContainer }]}>
+          <Animated.View style={[styles.activePill, animatedTabStyle, { backgroundColor: colors.primary }]} />
           <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => onTabChange(0)}>
-            <Text style={[styles.tabText, activeTab === 0 && styles.activeTabText]}>Watchlist</Text>
+            <Text style={[styles.tabText, { color: activeTab === 0 ? colors.onPrimary : colors.textSecondary }]}>Watchlist</Text>
           </TouchableOpacity>
 
           <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => onTabChange(1)}>
-            <Text style={[styles.tabText, activeTab === 1 && styles.activeTabText]}>Artists</Text>
+            <Text style={[styles.tabText, { color: activeTab === 1 ? colors.onPrimary : colors.textSecondary }]}>Artists</Text>
           </TouchableOpacity>
 
           <TouchableOpacity activeOpacity={0.95} style={styles.tabButton} onPress={() => onTabChange(2)}>
-            <Text style={[styles.tabText, activeTab === 2 && styles.activeTabText]}>Watched</Text>
+            <Text style={[styles.tabText, { color: activeTab === 2 ? colors.onPrimary : colors.textSecondary }]}>Watched</Text>
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity activeOpacity={0.8} onPress={onOpenOptions} style={styles.headerIconButton}>
-          <Feather name="more-vertical" size={20} color="#FFF" />
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={onOpenOptions}
+          style={[styles.headerIconButton, { backgroundColor: colors.surfaceContainer }]}
+        >
+          <Feather name="more-vertical" size={20} color={colors.text} />
         </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
       {isSearchOpen && (
-        <Animated.View entering={FadeInDown.duration(200)} style={styles.searchBarContainer}>
-          <Ionicons name="search" size={16} color="#888" style={{ marginLeft: 14 }} />
+        <Animated.View entering={FadeInDown.duration(200)} style={[styles.searchBarContainer, { backgroundColor: colors.surfaceContainer }]}>
+          <Ionicons name="search" size={16} color={colors.textSecondary} style={{ marginLeft: 14 }} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.text }]}
             placeholder="Search library..."
-            placeholderTextColor="#777"
+            placeholderTextColor={colors.textSecondary}
             value={searchQuery}
             onChangeText={onChangeSearchQuery}
             returnKeyType="search"
@@ -208,7 +224,7 @@ const WatchlistHeaderTabs = React.memo(({
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => onChangeSearchQuery('')} style={{ padding: 8, marginRight: 4 }}>
-              <Ionicons name="close-circle" size={18} color="#999" />
+              <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           ) : null}
         </Animated.View>
@@ -242,11 +258,21 @@ const WatchlistFilterDock = React.memo(({
   onSelectMediaType,
   onToggleGenre,
 }: WatchlistFilterDockProps) => {
+  const { colors } = useAppTheme();
   if (activeTab !== 0 && activeTab !== 2) return null;
 
   return (
     <Animated.View
-      style={[styles.filterSection, { bottom: bottomInset + 95 }, animatedFilterStyle]}
+      style={[
+        styles.filterSection,
+        {
+          bottom: bottomInset + 95,
+          backgroundColor: colors.surfaceContainer,
+          borderWidth: 1,
+          borderColor: colors.border,
+        },
+        animatedFilterStyle,
+      ]}
       collapsable={false}
     >
       <ScrollView
@@ -257,11 +283,14 @@ const WatchlistFilterDock = React.memo(({
       >
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.filterChip, sortBy !== 'default' && styles.filterChipActive]}
+          style={[
+            styles.filterChip,
+            sortBy !== 'default' && { backgroundColor: colors.primary },
+          ]}
           onPress={onOpenSort}
         >
-          <MaterialIcons name="sort" size={16} color={sortBy !== 'default' ? '#FFF' : '#A0A0A0'} />
-          <Text style={[styles.filterChipText, sortBy !== 'default' && styles.filterChipTextActive]}>
+          <MaterialIcons name="sort" size={16} color={sortBy !== 'default' ? colors.onPrimary : colors.textSecondary} />
+          <Text style={[styles.filterChipText, { color: colors.textSecondary }, sortBy !== 'default' && { color: colors.onPrimary }]}>
             {sortBy === 'default'
               ? 'Sort'
               : sortBy === 'rating'
@@ -272,64 +301,64 @@ const WatchlistFilterDock = React.memo(({
           </Text>
         </TouchableOpacity>
 
-        <View style={styles.chipDivider} />
+        <View style={[styles.chipDivider, { backgroundColor: colors.divider }]} />
 
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.filterChip, selectedMediaType === 'all' && styles.filterChipActive]}
+          style={[styles.filterChip, selectedMediaType === 'all' && { backgroundColor: colors.primary }]}
           onPress={() => onSelectMediaType('all')}
         >
-          <Text style={[styles.filterChipText, selectedMediaType === 'all' && styles.filterChipTextActive]}>
+          <Text style={[styles.filterChipText, { color: colors.textSecondary }, selectedMediaType === 'all' && { color: colors.onPrimary }]}>
             All
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.filterChip, selectedMediaType === 'movie' && styles.filterChipActive]}
+          style={[styles.filterChip, selectedMediaType === 'movie' && { backgroundColor: colors.primary }]}
           onPress={() => onSelectMediaType(selectedMediaType === 'movie' ? 'all' : 'movie')}
         >
           <Ionicons
             name="film-outline"
             size={14}
-            color={selectedMediaType === 'movie' ? '#FFF' : '#A0A0A0'}
+            color={selectedMediaType === 'movie' ? colors.onPrimary : colors.textSecondary}
           />
-          <Text style={[styles.filterChipText, selectedMediaType === 'movie' && styles.filterChipTextActive]}>
+          <Text style={[styles.filterChipText, { color: colors.textSecondary }, selectedMediaType === 'movie' && { color: colors.onPrimary }]}>
             Movies
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.filterChip, selectedMediaType === 'tv' && styles.filterChipActive]}
+          style={[styles.filterChip, selectedMediaType === 'tv' && { backgroundColor: colors.primary }]}
           onPress={() => onSelectMediaType(selectedMediaType === 'tv' ? 'all' : 'tv')}
         >
           <Ionicons
             name="tv-outline"
             size={14}
-            color={selectedMediaType === 'tv' ? '#FFF' : '#A0A0A0'}
+            color={selectedMediaType === 'tv' ? colors.onPrimary : colors.textSecondary}
           />
-          <Text style={[styles.filterChipText, selectedMediaType === 'tv' && styles.filterChipTextActive]}>
+          <Text style={[styles.filterChipText, { color: colors.textSecondary }, selectedMediaType === 'tv' && { color: colors.onPrimary }]}>
             Series
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.filterChip, selectedMediaType === 'collection' && styles.filterChipActive]}
+          style={[styles.filterChip, selectedMediaType === 'collection' && { backgroundColor: colors.primary }]}
           onPress={() => onSelectMediaType(selectedMediaType === 'collection' ? 'all' : 'collection')}
         >
           <Ionicons
             name="albums-outline"
             size={14}
-            color={selectedMediaType === 'collection' ? '#FFF' : '#A0A0A0'}
+            color={selectedMediaType === 'collection' ? colors.onPrimary : colors.textSecondary}
           />
-          <Text style={[styles.filterChipText, selectedMediaType === 'collection' && styles.filterChipTextActive]}>
+          <Text style={[styles.filterChipText, { color: colors.textSecondary }, selectedMediaType === 'collection' && { color: colors.onPrimary }]}>
             Collections
           </Text>
         </TouchableOpacity>
 
-        <View style={styles.chipDivider} />
+        <View style={[styles.chipDivider, { backgroundColor: colors.divider }]} />
 
         {GENRE_OPTIONS.map((g) => {
           const isSelected = selectedGenreIds.includes(g.id);
@@ -337,14 +366,14 @@ const WatchlistFilterDock = React.memo(({
             <TouchableOpacity
               key={g.id}
               activeOpacity={0.8}
-              style={[styles.filterChip, isSelected && styles.filterChipActive]}
+              style={[styles.filterChip, isSelected && { backgroundColor: colors.primary }]}
               onPress={() => onToggleGenre(g.id)}
             >
               <Text style={{ fontSize: 13 }}>{g.emoji}</Text>
-              <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
+              <Text style={[styles.filterChipText, { color: colors.textSecondary }, isSelected && { color: colors.onPrimary }]}>
                 {g.label}
               </Text>
-              {isSelected && <Ionicons name="close" size={14} color="#FFF" />}
+              {isSelected && <Ionicons name="close" size={14} color={colors.onPrimary} />}
             </TouchableOpacity>
           );
         })}
@@ -360,6 +389,7 @@ const WatchlistFilterDock = React.memo(({
 const WatchListPage = () => {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { colors, isDark } = useAppTheme();
 
   const [activeTab, setActiveTab] = useState(0);
   const activeTabRef = useRef(activeTab);
@@ -987,15 +1017,15 @@ const WatchListPage = () => {
   }, []);
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
 
       {/* ── SYNC PROGRESS BANNER ── */}
       {syncing && (
         <View style={styles.syncHubContainer}>
-          <View style={styles.syncingOverlay}>
-            <ActivityIndicator size="small" color="#E50914" />
-            <Text style={styles.syncingText}>{syncProgress}</Text>
+          <View style={[styles.syncingOverlay, { backgroundColor: colors.surfaceContainer }]}>
+            <LoadingIndicator size="small" color={colors.primary} />
+            <Text style={[styles.syncingText, { color: colors.text }]}>{syncProgress}</Text>
           </View>
         </View>
       )}
@@ -1009,7 +1039,7 @@ const WatchListPage = () => {
         >
           {loading && !syncing ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator animating={true} size="large" color="#E50914" />
+              <LoadingIndicator animating={true} size="large" color={colors.primary} />
             </View>
           ) : !syncing && filteredCurrentList.length === 0 ? (
             <View style={[styles.emptyContainer, { paddingTop: insets.top + 130 }]}>
@@ -1104,234 +1134,507 @@ const WatchListPage = () => {
         onToggleGenre={toggleGenre}
       />
 
-      {/* ── OPTIONS MODAL ── */}
-      <Modal visible={isOptionsMenuOpen} transparent={true} animationType="fade" onRequestClose={() => setIsOptionsMenuOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsOptionsMenuOpen(false)} />
-          <View style={styles.optionsSheetContainer}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Library Options</Text>
+      {/* ── OPTIONS MODAL (Jetpack Compose on Android, Modal on iOS) ── */}
+      {Platform.OS === 'android' && isOptionsMenuOpen && (
+        <Host colorScheme={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} pointerEvents="none">
+          <ModalBottomSheet
+            onDismissRequest={() => setIsOptionsMenuOpen(false)}
+            skipPartiallyExpanded={true}
+            showDragHandle={true}
+            sheetGesturesEnabled={true}
+            containerColor={colors.surfaceContainer}
+          >
+            <RNHostView matchContents>
+              <View style={{ width }}>
+                <View style={styles.optionsContent}>
+                  <Text style={[styles.sheetTitle, { color: colors.text }]}>Library Options</Text>
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.sheetItem}
-              onPress={() => {
-                setIsOptionsMenuOpen(false);
-                router.push('/onboarding');
-              }}
-            >
-              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(229,9,20,0.15)' }]}>
-                <Ionicons name="sparkles" size={18} color="#E50914" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sheetItemTitle}>Change Content Preferences</Text>
-                <Text style={styles.sheetItemSub}>Update languages, genres, and favorite actors</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color="#666" />
-            </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={styles.sheetItem}
+                    onPress={() => {
+                      setIsOptionsMenuOpen(false);
+                      router.push('/onboarding');
+                    }}
+                  >
+                    <View style={[styles.sheetIconCircle, { backgroundColor: colors.primary + '20' }]}>
+                      <Ionicons name="sparkles" size={18} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Change Content Preferences</Text>
+                      <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Update languages, genres, and favorite actors</Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.sheetItem}
-              onPress={() => {
-                setIsOptionsMenuOpen(false);
-                router.push('/stats');
-              }}
-            >
-              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(48,209,88,0.15)' }]}>
-                <Ionicons name="bar-chart" size={18} color="#30D158" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sheetItemTitle}>View Library Insights</Text>
-                <Text style={styles.sheetItemSub}>Explore viewing stats, watch time & breakdown</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color="#666" />
-            </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={styles.sheetItem}
+                    onPress={() => {
+                      setIsOptionsMenuOpen(false);
+                      router.push('/stats');
+                    }}
+                  >
+                    <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(48,209,88,0.15)' }]}>
+                      <Ionicons name="bar-chart" size={18} color="#30D158" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.sheetItemTitle, { color: colors.text }]}>View Library Insights</Text>
+                      <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Explore viewing stats, watch time & breakdown</Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.sheetItem}
-              onPress={() => {
-                setIsOptionsMenuOpen(false);
-                setIsSortModalOpen(true);
-              }}
-            >
-              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(255,214,10,0.15)' }]}>
-                <MaterialIcons name="sort" size={18} color="#FFD60A" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sheetItemTitle}>Sort & Arrange</Text>
-                <Text style={styles.sheetItemSub}>Sort by rating, release date, or title</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color="#666" />
-            </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={styles.sheetItem}
+                    onPress={() => {
+                      setIsOptionsMenuOpen(false);
+                      setIsSortModalOpen(true);
+                    }}
+                  >
+                    <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(255,214,10,0.15)' }]}>
+                      <MaterialIcons name="sort" size={18} color="#FFD60A" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Sort & Arrange</Text>
+                      <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Sort by rating, release date, or title</Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.sheetItem}
-              onPress={() => {
-                setIsOptionsMenuOpen(false);
-                setIsImportModalOpen(true);
-              }}
-            >
-              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(10,132,255,0.15)' }]}>
-                <Feather name="download-cloud" size={18} color="#0A84FF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sheetItemTitle}>Import Watchlist</Text>
-                <Text style={styles.sheetItemSub}>Import from Trakt, Letterboxd, or TMDB</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color="#666" />
-            </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={styles.sheetItem}
+                    onPress={() => {
+                      setIsOptionsMenuOpen(false);
+                      setIsImportModalOpen(true);
+                    }}
+                  >
+                    <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(10,132,255,0.15)' }]}>
+                      <Feather name="download-cloud" size={18} color="#0A84FF" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Import Watchlist</Text>
+                      <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Import from Trakt, Letterboxd, or TMDB</Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
 
-            <View style={styles.sheetDivider} />
+                  <View style={[styles.sheetDivider, { backgroundColor: colors.border }]} />
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.sheetItem}
-              onPress={handleClearAll}
-            >
-              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(255,69,58,0.15)' }]}>
-                <Feather name="trash-2" size={18} color="#FF453A" />
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={styles.sheetItem}
+                    onPress={() => {
+                      setIsOptionsMenuOpen(false);
+                      handleClearAll();
+                    }}
+                  >
+                    <View style={[styles.sheetIconCircle, { backgroundColor: colors.error + '20' }]}>
+                      <Feather name="trash-2" size={18} color={colors.error} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.sheetItemTitle, { color: colors.error }]}>Clear All Items</Text>
+                      <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Delete all titles from this list</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.sheetItemTitle, { color: '#FF453A' }]}>Clear All Items</Text>
-                <Text style={styles.sheetItemSub}>Delete all titles from this list</Text>
-              </View>
-            </TouchableOpacity>
+            </RNHostView>
+          </ModalBottomSheet>
+        </Host>
+      )}
+
+      {Platform.OS !== 'android' && (
+        <Modal visible={isOptionsMenuOpen} transparent={true} animationType="fade" onRequestClose={() => setIsOptionsMenuOpen(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsOptionsMenuOpen(false)} />
+            <View style={[styles.optionsSheetContainer, { backgroundColor: colors.surfaceContainer }]}>
+              <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+              <Text style={[styles.sheetTitle, { color: colors.text }]}>Library Options</Text>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.sheetItem}
+                onPress={() => {
+                  setIsOptionsMenuOpen(false);
+                  router.push('/onboarding');
+                }}
+              >
+                <View style={[styles.sheetIconCircle, { backgroundColor: colors.primary + '20' }]}>
+                  <Ionicons name="sparkles" size={18} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Change Content Preferences</Text>
+                  <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Update languages, genres, and favorite actors</Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.sheetItem}
+                onPress={() => {
+                  setIsOptionsMenuOpen(false);
+                  router.push('/stats');
+                }}
+              >
+                <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(48,209,88,0.15)' }]}>
+                  <Ionicons name="bar-chart" size={18} color="#30D158" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sheetItemTitle, { color: colors.text }]}>View Library Insights</Text>
+                  <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Explore viewing stats, watch time & breakdown</Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.sheetItem}
+                onPress={() => {
+                  setIsOptionsMenuOpen(false);
+                  setIsSortModalOpen(true);
+                }}
+              >
+                <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(255,214,10,0.15)' }]}>
+                  <MaterialIcons name="sort" size={18} color="#FFD60A" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Sort & Arrange</Text>
+                  <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Sort by rating, release date, or title</Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.sheetItem}
+                onPress={() => {
+                  setIsOptionsMenuOpen(false);
+                  setIsImportModalOpen(true);
+                }}
+              >
+                <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(10,132,255,0.15)' }]}>
+                  <Feather name="download-cloud" size={18} color="#0A84FF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Import Watchlist</Text>
+                  <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Import from Trakt, Letterboxd, or TMDB</Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              <View style={[styles.sheetDivider, { backgroundColor: colors.border }]} />
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.sheetItem}
+                onPress={() => {
+                  setIsOptionsMenuOpen(false);
+                  handleClearAll();
+                }}
+              >
+                <View style={[styles.sheetIconCircle, { backgroundColor: colors.error + '20' }]}>
+                  <Feather name="trash-2" size={18} color={colors.error} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sheetItemTitle, { color: colors.error }]}>Clear All Items</Text>
+                  <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Delete all titles from this list</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
 
-      {/* ── SORT MODAL ── */}
-      <Modal visible={isSortModalOpen} transparent={true} animationType="fade" onRequestClose={() => setIsSortModalOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsSortModalOpen(false)} />
-          <View style={styles.optionsSheetContainer}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Sort Library</Text>
+      {/* ── SORT MODAL (Jetpack Compose on Android, Modal on iOS) ── */}
+      {Platform.OS === 'android' && isSortModalOpen && (
+        <Host colorScheme={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} pointerEvents="none">
+          <ModalBottomSheet
+            onDismissRequest={() => setIsSortModalOpen(false)}
+            skipPartiallyExpanded={true}
+            showDragHandle={true}
+            sheetGesturesEnabled={true}
+            containerColor={colors.surfaceContainer}
+          >
+            <RNHostView matchContents>
+              <View style={{ width }}>
+                <View style={styles.optionsContent}>
+                  <Text style={[styles.sheetTitle, { color: colors.text }]}>Sort Library</Text>
 
-            {[
-              { key: 'default', label: 'Date Added (Default)', icon: 'clock' },
-              { key: 'rating', label: 'Rating', icon: 'star' },
-              { key: 'year', label: 'Release Year', icon: 'calendar' },
-              { key: 'title', label: 'Title (Alphabetical)', icon: 'type' },
-            ].map(item => {
-              const isSelected = sortBy === item.key;
-              return (
-                <TouchableOpacity
-                  key={item.key}
-                  activeOpacity={0.8}
-                  style={styles.sheetItem}
-                  onPress={() => {
-                    setSortBy(item.key as SortOption);
-                    setIsSortModalOpen(false);
-                  }}
-                >
-                  <View style={[styles.sheetIconCircle, isSelected && { backgroundColor: 'rgba(229,9,20,0.2)' }]}>
-                    <Feather name={item.icon as any} size={18} color={isSelected ? "#E50914" : "#AAA"} />
+                  {[
+                    { key: 'default', label: 'Date Added (Default)', icon: 'clock' },
+                    { key: 'rating', label: 'Rating', icon: 'star' },
+                    { key: 'year', label: 'Release Year', icon: 'calendar' },
+                    { key: 'title', label: 'Title (Alphabetical)', icon: 'type' },
+                  ].map(item => {
+                    const isSelected = sortBy === item.key;
+                    return (
+                      <TouchableOpacity
+                        key={item.key}
+                        activeOpacity={0.8}
+                        style={styles.sheetItem}
+                        onPress={() => {
+                          setSortBy(item.key as SortOption);
+                          setIsSortModalOpen(false);
+                        }}
+                      >
+                        <View style={[styles.sheetIconCircle, { backgroundColor: isSelected ? colors.primary + '20' : colors.surfaceContainerHigh }]}>
+                          <Feather name={item.icon as any} size={18} color={isSelected ? colors.primary : colors.textSecondary} />
+                        </View>
+                        <Text style={[styles.sheetItemTitle, { flex: 1, color: isSelected ? colors.primary : colors.text }, isSelected && { fontFamily: 'GoogleSansFlex-Bold' }]}>
+                          {item.label}
+                        </Text>
+                        {isSelected && <Ionicons name="checkmark" size={20} color={colors.primary} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  <View style={[styles.sheetDivider, { backgroundColor: colors.border }]} />
+
+                  <View style={styles.directionRow}>
+                    <Text style={[styles.directionLabel, { color: colors.textSecondary }]}>Sort Order:</Text>
+                    <View style={styles.directionButtons}>
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        style={[styles.directionBtn, { backgroundColor: sortDirection === 'desc' ? colors.primary : colors.surfaceContainerHigh }]}
+                        onPress={() => setSortDirection('desc')}
+                      >
+                        <Text style={[styles.directionBtnText, { color: sortDirection === 'desc' ? colors.onPrimary : colors.textSecondary }]}>Descending ↓</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        style={[styles.directionBtn, { backgroundColor: sortDirection === 'asc' ? colors.primary : colors.surfaceContainerHigh }]}
+                        onPress={() => setSortDirection('asc')}
+                      >
+                        <Text style={[styles.directionBtnText, { color: sortDirection === 'asc' ? colors.onPrimary : colors.textSecondary }]}>Ascending ↑</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <Text style={[styles.sheetItemTitle, { flex: 1 }, isSelected && { color: '#E50914', fontFamily: 'GoogleSansFlex-Bold' }]}>
-                    {item.label}
-                  </Text>
-                  {isSelected && <Ionicons name="checkmark" size={20} color="#E50914" />}
-                </TouchableOpacity>
-              );
-            })}
+                </View>
+              </View>
+            </RNHostView>
+          </ModalBottomSheet>
+        </Host>
+      )}
 
-            <View style={styles.sheetDivider} />
+      {Platform.OS !== 'android' && (
+        <Modal visible={isSortModalOpen} transparent={true} animationType="fade" onRequestClose={() => setIsSortModalOpen(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsSortModalOpen(false)} />
+            <View style={[styles.optionsSheetContainer, { backgroundColor: colors.surfaceContainer }]}>
+              <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+              <Text style={[styles.sheetTitle, { color: colors.text }]}>Sort Library</Text>
 
-            <View style={styles.directionRow}>
-              <Text style={styles.directionLabel}>Sort Order:</Text>
-              <View style={styles.directionButtons}>
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  style={[styles.directionBtn, sortDirection === 'desc' && styles.directionBtnActive]}
-                  onPress={() => setSortDirection('desc')}
-                >
-                  <Text style={[styles.directionBtnText, sortDirection === 'desc' && styles.directionBtnTextActive]}>Descending ↓</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  style={[styles.directionBtn, sortDirection === 'asc' && styles.directionBtnActive]}
-                  onPress={() => setSortDirection('asc')}
-                >
-                  <Text style={[styles.directionBtnText, sortDirection === 'asc' && styles.directionBtnTextActive]}>Ascending ↑</Text>
-                </TouchableOpacity>
+              {[
+                { key: 'default', label: 'Date Added (Default)', icon: 'clock' },
+                { key: 'rating', label: 'Rating', icon: 'star' },
+                { key: 'year', label: 'Release Year', icon: 'calendar' },
+                { key: 'title', label: 'Title (Alphabetical)', icon: 'type' },
+              ].map(item => {
+                const isSelected = sortBy === item.key;
+                return (
+                  <TouchableOpacity
+                    key={item.key}
+                    activeOpacity={0.8}
+                    style={styles.sheetItem}
+                    onPress={() => {
+                      setSortBy(item.key as SortOption);
+                      setIsSortModalOpen(false);
+                    }}
+                  >
+                    <View style={[styles.sheetIconCircle, { backgroundColor: isSelected ? colors.primary + '20' : colors.surfaceContainerHigh }]}>
+                      <Feather name={item.icon as any} size={18} color={isSelected ? colors.primary : colors.textSecondary} />
+                    </View>
+                    <Text style={[styles.sheetItemTitle, { flex: 1, color: isSelected ? colors.primary : colors.text }, isSelected && { fontFamily: 'GoogleSansFlex-Bold' }]}>
+                      {item.label}
+                    </Text>
+                    {isSelected && <Ionicons name="checkmark" size={20} color={colors.primary} />}
+                  </TouchableOpacity>
+                );
+              })}
+
+              <View style={[styles.sheetDivider, { backgroundColor: colors.border }]} />
+
+              <View style={styles.directionRow}>
+                <Text style={[styles.directionLabel, { color: colors.textSecondary }]}>Sort Order:</Text>
+                <View style={styles.directionButtons}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={[styles.directionBtn, { backgroundColor: sortDirection === 'desc' ? colors.primary : colors.surfaceContainerHigh }]}
+                    onPress={() => setSortDirection('desc')}
+                  >
+                    <Text style={[styles.directionBtnText, { color: sortDirection === 'desc' ? colors.onPrimary : colors.textSecondary }]}>Descending ↓</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={[styles.directionBtn, { backgroundColor: sortDirection === 'asc' ? colors.primary : colors.surfaceContainerHigh }]}
+                    onPress={() => setSortDirection('asc')}
+                  >
+                    <Text style={[styles.directionBtnText, { color: sortDirection === 'asc' ? colors.onPrimary : colors.textSecondary }]}>Ascending ↑</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
 
-      {/* ── IMPORT MODAL ── */}
-      <Modal visible={isImportModalOpen} transparent={true} animationType="fade" onRequestClose={() => setIsImportModalOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsImportModalOpen(false)} />
-          <View style={styles.optionsSheetContainer}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Import Watchlist</Text>
+      {/* ── IMPORT MODAL (Jetpack Compose on Android, Modal on iOS) ── */}
+      {Platform.OS === 'android' && isImportModalOpen && (
+        <Host colorScheme={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} pointerEvents="none">
+          <ModalBottomSheet
+            onDismissRequest={() => setIsImportModalOpen(false)}
+            skipPartiallyExpanded={true}
+            showDragHandle={true}
+            sheetGesturesEnabled={true}
+            containerColor={colors.surfaceContainer}
+          >
+            <RNHostView matchContents>
+              <View style={{ width }}>
+                <View style={styles.optionsContent}>
+                  <Text style={[styles.sheetTitle, { color: colors.text }]}>Import Watchlist</Text>
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.sheetItem}
-              onPress={handleAddLink}
-            >
-              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(0,122,255,0.15)' }]}>
-                <MaterialIcons name="link" size={20} color="#0A84FF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sheetItemTitle}>Sync Google Watchlist Link</Text>
-                <Text style={styles.sheetItemSub}>Auto-syncs daily from your public collection URL</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color="#666" />
-            </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={styles.sheetItem}
+                    onPress={() => {
+                      setIsImportModalOpen(false);
+                      handleAddLink();
+                    }}
+                  >
+                    <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(0,122,255,0.15)' }]}>
+                      <MaterialIcons name="link" size={20} color="#0A84FF" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Sync Google Watchlist Link</Text>
+                      <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Auto-syncs daily from your public collection URL</Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.sheetItem}
-              onPress={handleImportFile}
-            >
-              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(48,209,88,0.15)' }]}>
-                <Ionicons name="document-text-outline" size={20} color="#30D158" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sheetItemTitle}>Import Text or JSON File</Text>
-                <Text style={styles.sheetItemSub}>Load from Letterboxd, IMDb export, or notes file</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color="#666" />
-            </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={styles.sheetItem}
+                    onPress={() => {
+                      setIsImportModalOpen(false);
+                      handleImportFile();
+                    }}
+                  >
+                    <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(48,209,88,0.15)' }]}>
+                      <Ionicons name="document-text-outline" size={20} color="#30D158" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Import Text or JSON File</Text>
+                      <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Load from Letterboxd, IMDb export, or notes file</Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.sheetItem}
-              onPress={handleImportImage}
-            >
-              <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(255,149,0,0.15)' }]}>
-                <Feather name="image" size={18} color="#FF9500" />
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={styles.sheetItem}
+                    onPress={() => {
+                      setIsImportModalOpen(false);
+                      handleImportImage();
+                    }}
+                  >
+                    <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(255,149,0,0.15)' }]}>
+                      <Feather name="image" size={18} color="#FF9500" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Scan Screenshot with AI</Text>
+                      <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Extract movie titles directly from a photo</Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sheetItemTitle}>Scan Screenshot with AI</Text>
-                <Text style={styles.sheetItemSub}>Extract movie titles directly from a photo</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color="#666" />
-            </TouchableOpacity>
+            </RNHostView>
+          </ModalBottomSheet>
+        </Host>
+      )}
+
+      {Platform.OS !== 'android' && (
+        <Modal visible={isImportModalOpen} transparent={true} animationType="fade" onRequestClose={() => setIsImportModalOpen(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsImportModalOpen(false)} />
+            <View style={[styles.optionsSheetContainer, { backgroundColor: colors.surfaceContainer }]}>
+              <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+              <Text style={[styles.sheetTitle, { color: colors.text }]}>Import Watchlist</Text>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.sheetItem}
+                onPress={() => {
+                  setIsImportModalOpen(false);
+                  handleAddLink();
+                }}
+              >
+                <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(0,122,255,0.15)' }]}>
+                  <MaterialIcons name="link" size={20} color="#0A84FF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Sync Google Watchlist Link</Text>
+                  <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Auto-syncs daily from your public collection URL</Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.sheetItem}
+                onPress={() => {
+                  setIsImportModalOpen(false);
+                  handleImportFile();
+                }}
+              >
+                <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(48,209,88,0.15)' }]}>
+                  <Ionicons name="document-text-outline" size={20} color="#30D158" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Import Text or JSON File</Text>
+                  <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Load from Letterboxd, IMDb export, or notes file</Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.sheetItem}
+                onPress={() => {
+                  setIsImportModalOpen(false);
+                  handleImportImage();
+                }}
+              >
+                <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(255,149,0,0.15)' }]}>
+                  <Feather name="image" size={18} color="#FF9500" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Scan Screenshot with AI</Text>
+                  <Text style={[styles.sheetItemSub, { color: colors.textSecondary }]}>Extract movie titles directly from a photo</Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
 
       {/* URL Link Modal */}
       <Modal visible={isLinkModalVisible} transparent={true} animationType="fade" onRequestClose={() => setIsLinkModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={0.95} onPress={() => setIsLinkModalVisible(false)} />
-          <View style={styles.modalContentContainer}>
+          <View style={[styles.modalContentContainer, { backgroundColor: colors.surfaceContainer }]}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Google Watchlist Link</Text>
-              <Text style={styles.modalSubtitle}>Paste your public Google Collection/Watchlist URL to sync daily:</Text>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Google Watchlist Link</Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>Paste your public Google Collection/Watchlist URL to sync daily:</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: colors.surfaceContainerHigh, color: colors.text }]}
                 placeholder="Paste URL here..."
-                placeholderTextColor="#777"
+                placeholderTextColor={colors.textSecondary}
                 value={syncLinkInput}
                 onChangeText={setSyncLinkInput}
                 autoFocus={true}
@@ -1340,11 +1643,11 @@ const WatchListPage = () => {
                 autoCorrect={false}
               />
               <View style={styles.modalButtonsRow}>
-                <TouchableOpacity activeOpacity={0.95} style={[styles.modalButton, styles.modalCancelButton]} onPress={() => setIsLinkModalVisible(false)}>
-                  <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                <TouchableOpacity activeOpacity={0.95} style={[styles.modalButton, { backgroundColor: colors.surfaceContainerHigh }]} onPress={() => setIsLinkModalVisible(false)}>
+                  <Text style={[styles.modalCancelButtonText, { color: colors.textSecondary }]}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity activeOpacity={0.95} style={[styles.modalButton, styles.modalSyncButton]} onPress={handleSaveAndSyncLink}>
-                  <Text style={styles.modalSyncButtonText}>Sync Now</Text>
+                <TouchableOpacity activeOpacity={0.95} style={[styles.modalButton, { backgroundColor: colors.primary }]} onPress={handleSaveAndSyncLink}>
+                  <Text style={[styles.modalSyncButtonText, { color: colors.onPrimary }]}>Sync Now</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1355,25 +1658,25 @@ const WatchListPage = () => {
       {/* IMPORT RESULTS MODAL */}
       <Modal visible={importSummary.visible} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContentContainer}>
+          <View style={[styles.modalContentContainer, { backgroundColor: colors.surfaceContainer }]}>
             <View style={styles.modalContent}>
               <View style={styles.resultsHeaderRow}>
                 <Feather name="check-circle" size={24} color="#4CAF50" />
-                <Text style={styles.modalTitle}>Import Complete</Text>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Import Complete</Text>
               </View>
 
-              <View style={styles.statsContainer}>
-                <Text style={styles.statText}>Found: <Text style={{ color: '#FFF' }}>{importSummary.total}</Text></Text>
-                <Text style={styles.statText}>Added: <Text style={{ color: '#4CAF50' }}>{importSummary.added}</Text></Text>
-                <Text style={styles.statText}>Already Saved: <Text style={{ color: '#AAA' }}>{importSummary.existing}</Text></Text>
+              <View style={[styles.statsContainer, { backgroundColor: colors.surfaceContainerHigh }]}>
+                <Text style={[styles.statText, { color: colors.textSecondary }]}>Found: <Text style={{ color: colors.text }}>{importSummary.total}</Text></Text>
+                <Text style={[styles.statText, { color: colors.textSecondary }]}>Added: <Text style={{ color: '#4CAF50' }}>{importSummary.added}</Text></Text>
+                <Text style={[styles.statText, { color: colors.textSecondary }]}>Already Saved: <Text style={{ color: colors.textSecondary }}>{importSummary.existing}</Text></Text>
               </View>
 
               {importSummary.missed.length > 0 && (
-                <View style={styles.missedContainer}>
-                  <Text style={styles.missedTitle}>Could not find ({importSummary.missed.length}):</Text>
+                <View style={[styles.missedContainer, { backgroundColor: colors.error + '18' }]}>
+                  <Text style={[styles.missedTitle, { color: colors.error }]}>Could not find ({importSummary.missed.length}):</Text>
                   <ScrollView style={styles.missedScroll} nestedScrollEnabled={true}>
                     {importSummary.missed.map((title, idx) => (
-                      <Text key={idx} style={styles.missedText}>• {title}</Text>
+                      <Text key={idx} style={[styles.missedText, { color: colors.text }]}>• {title}</Text>
                     ))}
                   </ScrollView>
                 </View>
@@ -1381,10 +1684,10 @@ const WatchListPage = () => {
 
               <TouchableOpacity
                 activeOpacity={0.95}
-                style={[styles.modalButton, styles.modalSyncButton, { width: '100%', marginTop: 20 }]}
+                style={[styles.modalButton, { width: '100%', marginTop: 20, backgroundColor: colors.primary }]}
                 onPress={() => setImportSummary({ ...importSummary, visible: false })}
               >
-                <Text style={styles.modalSyncButtonText}>Dismiss</Text>
+                <Text style={[styles.modalSyncButtonText, { color: colors.onPrimary }]}>Dismiss</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1592,28 +1895,28 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 0, 0, 0.75)' },
   modalOverlayDismiss: { ...StyleSheet.absoluteFill },
   optionsSheetContainer: {
-    backgroundColor: '#1C1C1E',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingTop: 12,
     paddingBottom: 36,
   },
-  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#333', alignSelf: 'center', marginBottom: 16 },
-  sheetTitle: { color: '#FFF', fontSize: 18, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 16 },
+  optionsContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 28,
+  },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  sheetTitle: { fontSize: 18, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 16 },
   sheetItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12 },
   sheetIconCircle: { width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center' },
-  sheetItemTitle: { color: '#FFF', fontSize: 15, fontFamily: 'GoogleSansFlex-Medium' },
-  sheetItemSub: { color: '#777', fontSize: 12, fontFamily: 'GoogleSansFlex-Regular', marginTop: 2 },
-  sheetDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 },
+  sheetItemTitle: { fontSize: 15, fontFamily: 'GoogleSansFlex-Medium' },
+  sheetItemSub: { fontSize: 12, fontFamily: 'GoogleSansFlex-Regular', marginTop: 2 },
+  sheetDivider: { height: 1, marginVertical: 8 },
 
   directionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
-  directionLabel: { color: '#AAA', fontSize: 13, fontFamily: 'GoogleSansFlex-Medium' },
+  directionLabel: { fontSize: 13, fontFamily: 'GoogleSansFlex-Medium' },
   directionButtons: { flexDirection: 'row', gap: 8 },
-  directionBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: '#2A2A2A' },
-  directionBtnActive: { backgroundColor: '#E50914' },
-  directionBtnText: { color: '#888', fontSize: 12, fontFamily: 'GoogleSansFlex-Medium' },
-  directionBtnTextActive: { color: '#FFF', fontFamily: 'GoogleSansFlex-Bold' },
+  directionBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14 },
+  directionBtnText: { fontSize: 12, fontFamily: 'GoogleSansFlex-Medium' },
 
   // Link & Summary Modal
   modalContentContainer: {
@@ -1622,37 +1925,32 @@ const styles = StyleSheet.create({
     marginBottom: 'auto',
     marginTop: 'auto',
     borderRadius: 20,
-    backgroundColor: '#1C1C1E',
     overflow: 'hidden',
   },
   modalContent: { padding: 24, alignItems: 'center' },
-  modalTitle: { color: '#FFF', fontSize: 18, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 8 },
-  modalSubtitle: { color: '#AAA', fontSize: 13, fontFamily: 'GoogleSansFlex-Regular', textAlign: 'center', marginBottom: 20, lineHeight: 18 },
+  modalTitle: { fontSize: 18, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 8 },
+  modalSubtitle: { fontSize: 13, fontFamily: 'GoogleSansFlex-Regular', textAlign: 'center', marginBottom: 20, lineHeight: 18 },
   modalInput: {
     width: '100%',
-    backgroundColor: '#121212',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    color: '#FFF',
     fontSize: 14,
     fontFamily: 'GoogleSansFlex-Regular',
     marginBottom: 20,
   },
   modalButtonsRow: { flexDirection: 'row', width: '100%', gap: 12 },
   modalButton: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  modalCancelButton: { backgroundColor: '#2A2A2A' },
-  modalCancelButtonText: { color: '#AAA', fontSize: 14, fontFamily: 'GoogleSansFlex-Medium' },
-  modalSyncButton: { backgroundColor: '#E50914' },
-  modalSyncButtonText: { color: '#FFF', fontSize: 14, fontFamily: 'GoogleSansFlex-Medium' },
+  modalCancelButtonText: { fontSize: 14, fontFamily: 'GoogleSansFlex-Medium' },
+  modalSyncButtonText: { fontSize: 14, fontFamily: 'GoogleSansFlex-Medium' },
 
   resultsHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 15 },
-  statsContainer: { width: '100%', backgroundColor: '#121212', borderRadius: 12, padding: 15, marginBottom: 15 },
-  statText: { color: '#888', fontSize: 14, fontFamily: 'GoogleSansFlex-Medium', marginBottom: 4 },
-  missedContainer: { width: '100%', backgroundColor: 'rgba(229, 9, 20, 0.1)', borderRadius: 12, padding: 12 },
-  missedTitle: { color: '#E50914', fontSize: 13, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 8 },
+  statsContainer: { width: '100%', borderRadius: 12, padding: 15, marginBottom: 15 },
+  statText: { fontSize: 14, fontFamily: 'GoogleSansFlex-Medium', marginBottom: 4 },
+  missedContainer: { width: '100%', borderRadius: 12, padding: 12 },
+  missedTitle: { fontSize: 13, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 8 },
   missedScroll: { maxHeight: 120 },
-  missedText: { color: '#CCC', fontSize: 12, fontFamily: 'GoogleSansFlex-Regular', marginBottom: 4 },
+  missedText: { fontSize: 12, fontFamily: 'GoogleSansFlex-Regular', marginBottom: 4 },
 });
 
 export default WatchListPage;

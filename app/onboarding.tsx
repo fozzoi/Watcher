@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   TextInput, Image, Dimensions, ScrollView, StatusBar,
-  ActivityIndicator,
 } from 'react-native';
+import { LoadingIndicator } from '../src/components/shared/LoadingIndicator';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,6 +19,7 @@ import {
 import { searchPeople, getImageUrl } from '../src/tmdb';
 import { clearExploreCache } from '../src/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAppTheme } from '../src/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -28,83 +29,100 @@ const STEP_COUNT = 3;
 // ─────────────────────────────────────────────────────────────────────────────
 // Step Indicator
 // ─────────────────────────────────────────────────────────────────────────────
-const StepDots = ({ current }: { current: number }) => (
-  <View style={styles.dotsRow}>
-    {Array.from({ length: STEP_COUNT }).map((_, i) => (
-      <View key={i} style={[styles.dot, i === current && styles.dotActive]} />
-    ))}
-  </View>
-);
+const StepDots = ({ current }: { current: number }) => {
+  const { colors } = useAppTheme();
+  return (
+    <View style={styles.dotsRow}>
+      {Array.from({ length: STEP_COUNT }).map((_, i) => (
+        <View key={i} style={[styles.dot, { backgroundColor: colors.surfaceContainerHigh }, i === current && { backgroundColor: colors.primary, width: 24 }]} />
+      ))}
+    </View>
+  );
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Step 1 — Languages
 // ─────────────────────────────────────────────────────────────────────────────
 const LanguageStep = ({
   selected, onToggle,
-}: { selected: string[]; onToggle: (code: string) => void }) => (
-  <View style={{ flex: 1 }}>
-    <Animated.Text entering={FadeInDown.delay(100).springify()} style={styles.stepTitle}>
-      What languages do you enjoy? 🌍
-    </Animated.Text>
-    <Animated.Text entering={FadeInDown.delay(180).springify()} style={styles.stepSub}>
-      Pick as many as you like. Your Explore page will be personalised to these.
-    </Animated.Text>
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.chipGrid}>
-      {LANGUAGE_OPTIONS.map((lang, i) => {
-        const active = selected.includes(lang.code);
-        return (
-          <Animated.View key={lang.code} entering={FadeInDown.delay(200 + i * 30).springify()}>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => onToggle(lang.code)}
-              style={[styles.langChip, active && styles.langChipActive]}
-            >
-              <Text style={styles.chipFlag}>{lang.flag}</Text>
-              <View>
-                <Text style={[styles.chipLang, active && styles.chipLangActive]}>{lang.label}</Text>
-                <Text style={[styles.chipIndustry, active && styles.chipIndustryActive]}>{lang.industry}</Text>
-              </View>
-              {active && <Ionicons name="checkmark-circle" size={18} color={ACCENT} style={{ marginLeft: 'auto' }} />}
-            </TouchableOpacity>
-          </Animated.View>
-        );
-      })}
-    </ScrollView>
-  </View>
-);
+}: { selected: string[]; onToggle: (code: string) => void }) => {
+  const { colors } = useAppTheme();
+  return (
+    <View style={{ flex: 1 }}>
+      <Animated.Text entering={FadeInDown.delay(100).springify()} style={[styles.stepTitle, { color: colors.text }]}>
+        What languages do you enjoy? 🌍
+      </Animated.Text>
+      <Animated.Text entering={FadeInDown.delay(180).springify()} style={[styles.stepSub, { color: colors.textSecondary }]}>
+        Pick as many as you like. Your Explore page will be personalised to these.
+      </Animated.Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.chipGrid}>
+        {LANGUAGE_OPTIONS.map((lang, i) => {
+          const active = selected.includes(lang.code);
+          return (
+            <Animated.View key={lang.code} entering={FadeInDown.delay(200 + i * 30).springify()}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => onToggle(lang.code)}
+                style={[
+                  styles.langChip,
+                  { backgroundColor: colors.surfaceContainer, borderColor: colors.border },
+                  active && { backgroundColor: colors.badgeBg, borderColor: colors.primary }
+                ]}
+              >
+                <Text style={styles.chipFlag}>{lang.flag}</Text>
+                <View>
+                  <Text style={[styles.chipLang, { color: colors.text }, active && { color: colors.primary, fontWeight: '700' }]}>{lang.label}</Text>
+                  <Text style={[styles.chipIndustry, { color: colors.textSecondary }, active && { color: colors.primary }]}>{lang.industry}</Text>
+                </View>
+                {active && <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+              </TouchableOpacity>
+            </Animated.View>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Step 2 — Genres
 // ─────────────────────────────────────────────────────────────────────────────
 const GenreStep = ({
   selected, onToggle,
-}: { selected: number[]; onToggle: (id: number) => void }) => (
-  <View style={{ flex: 1 }}>
-    <Animated.Text entering={FadeInDown.delay(100).springify()} style={styles.stepTitle}>
-      What genres do you love? 🎬
-    </Animated.Text>
-    <Animated.Text entering={FadeInDown.delay(180).springify()} style={styles.stepSub}>
-      Your picks shape the AI's recommendations and your Explore carousels.
-    </Animated.Text>
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.genreGrid}>
-      {GENRE_OPTIONS.map((genre, i) => {
-        const active = selected.includes(genre.id);
-        return (
-          <Animated.View key={genre.id} entering={FadeInDown.delay(200 + i * 25).springify()}>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => onToggle(genre.id)}
-              style={[styles.genreChip, active && styles.genreChipActive]}
-            >
-              <Text style={styles.genreEmoji}>{genre.emoji}</Text>
-              <Text style={[styles.genreLabel, active && styles.genreLabelActive]}>{genre.label}</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        );
-      })}
-    </ScrollView>
-  </View>
-);
+}: { selected: number[]; onToggle: (id: number) => void }) => {
+  const { colors } = useAppTheme();
+  return (
+    <View style={{ flex: 1 }}>
+      <Animated.Text entering={FadeInDown.delay(100).springify()} style={[styles.stepTitle, { color: colors.text }]}>
+        What genres do you love? 🎬
+      </Animated.Text>
+      <Animated.Text entering={FadeInDown.delay(180).springify()} style={[styles.stepSub, { color: colors.textSecondary }]}>
+        Your picks shape the AI's recommendations and your Explore carousels.
+      </Animated.Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.genreGrid}>
+        {GENRE_OPTIONS.map((genre, i) => {
+          const active = selected.includes(genre.id);
+          return (
+            <Animated.View key={genre.id} entering={FadeInDown.delay(200 + i * 25).springify()}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => onToggle(genre.id)}
+                style={[
+                  styles.genreChip,
+                  { backgroundColor: colors.surfaceContainer, borderColor: colors.border },
+                  active && { backgroundColor: colors.badgeBg, borderColor: colors.primary }
+                ]}
+              >
+                <Text style={styles.genreEmoji}>{genre.emoji}</Text>
+                <Text style={[styles.genreLabel, { color: colors.text }, active && { color: colors.primary, fontWeight: '700' }]}>{genre.label}</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Step 3 — Favourite Actors
@@ -112,6 +130,7 @@ const GenreStep = ({
 const ActorStep = ({
   selected, onToggle,
 }: { selected: FavoriteActor[]; onToggle: (actor: FavoriteActor) => void }) => {
+  const { colors } = useAppTheme();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -135,25 +154,25 @@ const ActorStep = ({
 
   return (
     <View style={{ flex: 1 }}>
-      <Animated.Text entering={FadeInDown.delay(100).springify()} style={styles.stepTitle}>
+      <Animated.Text entering={FadeInDown.delay(100).springify()} style={[styles.stepTitle, { color: colors.text }]}>
         Any favourite actors? ⭐
       </Animated.Text>
-      <Animated.Text entering={FadeInDown.delay(180).springify()} style={styles.stepSub}>
+      <Animated.Text entering={FadeInDown.delay(180).springify()} style={[styles.stepSub, { color: colors.textSecondary }]}>
         Optional. The AI will prioritise their films. You can add or change this later.
       </Animated.Text>
 
       {/* Search bar */}
-      <Animated.View entering={FadeInDown.delay(250).springify()} style={styles.actorSearch}>
-        <Ionicons name="search" size={16} color="#666" />
+      <Animated.View entering={FadeInDown.delay(250).springify()} style={[styles.actorSearch, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
+        <Ionicons name="search" size={16} color={colors.textSecondary} />
         <TextInput
-          style={styles.actorSearchInput}
+          style={[styles.actorSearchInput, { color: colors.text }]}
           placeholder="Search actors, directors..."
-          placeholderTextColor="#555"
+          placeholderTextColor={colors.textSecondary}
           value={query}
           onChangeText={handleSearch}
           returnKeyType="search"
         />
-        {loading && <ActivityIndicator size="small" color={ACCENT} />}
+        {loading && <LoadingIndicator size="small" color={colors.primary} />}
       </Animated.View>
 
       {/* Selected actors row */}
@@ -161,11 +180,11 @@ const ActorStep = ({
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectedRow} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
           {selected.map(actor => (
             <TouchableOpacity key={actor.id} onPress={() => onToggle(actor)} style={styles.selectedActor}>
-              <Image source={{ uri: getImageUrl(actor.profile_path, 'w92') }} style={styles.selectedActorImg} />
-              <View style={styles.selectedActorBadge}>
+              <Image source={{ uri: getImageUrl(actor.profile_path, 'w92') }} style={[styles.selectedActorImg, { borderColor: colors.primary }]} />
+              <View style={[styles.selectedActorBadge, { backgroundColor: colors.primary }]}>
                 <Ionicons name="close" size={10} color="#fff" />
               </View>
-              <Text style={styles.selectedActorName} numberOfLines={1}>{actor.name.split(' ')[0]}</Text>
+              <Text style={[styles.selectedActorName, { color: colors.textSecondary }]} numberOfLines={1}>{actor.name.split(' ')[0]}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -182,7 +201,11 @@ const ActorStep = ({
             <Animated.View entering={FadeInDown.delay(index * 40).springify()}>
               <TouchableOpacity
                 activeOpacity={0.85}
-                style={[styles.actorRow, sel && styles.actorRowActive]}
+                style={[
+                  styles.actorRow,
+                  { borderBottomColor: colors.border },
+                  sel && { backgroundColor: colors.badgeBg, borderRadius: 10 }
+                ]}
                 onPress={() => onToggle({ id: item.id, name: item.name, profile_path: item.profile_path })}
               >
                 <Image
@@ -190,12 +213,12 @@ const ActorStep = ({
                   style={styles.actorRowImg}
                 />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.actorRowName}>{item.name}</Text>
+                  <Text style={[styles.actorRowName, { color: colors.text }]}>{item.name}</Text>
                   {item.known_for_department && (
-                    <Text style={styles.actorRowDept}>{item.known_for_department}</Text>
+                    <Text style={[styles.actorRowDept, { color: colors.textSecondary }]}>{item.known_for_department}</Text>
                   )}
                 </View>
-                {sel && <Ionicons name="checkmark-circle" size={20} color={ACCENT} />}
+                {sel && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
               </TouchableOpacity>
             </Animated.View>
           );
@@ -203,7 +226,7 @@ const ActorStep = ({
         ListEmptyComponent={
           !query ? (
             <View style={styles.actorEmpty}>
-              <Text style={styles.actorEmptyText}>Start typing to search for actors, directors and more</Text>
+              <Text style={[styles.actorEmptyText, { color: colors.textSecondary }]}>Start typing to search for actors, directors and more</Text>
             </View>
           ) : undefined
         }
@@ -218,6 +241,7 @@ const ActorStep = ({
 export default function Onboarding() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { colors, isDark } = useAppTheme();
   const [step, setStep] = useState(0);
   const [languages, setLanguages] = useState<string[]>(['en', 'hi']); // sensible defaults
   const [genreIds, setGenreIds] = useState<number[]>([]);
@@ -274,26 +298,29 @@ export default function Onboarding() {
   const canContinue = step === 0 ? languages.length > 0 : true;
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" />
-      <LinearGradient colors={['#0A0A0F', '#0E0008', '#000']} style={StyleSheet.absoluteFill} />
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+      <LinearGradient 
+        colors={isDark ? ['#0A0A0F', '#0E0008', '#000'] : [colors.surfaceContainerLow, colors.background, colors.background]} 
+        style={StyleSheet.absoluteFill} 
+      />
 
       {/* Decorative orb */}
-      <View style={styles.orb} />
+      <View style={[styles.orb, { backgroundColor: isDark ? 'rgba(229,9,20,0.12)' : `${colors.primary}12` }]} />
 
       {/* Header */}
       <Animated.View entering={FadeIn.delay(50)} style={styles.header}>
         <View style={styles.headerTopRow}>
-          <Text style={styles.appName}>
+          <Text style={[styles.appName, { color: colors.primary }]}>
             {isEditing ? 'CONTENT PREFERENCES' : 'WATCHER'}
           </Text>
           {isEditing && (
             <TouchableOpacity 
               activeOpacity={0.8}
               onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}
-              style={styles.closeBtn}
+              style={[styles.closeBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : colors.surfaceContainer }]}
             >
-              <Ionicons name="close" size={20} color="#FFF" />
+              <Ionicons name="close" size={20} color={colors.text} />
             </TouchableOpacity>
           )}
         </View>
@@ -310,8 +337,12 @@ export default function Onboarding() {
       {/* Footer */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
         {step > 0 && (
-          <TouchableOpacity activeOpacity={0.8} onPress={() => setStep(s => s - 1)} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={20} color="#888" />
+          <TouchableOpacity 
+            activeOpacity={0.8} 
+            onPress={() => setStep(s => s - 1)} 
+            style={[styles.backBtn, { backgroundColor: colors.surfaceContainer }]}
+          >
+            <Ionicons name="arrow-back" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         )}
 
@@ -321,9 +352,9 @@ export default function Onboarding() {
           onPress={step < STEP_COUNT - 1 ? () => setStep(s => s + 1) : handleFinish}
           style={[styles.nextBtn, !canContinue && { opacity: 0.4 }]}
         >
-          <LinearGradient colors={[ACCENT, '#C00']} style={styles.nextBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+          <LinearGradient colors={[colors.primary, colors.primary]} style={styles.nextBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
             {saving ? (
-              <ActivityIndicator color="#fff" size="small" />
+              <LoadingIndicator color="#fff" size="small" />
             ) : (
               <>
                 <Text style={styles.nextBtnText}>
@@ -337,7 +368,7 @@ export default function Onboarding() {
 
         {step === STEP_COUNT - 1 && !isEditing && (
           <TouchableOpacity onPress={handleFinish} style={styles.skipBtn}>
-            <Text style={styles.skipText}>Skip for now</Text>
+            <Text style={[styles.skipText, { color: colors.textSecondary }]}>Skip for now</Text>
           </TouchableOpacity>
         )}
       </View>

@@ -1,9 +1,10 @@
 import React, { memo, useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
-  ActivityIndicator, StyleSheet, StatusBar, Keyboard,
+  StyleSheet, StatusBar, Keyboard,
   KeyboardAvoidingView, Platform, PanResponder,
 } from 'react-native';
+import { LoadingIndicator } from '../../src/components/shared/LoadingIndicator';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -803,7 +804,7 @@ const AiChat = () => {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <StatusBar barStyle="light-content" backgroundColor="#000" />
-        <ActivityIndicator size="large" color={ACCENT} />
+        <LoadingIndicator size="large" color={ACCENT} />
       </View>
     );
   }
@@ -955,7 +956,7 @@ const AiChat = () => {
           accessibilityLabel="Send"
         >
           {sending
-            ? <ActivityIndicator size="small" color="white" />
+            ? <LoadingIndicator size="small" color="white" />
             : <Ionicons name="arrow-up" size={20} color={canSend ? 'white' : ai.textMute} />}
         </TouchableOpacity>
       </View>

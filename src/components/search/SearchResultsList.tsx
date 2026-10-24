@@ -5,6 +5,7 @@ import { getImageUrl } from '../../tmdb';
 import MovieCard from '../shared/MovieCard';
 import { HORIZONTAL_MARGIN } from '../explore/ExploreConstants';
 import { logTasteEvent, TASTE_WEIGHTS } from '../../services/tasteProfile';
+import { useAppTheme } from '../../theme';
 
 interface SearchResultsListProps {
   peopleResults: any[];
@@ -15,6 +16,7 @@ interface SearchResultsListProps {
 
 const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds, toggleWatchlist }: SearchResultsListProps) => {
   const router = useRouter();
+  const { colors } = useAppTheme();
   const collections = (tmdbResults || []).filter(r => r.media_type === 'collection');
   const movies = (tmdbResults || []).filter(r => r.media_type !== 'collection');
 
@@ -31,7 +33,7 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
       >
         {peopleResults.length > 0 && (
           <View style={{ marginBottom: 24 }}>
-            <Text style={styles.searchHeading}>People</Text>
+            <Text style={[styles.searchHeading, { color: colors.text }]}>People</Text>
             <FlatList
               horizontal 
               data={peopleResults} 
@@ -56,8 +58,8 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
                     router.push(`/cast/${item.id}`);
                   }}
                 >
-                  <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={styles.personImage} />
-                  <Text style={styles.personName} numberOfLines={1}>{item.name}</Text>
+                  <Image source={{ uri: getImageUrl(item.profile_path, 'w185') }} style={[styles.personImage, { backgroundColor: colors.surfaceContainerHigh }]} />
+                  <Text style={[styles.personName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
                 </TouchableOpacity>
               )}
             />
@@ -66,7 +68,7 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
 
         {collections.length > 0 && (
           <View style={{ marginBottom: 24 }}>
-            <Text style={styles.searchHeading}>Collections</Text>
+            <Text style={[styles.searchHeading, { color: colors.text }]}>Collections</Text>
             <FlatList
               horizontal 
               data={collections} 
@@ -80,11 +82,11 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
               renderItem={({ item }) => (
                 <TouchableOpacity 
                   activeOpacity={0.95} 
-                  style={[styles.collectionChip, { marginRight: 12 }]} 
+                  style={[styles.collectionChip, { marginRight: 12, backgroundColor: colors.surfaceContainer, borderWidth: 0 }]} 
                   onPress={() => router.push(`/collection/${item.id}`)}
                 >
-                  <Image source={{ uri: getImageUrl(item.poster_path, 'w92') }} style={styles.collectionChipImage} />
-                  <Text style={styles.collectionChipText} numberOfLines={2}>{item.name || item.title}</Text>
+                  <Image source={{ uri: getImageUrl(item.poster_path, 'w92') }} style={[styles.collectionChipImage, { backgroundColor: colors.surfaceContainerHigh }]} />
+                  <Text style={[styles.collectionChipText, { color: colors.text }]} numberOfLines={2}>{item.name || item.title}</Text>
                 </TouchableOpacity>
               )}
             />
@@ -93,7 +95,7 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
 
         {movies.length > 0 && (
           <>
-            <Text style={styles.searchHeading}>Movies & Shows</Text>
+            <Text style={[styles.searchHeading, { color: colors.text }]}>Movies & Shows</Text>
             <View style={styles.searchResultsGrid}>
               {movies.map((result: any) => (
                 <MovieCard

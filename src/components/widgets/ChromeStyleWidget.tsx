@@ -4,9 +4,9 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   Dimensions,
 } from 'react-native';
+import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -341,7 +341,7 @@ export const ChromeStyleWidget = memo(({ onOpenSearch, onSelectTrending }: Chrom
         {/* Trending Card Content */}
         {loadingTrending ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color="#E50914" />
+            <LoadingIndicator size="small" />
             <Text style={styles.loadingText}>Fetching today's trends...</Text>
           </View>
         ) : currentItem ? (

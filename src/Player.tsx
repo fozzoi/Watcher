@@ -1,6 +1,7 @@
 // app/Player.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, Platform, AppState, BackHandler, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Text, Platform, AppState, BackHandler, TouchableOpacity } from 'react-native';
+import { LoadingIndicator } from './components/shared/LoadingIndicator';
 import { StatusBar, setStatusBarHidden } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -155,7 +156,7 @@ export default function Player() {
 
       {loading && (
         <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#E50914" />
+          <LoadingIndicator size="large" />
           <Text style={styles.loadingText}>Connecting to {activeProvider}...</Text>
         </View>
       )}

@@ -8,10 +8,10 @@ import {
   Image, 
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
   Linking,
   StatusBar 
 } from 'react-native';
+import { LoadingIndicator } from '../src/components/shared/LoadingIndicator';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
@@ -36,6 +36,7 @@ import Animated, {
   Easing,
   interpolate,
 } from 'react-native-reanimated';
+import { useAppTheme } from '../src/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -174,6 +175,7 @@ const SkeletonDetails = () => (
 
 const ListDetails = ({ route }: any) => {
   const router = useRouter();
+  const { colors, isDark } = useAppTheme();
   const { contentType = 'trending', title, initialSelectedMovie } = useLocalSearchParams();
   const initialMovies = route?.params?.movies || [];
   
@@ -356,42 +358,42 @@ const ListDetails = ({ route }: any) => {
             style={styles.posterImage}
           />
           <View style={styles.headerInfo}>
-            <Text style={styles.movieTitle}>
+            <Text style={[styles.movieTitle, { color: colors.text }]}>
               {selectedMovie.title || selectedMovie.name}
             </Text>
             
             <View style={styles.metaRow}>
-              <View style={styles.metaChip}>
-                <Ionicons name="star" size={14} color="#E50914" />
-                <Text style={styles.metaText}>{selectedMovie.vote_average.toFixed(1)}</Text>
+              <View style={[styles.metaChip, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
+                <Ionicons name="star" size={14} color="#FFD60A" />
+                <Text style={[styles.metaText, { color: colors.text }]}>{selectedMovie.vote_average.toFixed(1)}</Text>
               </View>
-              <View style={styles.metaChip}>
-                <Text style={styles.metaText}>
+              <View style={[styles.metaChip, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
+                <Text style={[styles.metaText, { color: colors.text }]}>
                   {(selectedMovie.release_date || selectedMovie.first_air_date)?.split('-')[0] || 'N/A'}
                 </Text>
               </View>
               {selectedMovie.certification && (
-                <View style={styles.metaChip}>
-                  <Text style={styles.metaText}>{selectedMovie.certification}</Text>
+                <View style={[styles.metaChip, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
+                  <Text style={[styles.metaText, { color: colors.text }]}>{selectedMovie.certification}</Text>
                 </View>
               )}
-              <View style={styles.metaChip}>
-                <Text style={styles.metaText}>{selectedMovie.media_type === 'movie' ? 'Movie' : 'TV Show'}</Text>
+              <View style={[styles.metaChip, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
+                <Text style={[styles.metaText, { color: colors.text }]}>{selectedMovie.media_type === 'movie' ? 'Movie' : 'TV Show'}</Text>
               </View>
             </View>
             
             <View style={styles.heroActionRow}>
-              <TouchableOpacity activeOpacity={0.95} style={styles.heroIcon} onPress={openTelegramSearch}>
-                <Ionicons name="paper-plane-outline" size={20} color="#fff" />
+              <TouchableOpacity activeOpacity={0.95} style={[styles.heroIcon, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]} onPress={openTelegramSearch}>
+                <Ionicons name="paper-plane-outline" size={20} color={colors.text} />
               </TouchableOpacity>
-              <TouchableOpacity activeOpacity={0.95} style={styles.heroIcon} onPress={openTorrentSearch}>
-                <Feather name="download" size={20} color="#fff" />
+              <TouchableOpacity activeOpacity={0.95} style={[styles.heroIcon, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]} onPress={openTorrentSearch}>
+                <Feather name="download" size={20} color={colors.text} />
               </TouchableOpacity>
-              <TouchableOpacity activeOpacity={0.95} style={styles.heroIcon} onPress={toggleWatchlist}>
+              <TouchableOpacity activeOpacity={0.95} style={[styles.heroIcon, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]} onPress={toggleWatchlist}>
                 <MaterialIcons 
                   name={isInWatchlist ? "bookmark" : "bookmark-outline"} 
                   size={20} 
-                  color={isInWatchlist ? "#E50914" : "#fff"} 
+                  color={isInWatchlist ? colors.primary : colors.text} 
                 />
               </TouchableOpacity>
             </View>
@@ -401,20 +403,20 @@ const ListDetails = ({ route }: any) => {
         
         {/* Overview Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Overview</Text>
-          <Text style={styles.overviewText}>{selectedMovie.overview}</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Overview</Text>
+          <Text style={[styles.overviewText, { color: colors.textSecondary }]}>{selectedMovie.overview}</Text>
         </View>
 
         {/* Director Section */}
         {selectedMovie.media_type === 'movie' && selectedMovie.director && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Director</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Director</Text>
             <TouchableOpacity activeOpacity={0.95} 
               style={styles.directorContainer}
               onPress={() => router.push(`/cast/${selectedMovie.director.id}`)}
             >
-              <Text style={styles.directorName}>{selectedMovie.director.name}</Text>
-              <Feather name="chevron-right" size={20} color="#E50914" />
+              <Text style={[styles.directorName, { color: colors.text }]}>{selectedMovie.director.name}</Text>
+              <Feather name="chevron-right" size={20} color={colors.primary} />
             </TouchableOpacity>
           </View>
         )}
@@ -422,7 +424,7 @@ const ListDetails = ({ route }: any) => {
         {/* Cast Section */}
         {castData.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Cast</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Cast</Text>
             <FlatList
               horizontal
               data={castData.slice(0, 6)} 
@@ -438,10 +440,10 @@ const ListDetails = ({ route }: any) => {
                         ? getImageUrl(item.profile_path, IMAGE_SIZES.PROFILE)
                         : 'https://via.placeholder.com/185x278?text=No+Image'
                     }}
-                    style={styles.castImage}
+                    style={[styles.castImage, { backgroundColor: colors.surfaceContainer }]}
                   />
-                  <Text style={styles.castName} numberOfLines={1}>{item.name}</Text>
-                  <Text style={styles.characterName} numberOfLines={1}>{item.character}</Text>
+                  <Text style={[styles.castName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                  <Text style={[styles.characterName, { color: colors.textSecondary }]} numberOfLines={1}>{item.character}</Text>
                 </TouchableOpacity>
               )}
               showsHorizontalScrollIndicator={false}
@@ -483,23 +485,23 @@ const ListDetails = ({ route }: any) => {
             {selectedSeason !== null && ( 
               <View style={styles.episodesContainer}>
                 {loadingEpisodes ? (
-                  <ActivityIndicator size="large" color="#E50914" />
+                  <LoadingIndicator size="large" color={colors.primary} />
                 ) : (
                   episodes.map((episode) => (
-                    <View key={`episode-${episode.id}`} style={styles.episodeCard}>
+                    <View key={`episode-${episode.id}`} style={[styles.episodeCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
                       <Image 
                         source={{ 
                           uri: episode.still_path 
                             ? getImageUrl(episode.still_path, IMAGE_SIZES.STILL)
                             : 'https://via.placeholder.com/300x169?text=No+Image'
                         }}
-                        style={styles.episodeImage}
+                        style={[styles.episodeImage, { backgroundColor: colors.surfaceContainerHigh }]}
                       />
                       <View style={styles.episodeContent}>
-                        <Text style={styles.episodeTitle}>
+                        <Text style={[styles.episodeTitle, { color: colors.text }]}>
                           {episode.episode_number}. {episode.name}
                         </Text>
-                        <Text style={styles.episodeOverview} numberOfLines={2}>
+                        <Text style={[styles.episodeOverview, { color: colors.textSecondary }]} numberOfLines={2}>
                           {episode.overview || 'No description available.'}
                         </Text>
                       </View>
@@ -520,7 +522,7 @@ const ListDetails = ({ route }: any) => {
   const renderSimilarMoviesSection = () => (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Similar Movies</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Similar Movies</Text>
         {similarMovies.length > 0 && (
           <TouchableOpacity activeOpacity={0.95} onPress={() => router.push({
             pathname: '/similarmovies',
@@ -530,7 +532,7 @@ const ListDetails = ({ route }: any) => {
               name: selectedMovie?.title || selectedMovie?.name
             }
           })}>
-            <Text style={styles.viewAll}>View All</Text>
+            <Text style={[styles.viewAll, { color: colors.primary }]}>View All</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -551,28 +553,28 @@ const ListDetails = ({ route }: any) => {
             >
               <Image
                 source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }}
-                style={styles.similarImage}
+                style={[styles.similarImage, { backgroundColor: colors.surfaceContainer }]}
               />
-              <Text style={styles.similarTitle} numberOfLines={2}>
+              <Text style={[styles.similarTitle, { color: colors.text }]} numberOfLines={2}>
                 {item.title || item.name}
               </Text>
               <View style={styles.ratingRow}>
-                <Ionicons name="star" size={12} color="#E50914" />
-                <Text style={styles.rating}>{item.vote_average.toFixed(1)}</Text>
+                <Ionicons name="star" size={12} color="#FFD60A" />
+                <Text style={[styles.rating, { color: colors.textSecondary }]}>{item.vote_average.toFixed(1)}</Text>
               </View>
             </TouchableOpacity>
           )}
           nestedScrollEnabled={true} 
         />
       ) : (
-        <Text style={styles.noSimilarText}>No similar titles found</Text>
+        <Text style={[styles.noSimilarText, { color: colors.textSecondary }]}>No similar titles found</Text>
       )}
     </View>
   );
 
   return (
-    <View style={styles.baseContainer}>
-      <StatusBar barStyle="light-content" />
+    <View style={[styles.baseContainer, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Animated Blurred Background */}
       <View style={styles.animatedBgContainer}>
@@ -582,7 +584,7 @@ const ListDetails = ({ route }: any) => {
           blurRadius={50}
         />
       </View>
-      <View style={styles.backgroundOverlay} />
+      <View style={[styles.backgroundOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(255, 255, 255, 0.85)' }]} />
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView 
@@ -593,7 +595,7 @@ const ListDetails = ({ route }: any) => {
         >
           {/* List Title */}
           <View style={styles.listTitleContainer}>
-            <Text style={styles.listTitle}>{title}</Text>
+            <Text style={[styles.listTitle, { color: colors.text }]}>{title}</Text>
           </View>
           
           {/* Movie List (No skeleton needed here since initialMovies are passed immediately) */}
@@ -611,7 +613,7 @@ const ListDetails = ({ route }: any) => {
           </View>
 
           {/* Details Section */}
-          <View style={styles.contentSheet}> 
+          <View style={[styles.contentSheet, { backgroundColor: isDark ? 'rgba(20, 20, 24, 0.7)' : 'rgba(255, 255, 255, 0.7)' }]}> 
             {isLoading ? (
               // --- RENDER SKELETON UI WHEN LOADING ---
               <SkeletonDetails />

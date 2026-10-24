@@ -8,12 +8,14 @@ import {
   SnackbarHostRef,
   Snackbar,
 } from '@expo/ui/jetpack-compose';
-import { fillMaxWidth } from '@expo/ui/jetpack-compose/modifiers';
+import { fillMaxWidth, padding } from '@expo/ui/jetpack-compose/modifiers';
 import { snackbarService, SnackbarConfig } from '../../services/snackbar';
+import { useAppTheme } from '../../theme';
 
 export const GlobalSnackbar = () => {
   if (Platform.OS !== 'android') return null;
 
+  const { colors, isDark } = useAppTheme();
   const snackbarHostRef = useRef<SnackbarHostRef>(null);
   const [activeCount, setActiveCount] = useState(0);
   const insets = useSafeAreaInsets();
@@ -65,9 +67,14 @@ export const GlobalSnackbar = () => {
         },
       ]}
     >
-      <Host colorScheme="dark" matchContents style={styles.host}>
+      <Host colorScheme={isDark ? 'dark' : 'light'} matchContents style={styles.host}>
         <SnackbarHost ref={snackbarHostRef} modifiers={[fillMaxWidth()]}>
-          <Snackbar />
+          <Snackbar
+            containerColor={colors.inverseSurface}
+            contentColor={colors.inverseOnSurface}
+            actionContentColor={colors.inversePrimary || colors.primary}
+            modifiers={[fillMaxWidth(), padding(16, 0, 16, 0)]}
+          />
         </SnackbarHost>
       </Host>
     </View>
@@ -77,8 +84,8 @@ export const GlobalSnackbar = () => {
 const styles = StyleSheet.create({
   overlay: {
     position: 'absolute',
-    left: 16,
-    right: 16,
+    left: 0,
+    right: 0,
     zIndex: 99999,
     elevation: 99999,
   },

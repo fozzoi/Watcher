@@ -5,16 +5,17 @@ import {
   StyleSheet, 
   ScrollView, 
   TouchableOpacity, 
-  ActivityIndicator,
   StatusBar,
   Dimensions
 } from 'react-native';
+import { LoadingIndicator } from '../src/components/shared/LoadingIndicator';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { getSavedItems } from '../src/database';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useAppTheme } from '../src/theme';
 
 const ACCENT = '#E50914';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -82,6 +83,7 @@ type StatData = {
 export default function StatsPage() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { colors, isDark } = useAppTheme();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<StatData | null>(null);
 
@@ -214,16 +216,16 @@ export default function StatsPage() {
 
   if (loading || !stats) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <StatusBar barStyle="light-content" />
-        <ActivityIndicator size="large" color={ACCENT} />
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
+        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+        <LoadingIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" />
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Header Bar */}
       <View style={styles.header}>
@@ -232,12 +234,12 @@ export default function StatsPage() {
           style={styles.backBtn}
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+          <Ionicons name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
 
         <View style={styles.headerTitleGroup}>
-          <Text style={styles.headerTitle}>Cinematic Stats</Text>
-          <Text style={styles.headerSubtitle}>Personal viewing metrics & habits</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Cinematic Stats</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>Personal viewing metrics & habits</Text>
         </View>
 
         <TouchableOpacity 
@@ -245,7 +247,7 @@ export default function StatsPage() {
           style={styles.reloadBtn}
           accessibilityLabel="Refresh stats"
         >
-          <Ionicons name="reload-outline" size={20} color="rgba(255,255,255,0.7)" />
+          <Ionicons name="reload-outline" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
@@ -254,9 +256,9 @@ export default function StatsPage() {
         showsVerticalScrollIndicator={false}
       >
         {/* Milestone Banner */}
-        <Animated.View entering={FadeInDown.delay(50)} style={styles.milestoneCard}>
+        <Animated.View entering={FadeInDown.delay(50)} style={[styles.milestoneCard, { borderColor: colors.border }]}>
           <LinearGradient 
-            colors={['rgba(229,9,20,0.22)', 'rgba(20,20,25,0.85)']} 
+            colors={[colors.primary + '25', colors.surfaceContainer]} 
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill} 
@@ -267,30 +269,30 @@ export default function StatsPage() {
                 <Ionicons name="sparkles" size={12} color="#FFD700" />
                 <Text style={styles.milestoneBadgeText}>MILESTONE RANK</Text>
               </View>
-              <Text style={styles.milestoneTitle}>{stats.milestoneTitle}</Text>
-              <Text style={styles.milestoneDesc}>{stats.milestoneDesc}</Text>
+              <Text style={[styles.milestoneTitle, { color: colors.text }]}>{stats.milestoneTitle}</Text>
+              <Text style={[styles.milestoneDesc, { color: colors.textSecondary }]}>{stats.milestoneDesc}</Text>
             </View>
 
             <View style={styles.milestoneIconBox}>
-              <Ionicons name={stats.milestoneIcon} size={30} color={ACCENT} />
+              <Ionicons name={stats.milestoneIcon} size={30} color={colors.primary} />
             </View>
           </View>
 
           {/* Mini Milestone Stats Pill Row */}
           <View style={styles.milestoneFooterRow}>
             <View style={styles.milestoneFooterPill}>
-              <Text style={styles.milestoneFooterNum}>{stats.totalWatched}</Text>
-              <Text style={styles.milestoneFooterLabel}>Watched</Text>
+              <Text style={[styles.milestoneFooterNum, { color: colors.text }]}>{stats.totalWatched}</Text>
+              <Text style={[styles.milestoneFooterLabel, { color: colors.textSecondary }]}>Watched</Text>
             </View>
-            <View style={styles.milestoneDivider} />
+            <View style={[styles.milestoneDivider, { backgroundColor: colors.border }]} />
             <View style={styles.milestoneFooterPill}>
-              <Text style={styles.milestoneFooterNum}>{stats.totalRuntimeHours}h</Text>
-              <Text style={styles.milestoneFooterLabel}>Screen Time</Text>
+              <Text style={[styles.milestoneFooterNum, { color: colors.text }]}>{stats.totalRuntimeHours}h</Text>
+              <Text style={[styles.milestoneFooterLabel, { color: colors.textSecondary }]}>Screen Time</Text>
             </View>
-            <View style={styles.milestoneDivider} />
+            <View style={[styles.milestoneDivider, { backgroundColor: colors.border }]} />
             <View style={styles.milestoneFooterPill}>
-              <Text style={styles.milestoneFooterNum}>{stats.completionRate}%</Text>
-              <Text style={styles.milestoneFooterLabel}>Cleared</Text>
+              <Text style={[styles.milestoneFooterNum, { color: colors.text }]}>{stats.completionRate}%</Text>
+              <Text style={[styles.milestoneFooterLabel, { color: colors.textSecondary }]}>Cleared</Text>
             </View>
           </View>
         </Animated.View>
@@ -298,67 +300,67 @@ export default function StatsPage() {
         {/* 2x2 Metric Cards Grid */}
         <View style={styles.metricGrid}>
           {/* Movies Watched */}
-          <Animated.View entering={FadeInDown.delay(100)} style={styles.metricCard}>
+          <Animated.View entering={FadeInDown.delay(100)} style={[styles.metricCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
             <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(229,9,20,0.15)' }]}>
-              <Ionicons name="film" size={20} color={ACCENT} />
+              <Ionicons name="film" size={20} color={colors.primary} />
             </View>
-            <Text style={styles.metricValue}>{stats.totalMovies}</Text>
-            <Text style={styles.metricLabel}>Movies Watched</Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>{stats.totalMovies}</Text>
+            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>Movies Watched</Text>
           </Animated.View>
 
           {/* TV Series Watched */}
-          <Animated.View entering={FadeInDown.delay(150)} style={styles.metricCard}>
+          <Animated.View entering={FadeInDown.delay(150)} style={[styles.metricCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
             <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(48,209,88,0.15)' }]}>
               <Ionicons name="tv" size={20} color="#30D158" />
             </View>
-            <Text style={styles.metricValue}>{stats.totalTv}</Text>
-            <Text style={styles.metricLabel}>TV Shows Watched</Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>{stats.totalTv}</Text>
+            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>TV Shows Watched</Text>
           </Animated.View>
 
           {/* Total Watch Time */}
-          <Animated.View entering={FadeInDown.delay(200)} style={styles.metricCard}>
+          <Animated.View entering={FadeInDown.delay(200)} style={[styles.metricCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
             <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(255,214,10,0.15)' }]}>
               <Ionicons name="time" size={20} color="#FFD60A" />
             </View>
-            <Text style={styles.metricValue}>{stats.totalRuntimeHours}h</Text>
-            <Text style={styles.metricLabel}>~{stats.totalRuntimeDays} Total Days</Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>{stats.totalRuntimeHours}h</Text>
+            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>~{stats.totalRuntimeDays} Total Days</Text>
           </Animated.View>
 
           {/* Watchlist & Completion */}
-          <Animated.View entering={FadeInDown.delay(250)} style={styles.metricCard}>
+          <Animated.View entering={FadeInDown.delay(250)} style={[styles.metricCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
             <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(191,90,242,0.15)' }]}>
               <Ionicons name="bookmark" size={20} color="#BF5AF2" />
             </View>
-            <Text style={styles.metricValue}>{stats.watchlistSize}</Text>
-            <Text style={styles.metricLabel}>In Watchlist ({stats.completionRate}% Done)</Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>{stats.watchlistSize}</Text>
+            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>In Watchlist ({stats.completionRate}% Done)</Text>
           </Animated.View>
         </View>
 
         {/* Media Ratio Split Bar */}
         {stats.totalWatched > 0 && (
-          <Animated.View entering={FadeInDown.delay(300)} style={styles.sectionCard}>
+          <Animated.View entering={FadeInDown.delay(300)} style={[styles.sectionCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
             <View style={styles.sectionTitleRow}>
-              <Ionicons name="pie-chart" size={18} color={ACCENT} />
-              <Text style={styles.sectionTitle}>Media Type Split</Text>
+              <Ionicons name="pie-chart" size={18} color={colors.primary} />
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Media Type Split</Text>
             </View>
 
-            <View style={styles.ratioBarTrack}>
-              <View style={[styles.ratioBarFillMovies, { width: `${stats.movieRatio}%` }]} />
+            <View style={[styles.ratioBarTrack, { backgroundColor: colors.surfaceContainerHigh }]}>
+              <View style={[styles.ratioBarFillMovies, { width: `${stats.movieRatio}%`, backgroundColor: colors.primary }]} />
               <View style={[styles.ratioBarFillTv, { width: `${stats.tvRatio}%` }]} />
             </View>
 
             <View style={styles.ratioLegendRow}>
               <View style={styles.ratioLegendItem}>
-                <View style={[styles.legendDot, { backgroundColor: ACCENT }]} />
-                <Text style={styles.ratioLegendText}>
-                  Movies: <Text style={styles.boldText}>{stats.totalMovies}</Text> ({stats.movieRatio}%)
+                <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
+                <Text style={[styles.ratioLegendText, { color: colors.textSecondary }]}>
+                  Movies: <Text style={[styles.boldText, { color: colors.text }]}>{stats.totalMovies}</Text> ({stats.movieRatio}%)
                 </Text>
               </View>
 
               <View style={styles.ratioLegendItem}>
                 <View style={[styles.legendDot, { backgroundColor: '#30D158' }]} />
-                <Text style={styles.ratioLegendText}>
-                  TV Shows: <Text style={styles.boldText}>{stats.totalTv}</Text> ({stats.tvRatio}%)
+                <Text style={[styles.ratioLegendText, { color: colors.textSecondary }]}>
+                  TV Shows: <Text style={[styles.boldText, { color: colors.text }]}>{stats.totalTv}</Text> ({stats.tvRatio}%)
                 </Text>
               </View>
             </View>
@@ -366,10 +368,10 @@ export default function StatsPage() {
         )}
 
         {/* Top Genres Breakdown with Progress Bars */}
-        <Animated.View entering={FadeInDown.delay(350)} style={styles.sectionCard}>
+        <Animated.View entering={FadeInDown.delay(350)} style={[styles.sectionCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
           <View style={styles.sectionTitleRow}>
-            <Ionicons name="trending-up" size={18} color={ACCENT} />
-            <Text style={styles.sectionTitle}>Top Genres Breakdown</Text>
+            <Ionicons name="trending-up" size={18} color={colors.primary} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Genres Breakdown</Text>
           </View>
 
           {stats.topGenresList.length > 0 ? (
@@ -377,17 +379,17 @@ export default function StatsPage() {
               {stats.topGenresList.map((g, index) => (
                 <View key={g.name} style={styles.genreRow}>
                   <View style={styles.genreLabelRow}>
-                    <Text style={styles.genreName}>
+                    <Text style={[styles.genreName, { color: colors.text }]}>
                       {index === 0 ? '👑 ' : ''}{g.name}
                     </Text>
-                    <Text style={styles.genreMeta}>
-                      {g.count} titles <Text style={styles.genrePercent}>({g.percent}%)</Text>
+                    <Text style={[styles.genreMeta, { color: colors.textSecondary }]}>
+                      {g.count} titles <Text style={[styles.genrePercent, { color: colors.text }]}>({g.percent}%)</Text>
                     </Text>
                   </View>
 
-                  <View style={styles.progressTrack}>
+                  <View style={[styles.progressTrack, { backgroundColor: colors.surfaceContainerHigh }]}>
                     <LinearGradient
-                      colors={index === 0 ? ['#E50914', '#FF453A'] : ['#BF5AF2', '#5E5CE6']}
+                      colors={index === 0 ? [colors.primary, colors.primary] : ['#BF5AF2', '#5E5CE6']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                       style={[styles.progressFill, { width: `${Math.max(10, g.percent)}%` }]}
@@ -397,17 +399,17 @@ export default function StatsPage() {
               ))}
             </View>
           ) : (
-            <Text style={styles.emptyText}>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
               Log titles to your viewing history to generate an accurate genre breakdown.
             </Text>
           )}
         </Animated.View>
 
         {/* Most Watched Stars / Favorite Actors */}
-        <Animated.View entering={FadeInDown.delay(400)} style={styles.sectionCard}>
+        <Animated.View entering={FadeInDown.delay(400)} style={[styles.sectionCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
           <View style={styles.sectionTitleRow}>
             <Ionicons name="star" size={18} color="#FFD60A" />
-            <Text style={styles.sectionTitle}>Top Stars & Actors</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Stars & Actors</Text>
           </View>
 
           {stats.topActorsList.length > 0 ? (
@@ -423,24 +425,24 @@ export default function StatsPage() {
                   ? '#C0C0C0' 
                   : isThird 
                   ? '#CD7F32' 
-                  : 'rgba(255,255,255,0.12)';
+                  : colors.surfaceContainerHigh;
 
-                const rankTextColor = (isFirst || isSecond || isThird) ? '#0A0A0F' : '#FFFFFF';
+                const rankTextColor = (isFirst || isSecond || isThird) ? '#0A0A0F' : colors.text;
 
                 return (
-                  <View key={actor.name} style={styles.actorRow}>
+                  <View key={actor.name} style={[styles.actorRow, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
                     <View style={[styles.actorRankBadge, { backgroundColor: rankBg }]}>
                       <Text style={[styles.actorRankText, { color: rankTextColor }]}>
                         #{idx + 1}
                       </Text>
                     </View>
 
-                    <Text style={styles.actorName} numberOfLines={1}>
+                    <Text style={[styles.actorName, { color: colors.text }]} numberOfLines={1}>
                       {actor.name}
                     </Text>
 
-                    <View style={styles.actorCountBadge}>
-                      <Text style={styles.actorCountText}>
+                    <View style={[styles.actorCountBadge, { backgroundColor: colors.badgeBg, borderColor: colors.border }]}>
+                      <Text style={[styles.actorCountText, { color: colors.primary }]}>
                         {actor.count} {actor.count === 1 ? 'title' : 'titles'}
                       </Text>
                     </View>
@@ -449,7 +451,7 @@ export default function StatsPage() {
               })}
             </View>
           ) : (
-            <Text style={styles.emptyText}>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
               Watch titles or star your favorite cinema actors to see them ranked here.
             </Text>
           )}

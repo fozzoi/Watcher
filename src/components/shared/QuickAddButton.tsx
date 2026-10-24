@@ -4,6 +4,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { useSelector } from '@legendapp/state/react';
 import { savedStore$, toggleWatchlistGlobal } from '../../state/savedState';
+import { useAppTheme } from '../../theme';
 
 interface QuickAddButtonProps {
   itemId?: number;
@@ -13,6 +14,7 @@ interface QuickAddButtonProps {
 }
 
 const QuickAddButton = memo(({ itemId, item, isAdded: propIsAdded, onPress }: QuickAddButtonProps) => {
+  const { colors } = useAppTheme();
   const targetId = itemId ?? item?.id ?? item?.media_id;
   const numId = targetId !== undefined && targetId !== null ? Number(targetId) : undefined;
 

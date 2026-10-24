@@ -8,7 +8,6 @@ import {
   StatusBar,
   Platform,
   ToastAndroid,
-  ActivityIndicator,
   useWindowDimensions,
   NativeSyntheticEvent,
   NativeScrollEvent,
@@ -18,11 +17,13 @@ import { Image } from 'expo-image';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { LegendList } from '@legendapp/list/react-native';
+import { LoadingIndicator } from '../shared/LoadingIndicator';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TMDBImage, getImageUrl } from '../../tmdb';
+import { useAppTheme } from '../../theme';
 import {
   Host,
   HorizontalCenteredHeroCarousel,
@@ -67,6 +68,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
   fallbackPoster,
   title,
 }) => {
+  const { colors, isDark } = useAppTheme();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<'scenes' | 'posters'>('scenes');
   const [selectedPreviewIndex, setSelectedPreviewIndex] = useState<number | null>(null);
@@ -253,38 +255,38 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <Text style={styles.sectionTitle}>Photos & Scenes</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Photos & Scenes</Text>
 
         {/* Tab Switcher */}
-        <View style={styles.tabsContainer}>
+        <View style={[styles.tabsContainer, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.tabBtn, activeTab === 'scenes' && styles.tabBtnActive]}
+            style={[styles.tabBtn, activeTab === 'scenes' && { backgroundColor: colors.surfaceContainerHigh }]}
             onPress={() => setActiveTab('scenes')}
           >
             <Ionicons
               name="images-outline"
               size={13}
-              color={activeTab === 'scenes' ? C.white : C.mutedSoft}
+              color={activeTab === 'scenes' ? colors.primary : colors.textSecondary}
               style={{ marginRight: 5 }}
             />
-            <Text style={[styles.tabBtnText, activeTab === 'scenes' && styles.tabBtnTextActive]}>
+            <Text style={[styles.tabBtnText, { color: colors.textSecondary }, activeTab === 'scenes' && { color: colors.primary, fontWeight: '700' }]}>
               Scenes ({sceneList.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.tabBtn, activeTab === 'posters' && styles.tabBtnActive]}
+            style={[styles.tabBtn, activeTab === 'posters' && { backgroundColor: colors.surfaceContainerHigh }]}
             onPress={() => setActiveTab('posters')}
           >
             <Ionicons
               name="film-outline"
               size={13}
-              color={activeTab === 'posters' ? C.white : C.mutedSoft}
+              color={activeTab === 'posters' ? colors.primary : colors.textSecondary}
               style={{ marginRight: 5 }}
             />
-            <Text style={[styles.tabBtnText, activeTab === 'posters' && styles.tabBtnTextActive]}>
+            <Text style={[styles.tabBtnText, { color: colors.textSecondary }, activeTab === 'posters' && { color: colors.primary, fontWeight: '700' }]}>
               Posters ({posterList.length})
             </Text>
           </TouchableOpacity>
@@ -298,7 +300,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
         style={styles.carouselWrapper}
       >
         {Platform.OS === 'android' ? (
-          <Host colorScheme="dark" style={{ width: '100%', height: GALLERY_CARD_HEIGHT }}>
+          <Host colorScheme={isDark ? 'dark' : 'light'} style={{ width: '100%', height: GALLERY_CARD_HEIGHT }}>
             <HorizontalCenteredHeroCarousel 
               preferredItemWidth={activeTab === 'scenes' ? 320 : 120} 
               itemSpacing={activeTab === 'scenes' ? 12 : 8}
@@ -316,7 +318,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
                       fillMaxSize(),
                       height(cardHeight),
                       maskClip(Shapes.RoundedCorner(isScene ? 18 : 14)),
-                      background('#161618'),
+                      background(isDark ? '#161618' : '#E8E8ED'),
                       clickable(() => handleOpenPreview(index)),
                     ]}
                   >
@@ -350,7 +352,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
               return (
                 <TouchableOpacity
                   activeOpacity={0.88}
-                  style={[styles.imageCard, { width: cardWidth, height: GALLERY_CARD_HEIGHT }]}
+                  style={[styles.imageCard, { width: cardWidth, height: GALLERY_CARD_HEIGHT, backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}
                   onPress={() => handleOpenPreview(index)}
                 >
                   <Image
@@ -475,7 +477,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
                     disabled={downloading}
                   >
                     {downloading ? (
-                      <ActivityIndicator size="small" color="#FFF" />
+                      <LoadingIndicator size="small" color="#FFF" />
                     ) : (
                       <>
                         <Feather name="download" size={16} color="#FFF" style={{ marginRight: 6 }} />

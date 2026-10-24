@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getImageUrl } from '../../tmdb';
 import QuickAddButton from './QuickAddButton';
 import { EXPLORE_CARD_WIDTH, SEARCH_CARD_WIDTH, GAP_SIZE } from '../explore/ExploreConstants';
+import { useAppTheme } from '../../theme';
 
 interface MovieCardProps {
   item: any;
@@ -17,6 +18,7 @@ interface MovieCardProps {
 
 const MovieCard = memo(
   ({ item, onPress, isSearchMode = false, isAdded, toggleWatchlist }: MovieCardProps) => {
+    const { colors } = useAppTheme();
     if (!item || !item.id) return null;
 
     const cardWidth = isSearchMode ? SEARCH_CARD_WIDTH : EXPLORE_CARD_WIDTH;
@@ -36,46 +38,48 @@ const MovieCard = memo(
           marginBottom: isSearchMode ? 16 : 0,
         }}
       >
-        <View style={[styles.cardContainer, { width: cardWidth, height: cardHeight }]}>
-          {imageUrl ? (
-            <Image
-              source={{ uri: imageUrl }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              recyclingKey={imageUrl}
-            />
-          ) : (
-            <View style={[styles.placeholderCard, { width: cardWidth, height: cardHeight }]}>
-              <Ionicons name="film-outline" size={26} color="#555" />
-            </View>
-          )}
+        <View style={[styles.cardShadow, { width: cardWidth, height: cardHeight }]}>
+          <View style={[styles.cardContainer, { width: cardWidth, height: cardHeight }]}>
+            {imageUrl ? (
+              <Image
+                source={{ uri: imageUrl }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                recyclingKey={imageUrl}
+              />
+            ) : (
+              <View style={[styles.placeholderCard, { width: cardWidth, height: cardHeight }]}>
+                <Ionicons name="film-outline" size={26} color="#555" />
+              </View>
+            )}
 
-          {/* Quick Add Watchlist Heart */}
-          <View style={styles.heartOverlay}>
-            <QuickAddButton
-              item={item}
-              itemId={item.id}
-              isAdded={isAdded}
-              onPress={toggleWatchlist ? () => toggleWatchlist(item) : undefined}
-            />
+            {/* Quick Add Watchlist Heart */}
+            <View style={styles.heartOverlay}>
+              <QuickAddButton
+                item={item}
+                itemId={item.id}
+                isAdded={isAdded}
+                onPress={toggleWatchlist ? () => toggleWatchlist(item) : undefined}
+              />
+            </View>
+
+            {/* Rating Badge */}
+            {item.vote_average ? (
+              <View style={styles.ratingBadge}>
+                <Ionicons name="star" size={10} color="#FFD60A" />
+                <Text style={styles.ratingText}>{item.vote_average.toFixed(1)}</Text>
+              </View>
+            ) : null}
           </View>
-
-          {/* Rating Badge */}
-          {item.vote_average ? (
-            <View style={styles.ratingBadge}>
-              <Ionicons name="star" size={10} color="#FFD60A" />
-              <Text style={styles.ratingText}>{item.vote_average.toFixed(1)}</Text>
-            </View>
-          ) : null}
         </View>
 
         {/* 2-Line High Density Micro-Metadata */}
         <View style={styles.metaContainer}>
-          <Text style={styles.title} numberOfLines={1}>
+          <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
             {item.title || item.name || 'Untitled'}
           </Text>
-          <Text style={styles.subtext} numberOfLines={1}>
+          <Text style={[styles.subtext, { color: colors.textSecondary }]} numberOfLines={1}>
             {year ? `${year} • ` : ''}
             {mediaType}
           </Text>
@@ -92,13 +96,20 @@ const MovieCard = memo(
 export default MovieCard;
 
 const styles = StyleSheet.create({
+  cardShadow: {
+    borderRadius: 14,
+    backgroundColor: '#18181C',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 4,
+  },
   cardContainer: {
     borderRadius: 14,
     backgroundColor: '#18181C',
     overflow: 'hidden',
     position: 'relative',
-    borderWidth: 1,
-    borderColor: '#24242A',
   },
   placeholderCard: {
     backgroundColor: '#18181C',

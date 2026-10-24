@@ -6,17 +6,19 @@ import {
   FlatList,
   Image,
   TouchableOpacity,
-  ActivityIndicator,
 } from 'react-native';
+import { LoadingIndicator } from '../src/components/shared/LoadingIndicator';
 import { Text } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { getSimilarMedia, getImageUrl, TMDBResult } from '../src/tmdb';
+import { useAppTheme } from '../src/theme';
 
 const { width, height } = Dimensions.get('window');
 
 const SimilarMoviesPage = () => {
   const router = useRouter();
+  const { colors, isDark } = useAppTheme();
   const { id: paramId, type: paramType, name: paramName } = useLocalSearchParams();
   const title = paramName as string;
   const movieId = Number(paramId);
@@ -82,18 +84,18 @@ const SimilarMoviesPage = () => {
     >
       <Image
         source={{ uri: getImageUrl(item.poster_path, 'w342') }}
-        style={styles.poster}
+        style={[styles.poster, { backgroundColor: colors.surfaceContainer }]}
       />
       <View style={styles.movieInfo}>
-        <Text style={styles.movieTitle} numberOfLines={2}>
+        <Text style={[styles.movieTitle, { color: colors.text }]} numberOfLines={2}>
           {item.title || item.name}
         </Text>
-        <Text style={styles.movieYear}>
+        <Text style={[styles.movieYear, { color: colors.textSecondary }]}>
           {(item.release_date || item.first_air_date)?.split('-')[0] || 'N/A'}
         </Text>
         <View style={styles.ratingContainer}>
-          <Ionicons name="star" size={14} color="#E50914" />
-          <Text style={styles.rating}>{item.vote_average.toFixed(1)}</Text>
+          <Ionicons name="star" size={14} color="#FFD60A" />
+          <Text style={[styles.rating, { color: colors.textSecondary }]}>{item.vote_average.toFixed(1)}</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -103,7 +105,7 @@ const SimilarMoviesPage = () => {
     if (!isLoading) return null;
     return (
       <View style={styles.footer}>
-        <ActivityIndicator size="large" color="#E50914" />
+        <LoadingIndicator size="large" color={colors.primary} />
       </View>
     );
   };
@@ -112,22 +114,22 @@ const SimilarMoviesPage = () => {
     if (isLoading) return null;
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No similar titles found</Text>
+        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No similar titles found</Text>
       </View>
     );
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header with back button */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.surfaceContainer }]}>
         <TouchableOpacity activeOpacity={0.95}
           style={styles.backButton}
           onPress={() => router.back()}
         >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>{title}</Text>
         <View style={styles.placeholder} />
       </View>
 

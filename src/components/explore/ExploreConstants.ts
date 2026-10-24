@@ -22,16 +22,16 @@ export interface GenreItem {
 }
 
 export const GENRE_DATA: GenreItem[] = [
-  { id: 0, name: 'All', icon: 'apps-outline' },
-  { id: 28, name: 'Action', icon: 'flash-outline' },
-  { id: 12, name: 'Adventure', icon: 'compass-outline' },
-  { id: 16, name: 'Animation', icon: 'color-palette-outline' },
-  { id: 35, name: 'Comedy', icon: 'happy-outline' },
-  { id: 80, name: 'Crime', icon: 'finger-print-outline' },
-  { id: 27, name: 'Horror', icon: 'skull-outline' },
-  { id: 10749, name: 'Romance', icon: 'heart-outline' },
-  { id: 878, name: 'Sci-Fi', icon: 'planet-outline' },
-  { id: 53, name: 'Thriller', icon: 'eye-outline' },
+  { id: 0, name: 'All', icon: 'sparkles' },
+  { id: 28, name: 'Action', icon: 'flame' },
+  { id: 12, name: 'Adventure', icon: 'compass' },
+  { id: 16, name: 'Animation', icon: 'color-palette' },
+  { id: 35, name: 'Comedy', icon: 'happy' },
+  { id: 80, name: 'Crime', icon: 'footsteps' },
+  { id: 27, name: 'Horror', icon: 'skull' },
+  { id: 10749, name: 'Romance', icon: 'heart' },
+  { id: 878, name: 'Sci-Fi', icon: 'rocket' },
+  { id: 53, name: 'Thriller', icon: 'eye' },
 ];
 
 const GENRE_EXTRA_MAP: Record<string, GenreIconName> = {

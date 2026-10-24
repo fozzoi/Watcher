@@ -18,6 +18,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { GENRE_DATA, HORIZONTAL_MARGIN, GenreItem } from './ExploreConstants';
+import { useAppTheme } from '../../theme';
 
 interface GenreFilterProps {
   selectedGenre: number;
@@ -32,6 +33,7 @@ interface GenreChipItemProps {
 }
 
 const GenreChipItem = memo(({ item, isSelected, onPress, onLayout }: GenreChipItemProps) => {
+  const { colors, isDark } = useAppTheme();
   const scale = useSharedValue(isSelected ? 1.04 : 1.0);
 
   useEffect(() => {
@@ -60,18 +62,30 @@ const GenreChipItem = memo(({ item, isSelected, onPress, onLayout }: GenreChipIt
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        style={[styles.genreChip, isSelected && styles.genreChipActive]}
+        style={[
+          styles.genreChip,
+          {
+            backgroundColor: isSelected ? colors.primary : colors.surfaceContainer,
+            shadowColor: isSelected ? (isDark ? colors.primary : '#000000') : '#000000',
+          },
+          isSelected && styles.genreChipActive,
+        ]}
       >
-        {isSelected ? <View style={styles.magneticActiveDot} /> : null}
         {item.icon ? (
           <Ionicons
             name={item.icon}
-            size={14}
-            color={isSelected ? '#FFFFFF' : '#8E8E93'}
+            size={15}
+            color={isSelected ? colors.onPrimary : colors.textSecondary}
             style={styles.genreChipIcon}
           />
         ) : null}
-        <Text style={[styles.genreChipText, isSelected && styles.genreChipTextActive]}>
+        <Text
+          style={[
+            styles.genreChipText,
+            { color: isSelected ? colors.onPrimary : colors.textSecondary },
+            isSelected && styles.genreChipTextActive,
+          ]}
+        >
           {item.name}
         </Text>
       </TouchableOpacity>
@@ -170,11 +184,13 @@ export default GenreFilter;
 
 const styles = StyleSheet.create({
   genreFilterContainer: {
-    marginVertical: 14,
-    minHeight: 46,
+    marginVertical: 6,
+    paddingVertical: 6,
+    overflow: 'visible',
   },
   genreFilterContent: {
     paddingHorizontal: HORIZONTAL_MARGIN,
+    paddingVertical: 11,
     gap: 10,
     alignItems: 'center',
   },
@@ -184,38 +200,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 22,
-    backgroundColor: '#16161A',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    shadowColor: '#232222',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.03,
+    // shadowRadius: 3,
+    elevation: 3,
   },
   genreChipActive: {
-    backgroundColor: '#E50914',
-    borderColor: '#FF2E3B',
-    shadowColor: '#E50914',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.45,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  magneticActiveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#FFFFFF',
-    marginRight: 6,
+    // shadowOffset: { width: 0, height: 3 },
+    // shadowOpacity: 0.35,
+    // shadowRadius: 6,
+    // elevation: 4,
   },
   genreChipIcon: {
     marginRight: 6,
   },
   genreChipText: {
-    color: '#8E8E93',
     fontSize: 13.5,
     fontWeight: '500',
-    letterSpacing: 0.1,
+    letterSpacing: 0.2,
   },
   genreChipTextActive: {
-    color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '700',
+    fontWeight: '800',
   },
 });

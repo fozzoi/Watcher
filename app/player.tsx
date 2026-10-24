@@ -1,6 +1,7 @@
 // app/Player.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, Platform, AppState, BackHandler, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Text, Platform, AppState, BackHandler, TouchableOpacity } from 'react-native';
+import { LoadingIndicator } from '../src/components/shared/LoadingIndicator';
 import { StatusBar, setStatusBarHidden } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -8,6 +9,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
 import { getProgress, saveProgress, WatchProgress } from '../src/utils/progress';
 import { getPlayerPreferences, PlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
+import { useAppTheme } from '../src/theme';
 
 const CREDIT_SKIP_WINDOW_SECONDS = 90;
 const CREDIT_MIN_PROGRESS = 0.8;
@@ -82,6 +84,7 @@ const generateHlsHtml = (url: string, initialPosition: number, preferences: Play
 
 export default function Player() {
   const router = useRouter();
+  const { colors } = useAppTheme();
   const { id: paramId, media_type, trailerUrl: initialTrailerUrl, imdbId, title: paramTitle, season: paramSeason, episode: paramEpisode, poster: paramPoster, episodeName, nextSeason: paramNextSeason, nextEpisode: paramNextEpisode } = useLocalSearchParams();
 
   const tmdbId = Number(paramId);
@@ -294,14 +297,14 @@ export default function Player() {
       ) : null}
 
       {showNextEpisode && nextEpisode && (
-        <TouchableOpacity style={styles.nextEpisodeButton} onPress={goToNextEpisode}>
+        <TouchableOpacity style={[styles.nextEpisodeButton, { backgroundColor: colors.primary }]} onPress={goToNextEpisode}>
           <Text style={styles.nextEpisodeText}>Next Episode</Text>
         </TouchableOpacity>
       )}
 
       {loading && (
         <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#E50914" />
+          <LoadingIndicator size="large" />
           <Text style={styles.loadingText}>Connecting to {activeProvider}...</Text>
         </View>
       )}

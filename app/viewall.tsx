@@ -3,22 +3,24 @@ import {
   View, 
   Text, 
   StyleSheet, 
-  ActivityIndicator, 
   TouchableOpacity, 
   Image, 
   StatusBar,
   Modal,
   ScrollView
 } from 'react-native';
+import { LoadingIndicator } from '../src/components/shared/LoadingIndicator';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LegendList } from '@legendapp/list/react-native';
 import { getImageUrl, getFullDetails, TMDBResult, getDiscoverMedia, fetchMoreContentByType } from '../src/tmdb';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { ShimmerBlock } from '../src/components/shared/Shimmer';
+import { useAppTheme } from '../src/theme';
 
 const ViewAllPage = () => {
   const router = useRouter();
+  const { colors, isDark } = useAppTheme();
   const { title: paramTitle, type: paramType, data: paramData, genreId: paramGenreId } = useLocalSearchParams();
   
   const title = paramTitle as string;
@@ -133,13 +135,13 @@ const ViewAllPage = () => {
     >
       <Image
         source={{ uri: getImageUrl(item.poster_path, 'w342') }}
-        style={styles.cardImage}
+        style={[styles.cardImage, { backgroundColor: colors.surfaceContainer }]}
       />
       <View style={styles.ratingBadge}>
          <Ionicons name="star" size={10} color="#FFD700" />
          <Text style={styles.ratingText}>{item.vote_average?.toFixed(1) || 'NR'}</Text>
       </View>
-      <Text style={styles.cardTitle} numberOfLines={1}>
+      <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>
         {item.title || item.name}
       </Text>
     </TouchableOpacity>
@@ -149,23 +151,33 @@ const ViewAllPage = () => {
     if (!isLoadingMore) return <View style={{ height: 40 }} />;
     return (
       <View style={styles.footerLoading}>
-        <ActivityIndicator size="small" color="#E50914" />
+        <LoadingIndicator size="small" color={colors.primary} />
       </View>
     );
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
+
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.surfaceContainer, borderBottomColor: colors.border }]}>
         <TouchableOpacity activeOpacity={0.95} onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="white" />
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.title} numberOfLines={1}>{title}</Text>
+        <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>{title}</Text>
         
         {/* Filter Button */}
-        <TouchableOpacity activeOpacity={0.95} onPress={() => setShowFilters(true)} style={styles.filterButton}>
-          <Feather name="sliders" size={20} color={filters.year || filters.language || filters.rating ? '#E50914' : 'white'} />
+        <TouchableOpacity
+          activeOpacity={0.95}
+          onPress={() => setShowFilters(true)}
+          style={[styles.filterButton, { backgroundColor: colors.surfaceContainerHigh }]}
+        >
+          <Feather
+            name="sliders"
+            size={20}
+            color={filters.year || filters.language || filters.rating ? colors.primary : colors.text}
+          />
         </TouchableOpacity>
       </View>
 
@@ -198,27 +210,35 @@ const ViewAllPage = () => {
 
       {/* FILTER MODAL */}
       <Modal visible={showFilters} animationType="slide" transparent={true}>
-        <BlurView intensity={80} tint="dark" style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surfaceContainer }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filters</Text>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Filters</Text>
               <TouchableOpacity activeOpacity={0.95} onPress={() => setShowFilters(false)}>
-                <Ionicons name="close" size={24} color="white" />
+                <Ionicons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 20 }}>
               {/* Year Filter */}
               <View>
-                <Text style={styles.filterSectionTitle}>Release Year</Text>
+                <Text style={[styles.filterSectionTitle, { color: colors.textSecondary }]}>Release Year</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                   {years.map(y => (
                     <TouchableOpacity activeOpacity={0.95} 
                       key={y} 
-                      style={[styles.filterChip, filters.year === y && styles.filterChipActive]}
+                      style={[
+                        styles.filterChip,
+                        { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border },
+                        filters.year === y && { backgroundColor: colors.primary, borderColor: colors.primary }
+                      ]}
                       onPress={() => setFilters({...filters, year: filters.year === y ? '' : y})}
                     >
-                      <Text style={[styles.filterChipText, filters.year === y && styles.filterChipTextActive]}>{y}</Text>
+                      <Text style={[
+                        styles.filterChipText,
+                        { color: colors.text },
+                        filters.year === y && { color: colors.onPrimary, fontWeight: 'bold' }
+                      ]}>{y}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -226,15 +246,23 @@ const ViewAllPage = () => {
 
               {/* Language Filter */}
               <View>
-                <Text style={styles.filterSectionTitle}>Language</Text>
+                <Text style={[styles.filterSectionTitle, { color: colors.textSecondary }]}>Language</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                   {languages.map(lang => (
                     <TouchableOpacity activeOpacity={0.95} 
                       key={lang.code} 
-                      style={[styles.filterChip, filters.language === lang.code && styles.filterChipActive]}
+                      style={[
+                        styles.filterChip,
+                        { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border },
+                        filters.language === lang.code && { backgroundColor: colors.primary, borderColor: colors.primary }
+                      ]}
                       onPress={() => setFilters({...filters, language: filters.language === lang.code ? '' : lang.code})}
                     >
-                      <Text style={[styles.filterChipText, filters.language === lang.code && styles.filterChipTextActive]}>{lang.name}</Text>
+                      <Text style={[
+                        styles.filterChipText,
+                        { color: colors.text },
+                        filters.language === lang.code && { color: colors.onPrimary, fontWeight: 'bold' }
+                      ]}>{lang.name}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -242,17 +270,25 @@ const ViewAllPage = () => {
 
               {/* Rating Filter */}
               <View>
-                <Text style={styles.filterSectionTitle}>Minimum Rating</Text>
+                <Text style={[styles.filterSectionTitle, { color: colors.textSecondary }]}>Minimum Rating</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                   {ratings.map(r => (
                     <TouchableOpacity activeOpacity={0.95} 
                       key={r} 
-                      style={[styles.filterChip, filters.rating === r && styles.filterChipActive]}
+                      style={[
+                        styles.filterChip,
+                        { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border },
+                        filters.rating === r && { backgroundColor: colors.primary, borderColor: colors.primary }
+                      ]}
                       onPress={() => setFilters({...filters, rating: filters.rating === r ? 0 : r})}
                     >
                       <View style={{flexDirection: 'row', alignItems: 'center', gap: 4}}>
-                         <Ionicons name="star" size={14} color={filters.rating === r ? '#000' : '#FFD700'} />
-                         <Text style={[styles.filterChipText, filters.rating === r && styles.filterChipTextActive]}>{r}+</Text>
+                         <Ionicons name="star" size={14} color={filters.rating === r ? colors.onPrimary : '#FFD700'} />
+                         <Text style={[
+                           styles.filterChipText,
+                           { color: colors.text },
+                           filters.rating === r && { color: colors.onPrimary, fontWeight: 'bold' }
+                         ]}>{r}+</Text>
                       </View>
                     </TouchableOpacity>
                   ))}
@@ -260,12 +296,20 @@ const ViewAllPage = () => {
               </View>
             </ScrollView>
 
-            <View style={styles.modalFooter}>
-              <TouchableOpacity activeOpacity={0.95} style={styles.resetButton} onPress={resetFilters}>
-                <Text style={styles.resetText}>Reset</Text>
+            <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
+              <TouchableOpacity
+                activeOpacity={0.95}
+                style={[styles.resetButton, { backgroundColor: colors.surfaceContainerHigh }]}
+                onPress={resetFilters}
+              >
+                <Text style={[styles.resetText, { color: colors.text }]}>Reset</Text>
               </TouchableOpacity>
-              <TouchableOpacity activeOpacity={0.95} style={styles.applyButton} onPress={applyFilters}>
-                <Text style={styles.applyText}>Apply Filters</Text>
+              <TouchableOpacity
+                activeOpacity={0.95}
+                style={[styles.applyButton, { backgroundColor: colors.primary }]}
+                onPress={applyFilters}
+              >
+                <Text style={[styles.applyText, { color: colors.onPrimary }]}>Apply Filters</Text>
               </TouchableOpacity>
             </View>
           </View>

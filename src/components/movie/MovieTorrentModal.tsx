@@ -6,7 +6,6 @@ import {
   FlatList,
   Modal,
   TextInput,
-  ActivityIndicator,
   Linking,
   Dimensions,
   Platform,
@@ -19,6 +18,14 @@ import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { searchTorrents, TorrentResult } from '../../Scraper';
 import { logTasteEvent, TASTE_WEIGHTS } from '../../services/tasteProfile';
+import { useAppTheme } from '../../theme';
+import {
+  Host,
+  LoadingIndicator as ComposeLoadingIndicator,
+  CircularProgressIndicator,
+} from '@expo/ui/jetpack-compose';
+import { size } from '@expo/ui/jetpack-compose/modifiers';
+import { LoadingIndicator } from '../shared/LoadingIndicator';
 
 interface MovieTorrentModalProps {
   visible: boolean;
@@ -69,6 +76,7 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
   tmdbId,
   genres,
 }) => {
+  const { colors, isDark } = useAppTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<TorrentResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -201,46 +209,50 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
       onRequestClose={onClose}
     >
       <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.background, borderColor: colors.border }]}>
           {/* Grab Handle */}
-          <View style={styles.handleBar} />
+          <View style={[styles.handleBar, { backgroundColor: colors.border }]} />
 
           {/* Header */}
-          <View style={styles.header}>
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <View style={styles.headerTitleRow}>
-              <View style={styles.headerIconWrapper}>
-                <MaterialCommunityIcons name="cloud-download-outline" size={22} color={C.red} />
+              <View style={[styles.headerIconWrapper, { backgroundColor: colors.badgeBg }]}>
+                <MaterialCommunityIcons name="cloud-download-outline" size={22} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.title} numberOfLines={1}>
+                <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
                   Torrent Downloads
                 </Text>
-                <Text style={styles.subtitle} numberOfLines={1}>
+                <Text style={[styles.subtitle, { color: colors.textSecondary }]} numberOfLines={1}>
                   {title} {year ? `(${year})` : ''}
                 </Text>
               </View>
-              <TouchableOpacity activeOpacity={0.8} style={styles.closeBtn} onPress={onClose}>
-                <Ionicons name="close" size={20} color={C.white} />
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.closeBtn, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}
+                onPress={onClose}
+              >
+                <Ionicons name="close" size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
 
             {/* Search Input for query refinement */}
-            <View style={styles.searchBar}>
-              <Ionicons name="search" size={17} color={C.muted} style={{ marginRight: 8 }} />
+            <View style={[styles.searchBar, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
+              <Ionicons name="search" size={17} color={colors.textSecondary} style={{ marginRight: 8 }} />
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, { color: colors.text }]}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
                 onSubmitEditing={() => runSearch(searchQuery)}
                 placeholder="Search releases (e.g. 1080p, 4K)..."
-                placeholderTextColor={C.muted}
+                placeholderTextColor={colors.textSecondary}
                 returnKeyType="search"
               />
               {loading ? (
-                <ActivityIndicator size="small" color={C.red} />
+                <LoadingIndicator size={20} color={colors.primary} />
               ) : searchQuery ? (
                 <TouchableOpacity activeOpacity={0.7} onPress={() => runSearch(searchQuery)}>
-                  <Ionicons name="arrow-forward-circle" size={22} color={C.red} />
+                  <Ionicons name="arrow-forward-circle" size={22} color={colors.primary} />
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -248,30 +260,30 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
 
           {/* Toast Notification Banner (iOS fallback) */}
           {toastMessage ? (
-            <View style={styles.toastBanner}>
-              <Ionicons name="information-circle" size={16} color={C.yellow} style={{ marginRight: 6 }} />
-              <Text style={styles.toastBannerText}>{toastMessage}</Text>
+            <View style={[styles.toastBanner, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
+              <Ionicons name="information-circle" size={16} color={colors.warning} style={{ marginRight: 6 }} />
+              <Text style={[styles.toastBannerText, { color: colors.text }]}>{toastMessage}</Text>
             </View>
           ) : null}
 
           {/* Content */}
           {loading && results.length === 0 ? (
             <View style={styles.centerContainer}>
-              <ActivityIndicator size="large" color={C.red} />
-              <Text style={styles.loadingText}>Searching verified torrent indexers…</Text>
+              <LoadingIndicator size={44} color={colors.primary} />
+              <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Searching verified torrent indexers…</Text>
             </View>
           ) : results.length === 0 ? (
             <View style={styles.centerContainer}>
-              <MaterialCommunityIcons name="file-search-outline" size={48} color={C.muted} />
-              <Text style={styles.emptyTitle}>No torrents found</Text>
-              <Text style={styles.emptySubtitle}>Try adjusting your search query above</Text>
+              <MaterialCommunityIcons name="file-search-outline" size={48} color={colors.textSecondary} />
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>No torrents found</Text>
+              <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>Try adjusting your search query above</Text>
               <TouchableOpacity
                 activeOpacity={0.8}
-                style={styles.retryBtn}
+                style={[styles.retryBtn, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}
                 onPress={() => runSearch(searchQuery)}
               >
-                <Ionicons name="refresh" size={16} color={C.white} style={{ marginRight: 6 }} />
-                <Text style={styles.retryBtnText}>Retry Search</Text>
+                <Ionicons name="refresh" size={16} color={colors.text} style={{ marginRight: 6 }} />
+                <Text style={[styles.retryBtnText, { color: colors.text }]}>Retry Search</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -292,21 +304,21 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
                 const isDownloadingThis = downloadingHash === hash;
 
                 return (
-                  <View style={styles.card}>
+                  <View style={[styles.card, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
                     {/* Top Row: Title & Quality */}
                     <View style={styles.cardHeader}>
                       <View style={[styles.qualityBadge, { backgroundColor: quality.bg, borderColor: quality.color + '40' }]}>
                         <Text style={[styles.qualityText, { color: quality.color }]}>{quality.label}</Text>
                       </View>
                       {item.source ? (
-                        <View style={styles.sourceBadge}>
-                          <Text style={styles.sourceText}>{item.source}</Text>
+                        <View style={[styles.sourceBadge, { backgroundColor: colors.surfaceContainerHigh }]}>
+                          <Text style={[styles.sourceText, { color: colors.textSecondary }]}>{item.source}</Text>
                         </View>
                       ) : null}
                     </View>
 
                     {/* Torrent Title */}
-                    <Text style={styles.cardTitle} numberOfLines={2}>
+                    <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
                       {item.name}
                     </Text>
 
@@ -318,15 +330,15 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
                       </View>
 
                       <View style={styles.statPill}>
-                        <Feather name="arrow-down" size={12} color={C.muted} />
-                        <Text style={styles.statValue}>{item.peers || 0} Peers</Text>
+                        <Feather name="arrow-down" size={12} color={colors.textSecondary} />
+                        <Text style={[styles.statValue, { color: colors.textSecondary }]}>{item.peers || 0} Peers</Text>
                       </View>
 
-                      <View style={styles.dotSeparator} />
+                      <View style={[styles.dotSeparator, { backgroundColor: colors.border }]} />
 
                       <View style={styles.statPill}>
-                        <MaterialCommunityIcons name="harddisk" size={12} color={C.mutedSoft} />
-                        <Text style={styles.sizeText}>{item.size}</Text>
+                        <MaterialCommunityIcons name="harddisk" size={12} color={colors.textSecondary} />
+                        <Text style={[styles.sizeText, { color: colors.text }]}>{item.size}</Text>
                       </View>
                     </View>
 
@@ -335,16 +347,16 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
                       {/* Share .torrent file button */}
                       <TouchableOpacity
                         activeOpacity={0.85}
-                        style={styles.shareFileBtn}
+                        style={[styles.shareFileBtn, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}
                         onPress={() => handleShareAsFile(item.url, item.name)}
                         disabled={isDownloadingThis}
                       >
                         {isDownloadingThis ? (
-                          <ActivityIndicator size="small" color={C.white} />
+                          <LoadingIndicator size={16} color={colors.text} />
                         ) : (
                           <>
-                            <Feather name="share-2" size={15} color={C.text} style={{ marginRight: 6 }} />
-                            <Text style={styles.shareFileText}>Share .torrent</Text>
+                            <Feather name="share-2" size={15} color={colors.text} style={{ marginRight: 6 }} />
+                            <Text style={[styles.shareFileText, { color: colors.text }]}>Share .torrent</Text>
                           </>
                         )}
                       </TouchableOpacity>
@@ -352,20 +364,20 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
                       {/* Copy Magnet Link Icon Button */}
                       <TouchableOpacity
                         activeOpacity={0.85}
-                        style={styles.copyMagnetBtn}
+                        style={[styles.copyMagnetBtn, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}
                         onPress={() => handleCopyMagnet(item.url)}
                       >
-                        <Feather name="copy" size={15} color={C.mutedSoft} />
+                        <Feather name="copy" size={15} color={colors.textSecondary} />
                       </TouchableOpacity>
 
                       {/* Primary Open Magnet Button */}
                       <TouchableOpacity
                         activeOpacity={0.88}
-                        style={styles.openMagnetBtn}
+                        style={[styles.openMagnetBtn, { backgroundColor: colors.primary }]}
                         onPress={() => handleOpenMagnet(item.url)}
                       >
-                        <MaterialCommunityIcons name="magnet" size={17} color="#FFF" style={{ marginRight: 6 }} />
-                        <Text style={styles.openMagnetText}>Magnet</Text>
+                        <MaterialCommunityIcons name="magnet" size={17} color={colors.onPrimary} style={{ marginRight: 6 }} />
+                        <Text style={[styles.openMagnetText, { color: colors.onPrimary }]}>Magnet</Text>
                       </TouchableOpacity>
                     </View>
                   </View>

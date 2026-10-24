@@ -2,15 +2,17 @@ import React from 'react';
 import { View, StyleSheet, Dimensions, ScrollView, StatusBar } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ShimmerBlock } from '../shared/Shimmer';
+import { useAppTheme } from '../../theme';
 
 const { width } = Dimensions.get('window');
 const HEADER_HEIGHT = 440;
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
 export const CastDetailSkeleton: React.FC = () => {
+  const { colors, isDark } = useAppTheme();
   return (
-    <View style={styles.root}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Top Floating Glass Buttons */}
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
@@ -31,7 +33,7 @@ export const CastDetailSkeleton: React.FC = () => {
         </View>
 
         {/* Card Body */}
-        <View style={styles.cardTop}>
+        <View style={[styles.cardTop, { backgroundColor: colors.background }]}>
           {/* Department Eyebrow */}
           <ShimmerBlock width="25%" height={11} style={{ marginBottom: 12 }} />
 

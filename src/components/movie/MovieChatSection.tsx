@@ -5,13 +5,14 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
   StyleSheet,
   Platform,
 } from 'react-native';
+import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import FormattedMarkdownText from '../aichat/FormattedMarkdownText';
 import { LANGUAGE_OPTIONS } from '../../userPreferences';
+import { useAppTheme } from '../../theme';
 
 interface MovieChatSectionProps {
   movie: any;
@@ -38,6 +39,7 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
   directors,
   genres,
 }) => {
+  const { colors } = useAppTheme();
   const [messages, setMessages] = useState<{ id: string; role: 'user' | 'assistant'; text: string }[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -108,11 +110,11 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
     <View style={styles.container}>
       {messages.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <MaterialCommunityIcons name="robot-happy-outline" size={26} color={C.ai} />
-          <Text style={styles.greetingText}>
-            Ask anything about <Text style={{ color: C.white, fontWeight: '700' }}>{movie.title || movie.name}</Text>
+          <MaterialCommunityIcons name="robot-happy-outline" size={26} color={colors.primary} />
+          <Text style={[styles.greetingText, { color: colors.textSecondary }]}>
+            Ask anything about <Text style={{ color: colors.text, fontWeight: '700' }}>{movie.title || movie.name}</Text>
           </Text>
-          <Text style={styles.subGreetingText}>
+          <Text style={[styles.subGreetingText, { color: colors.textSecondary }]}>
             Plot insights, director analysis, character motives, themes, and trivia.
           </Text>
           <View style={styles.chipsContainer}>
@@ -125,10 +127,10 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
               <TouchableOpacity
                 key={chip}
                 activeOpacity={0.75}
-                style={styles.chip}
+                style={[styles.chip, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}
                 onPress={() => sendMessage(chip.replace(/^[^\s]+\s/, ''))}
               >
-                <Text style={styles.chipText}>{chip}</Text>
+                <Text style={[styles.chipText, { color: colors.text }]}>{chip}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -147,36 +149,38 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
               key={msg.id}
               style={[
                 styles.bubble,
-                msg.role === 'user' ? styles.userBubble : styles.botBubble,
+                msg.role === 'user'
+                  ? [styles.userBubble, { backgroundColor: colors.primary }]
+                  : [styles.botBubble, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }],
               ]}
             >
               {msg.role === 'assistant' ? (
                 <FormattedMarkdownText
                   text={msg.text}
-                  baseColor="#E0E0E0"
-                  boldColor="#FFFFFF"
+                  baseColor={colors.text}
+                  boldColor={colors.text}
                   style={styles.botText}
                 />
               ) : (
-                <Text style={styles.userText}>{msg.text}</Text>
+                <Text style={[styles.userText, { color: colors.onPrimary }]}>{msg.text}</Text>
               )}
             </View>
           ))}
           {loading && (
-            <View style={[styles.bubble, styles.botBubble, styles.loadingRow]}>
-              <ActivityIndicator size="small" color={C.ai} />
-              <Text style={styles.loadingText}>Analyzing title...</Text>
+            <View style={[styles.bubble, styles.botBubble, styles.loadingRow, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
+              <LoadingIndicator size="small" color={colors.primary} />
+              <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Analyzing title...</Text>
             </View>
           )}
         </ScrollView>
       )}
 
       {/* Input bar */}
-      <View style={styles.inputContainer}>
+      <View style={[styles.inputContainer, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
         <TextInput
-          style={styles.input}
+          style={[styles.input, { color: colors.text }]}
           placeholder={`Ask about ${movie.title || movie.name}...`}
-          placeholderTextColor="#777"
+          placeholderTextColor={colors.textSecondary}
           value={input}
           onChangeText={setInput}
           onSubmitEditing={() => sendMessage()}
@@ -185,11 +189,11 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
         />
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.sendButton, !input.trim() && { opacity: 0.4 }]}
+          style={[styles.sendButton, { backgroundColor: colors.primary }, !input.trim() && { opacity: 0.4 }]}
           onPress={() => sendMessage()}
           disabled={!input.trim() || loading}
         >
-          <Ionicons name="arrow-up" size={17} color="#FFF" />
+          <Ionicons name="arrow-up" size={17} color={colors.onPrimary} />
         </TouchableOpacity>
       </View>
     </View>

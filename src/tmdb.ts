@@ -1000,7 +1000,9 @@ const fetchFreshPersonalisedContent = async (
   genreFilterId: number = 0,
 ) => {
   try {
-    const langSlice = (languages && languages.length > 0) ? languages : ['en'];
+    const defaultWorldLangs = ['hi', 'ko', 'ja', 'fr', 'es'];
+    const userLangs = (languages && languages.length > 0) ? languages : ['en'];
+    const langSlice = Array.from(new Set([...userLangs, ...defaultWorldLangs])).slice(0, 6);
     const actorSlice = (favoriteActors || []).slice(0, 4);
     const genreSlice = (genreIds && genreIds.length > 0) ? genreIds.slice(0, 4) : [28, 35, 878];
 

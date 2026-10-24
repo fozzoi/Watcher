@@ -3,7 +3,6 @@ import { View, Text, ScrollView, TouchableOpacity, Switch, Platform, StyleSheet,
 import {
   Host,
   Switch as ComposeSwitch,
-  LoadingIndicator,
 } from '@expo/ui/jetpack-compose';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,13 +29,14 @@ import { getCachedPushToken, sendTestRemotePushNotification } from '../src/pushN
 import { checkForAppUpdate, isUpdateNotificationEnabled, setUpdateNotificationEnabled, UpdateCheckResult } from '../src/updater';
 import AppUpdateModal from '../src/components/shared/AppUpdateModal';
 import { ThemedDialog, DialogButton } from '../src/components/shared/ThemedDialog';
-import { ActivityIndicator } from 'react-native';
+import { LoadingIndicator } from '../src/components/shared/LoadingIndicator';
 import { clearUserMemory, getUserMemory } from '../src/chatStorage';
 import { DEFAULT_PLAYER_PREFERENCES, getPlayerPreferences, PlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
 import { cloudSync, MobileUserProfile, queueCloudValue } from '../src/cloudSync';
 import { signInWithNativeGoogle } from '../src/nativeGoogleAuth';
 import { notifyForYouListeners } from '../src/services/tasteProfile';
 import { snackbarService } from '../src/services/snackbar';
+import { useAppTheme } from '../src/theme';
 
 // Google OAuth via expo-auth-session
 import * as WebBrowser from 'expo-web-browser';
@@ -62,6 +62,7 @@ const Settings = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const tabBarHeight = 60; 
+  const { colors, isDark, toggleTheme, useMaterialYou, toggleMaterialYou } = useAppTheme(); 
 
   const [isHiRes, setIsHiRes] = useState(false);
   const [isNsfwFilter, setIsNsfwFilter] = useState(true);
@@ -669,11 +670,11 @@ const Settings = () => {
     return (
       <View style={styles.row}>
         <View style={styles.rowText}>
-          <Text style={styles.rowTitle}>{title}</Text>
-          <Text style={styles.rowSubtitle}>{subtitle}</Text>
+          <Text style={[styles.rowTitle, { color: colors.text }]}>{title}</Text>
+          <Text style={[styles.rowSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
         </View>
         {Platform.OS === 'android' ? (
-          <Host colorScheme="dark" matchContents style={{ width: 52, height: 32 }}>
+          <Host colorScheme={isDark ? 'dark' : 'light'} matchContents style={{ width: 52, height: 32 }}>
             <ComposeSwitch 
               value={value} 
               onCheckedChange={onValueChange} 
@@ -681,7 +682,7 @@ const Settings = () => {
           </Host>
         ) : (
           <Switch 
-            trackColor={{ false: '#3A3A3C', true: '#E50914' }} 
+            trackColor={{ false: colors.border, true: colors.primary }} 
             thumbColor="#FFFFFF"
             onValueChange={onValueChange} 
             value={value} 
@@ -695,20 +696,20 @@ const Settings = () => {
     return (
       <TouchableOpacity activeOpacity={0.6} onPress={onPress} style={styles.row}>
         <View style={styles.rowText}>
-          <Text style={[styles.rowTitle, destructive && styles.destructiveText]}>{title}</Text>
-          <Text style={styles.rowSubtitle}>{subtitle}</Text>
+          <Text style={[styles.rowTitle, { color: colors.text }, destructive && { color: colors.error }]}>{title}</Text>
+          <Text style={[styles.rowSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
         </View>
-        <Feather name="chevron-right" size={20} color="#3A3A3C" />
+        <Feather name="chevron-right" size={20} color={colors.textSecondary} />
       </TouchableOpacity>
     );
   };
 
   const SettingSeparator = () => {
-    return <View style={styles.separator} />;
+    return <View style={[styles.separator, { backgroundColor: colors.divider }]} />;
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
       <ScrollView 
         showsVerticalScrollIndicator={false} 
         contentContainerStyle={{ paddingBottom: tabBarHeight + 60 }}
@@ -717,32 +718,50 @@ const Settings = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            colors={['#E50914']}
-            progressBackgroundColor="#1C1C1E"
+            colors={[colors.primary]}
+            progressBackgroundColor={colors.surfaceContainer}
             progressViewOffset={10}
           />
         }
       >
-        <Text style={styles.header}>Settings</Text>
+        <Text style={[styles.header, { color: colors.text }]}>Settings</Text>
+
+        {/* ── Appearance & Theme ── */}
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>APPEARANCE</Text>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainer }]}>
+          <ToggleRow 
+            title="Dark Mode" 
+            subtitle={isDark ? "Dark theme active" : "Light theme active"} 
+            value={isDark} 
+            onValueChange={toggleTheme} 
+          />
+          <SettingSeparator />
+          <ToggleRow 
+            title="Dynamic Material Colors" 
+            subtitle={useMaterialYou ? "Active (Extracting system palette from wallpaper)" : "Inactive (Using Watcher Red accent)"} 
+            value={useMaterialYou} 
+            onValueChange={toggleMaterialYou} 
+          />
+        </View>
 
         {/* ── Cloud Sync & Account ── */}
-        <Text style={styles.sectionLabel}>CLOUD SYNC (OPTIONAL)</Text>
-        <Text style={{ fontSize: 13, color: '#8E8E93', marginHorizontal: 20, marginBottom: 8, lineHeight: 18 }}>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>CLOUD SYNC (OPTIONAL)</Text>
+        <Text style={{ fontSize: 13, color: colors.textSecondary, marginHorizontal: 20, marginBottom: 8, lineHeight: 18 }}>
           Cloud sync is strictly optional. All movies, bookmarks, and features work 100% offline. Connect only if you want cross-device library sync.
         </Text>
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainer }]}>
           {cloudUser ? (
             <>
               <View style={styles.cloudUserRow}>
-                <View style={styles.cloudAvatar}>
+                <View style={[styles.cloudAvatar, { backgroundColor: colors.primary }]}>
                   <Text style={styles.cloudAvatarText}>
                     {cloudUser.name ? cloudUser.name.charAt(0).toUpperCase() : 'U'}
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.rowTitle}>{cloudUser.name}</Text>
-                  <Text style={styles.rowSubtitle}>{cloudUser.email}</Text>
-                  <Text style={[styles.rowSubtitle, { color: '#30D158', marginTop: 2, fontWeight: '600' }]}>
+                  <Text style={[styles.rowTitle, { color: colors.text }]}>{cloudUser.name}</Text>
+                  <Text style={[styles.rowSubtitle, { color: colors.textSecondary }]}>{cloudUser.email}</Text>
+                  <Text style={[styles.rowSubtitle, { color: colors.success || '#30D158', marginTop: 2, fontWeight: '600' }]}>
                     🟢 Connected to Watcher Cloud
                   </Text>
                 </View>
@@ -767,10 +786,10 @@ const Settings = () => {
                 activeOpacity={0.8}
                 onPress={handleGoogleSignIn}
                 disabled={isSyncingCloud || (Platform.OS !== 'android' && !request)}
-                style={[styles.googleSignInBtn, (isSyncingCloud || (Platform.OS !== 'android' && !request)) && { opacity: 0.6 }]}
+                style={[styles.googleSignInBtn, { backgroundColor: colors.primary }, (isSyncingCloud || (Platform.OS !== 'android' && !request)) && { opacity: 0.6 }]}
               >
                 {isSyncingCloud ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <LoadingIndicator size="small" color="#fff" />
                 ) : (
                   <Ionicons name="logo-google" size={18} color="#fff" />
                 )}
@@ -789,8 +808,8 @@ const Settings = () => {
         </View>
 
         {/* ── Content ── */}
-        <Text style={styles.sectionLabel}>CONTENT</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>CONTENT</Text>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainer }]}>
           <ToggleRow 
             title="Hi-Res Posters" 
             subtitle="Higher quality images (uses more data)" 
@@ -813,8 +832,8 @@ const Settings = () => {
         </View>
 
         {/* ── Player ── */}
-        <Text style={styles.sectionLabel}>PLAYER</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PLAYER</Text>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainer }]}>
           <ToggleRow
             title="Mute Player"
             subtitle="Remember the sound setting across playback sources"
@@ -853,8 +872,8 @@ const Settings = () => {
         </View>
 
         {/* ── Notifications ── */}
-        <Text style={styles.sectionLabel}>NOTIFICATIONS</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>NOTIFICATIONS</Text>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainer }]}>
           <ToggleRow 
             title="Smart Release Alerts" 
             subtitle="Notify for new episodes & movie premiere dates" 
@@ -870,8 +889,8 @@ const Settings = () => {
         </View>
 
         {/* ── App Updates ── */}
-        <Text style={styles.sectionLabel}>UPDATES</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>UPDATES</Text>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainer }]}>
           <ToggleRow 
             title="Notify on New Updates" 
             subtitle="Show popup and notifications when a new version is released" 
@@ -892,14 +911,14 @@ const Settings = () => {
           >
             <View style={styles.rowText}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.rowTitle}>Check for Updates</Text>
+                <Text style={[styles.rowTitle, { color: colors.text }]}>Check for Updates</Text>
                 {updateResult?.updateAvailable && (
-                  <View style={styles.badgeNew}>
+                  <View style={[styles.badgeNew, { backgroundColor: colors.primary }]}>
                     <Text style={styles.badgeNewText}>NEW</Text>
                   </View>
                 )}
               </View>
-              <Text style={[styles.rowSubtitle, updateResult?.updateAvailable && { color: '#30D158' }]}>
+              <Text style={[styles.rowSubtitle, { color: colors.textSecondary }, updateResult?.updateAvailable && { color: colors.success }]}>
                 {checkingUpdate 
                   ? "Checking GitHub for updates..." 
                   : updateResult?.updateAvailable 
@@ -908,23 +927,17 @@ const Settings = () => {
               </Text>
             </View>
             {checkingUpdate ? (
-              Platform.OS === 'android' ? (
-                <Host colorScheme="dark" matchContents style={{ width: 24, height: 24 }}>
-                  <LoadingIndicator />
-                </Host>
-              ) : (
-                <ActivityIndicator size="small" color="#E50914" />
-              )
+              <LoadingIndicator size={24} color={colors.primary} />
             ) : (
-              <Feather name="refresh-cw" size={18} color="#8E8E93" />
+              <Feather name="refresh-cw" size={18} color={colors.textSecondary} />
             )}
           </TouchableOpacity>
         </View>
 
 
         {/* ── AI Assistant ── */}
-        <Text style={styles.sectionLabel}>AI ASSISTANT</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>AI ASSISTANT</Text>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainer }]}>
           <ActionRow 
             title="Clear AI Memory" 
             subtitle="Reset what the AI has learned about your taste & habits" 
@@ -934,8 +947,8 @@ const Settings = () => {
         </View>
 
         {/* ── Data & Storage ── */}
-        <Text style={styles.sectionLabel}>DATA & STORAGE</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>DATA & STORAGE</Text>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainer }]}>
           <ActionRow 
             title="Export Library" 
             subtitle="Save Watchlist & History to your phone" 
@@ -956,7 +969,7 @@ const Settings = () => {
           />
         </View>
 
-        <Text style={styles.version}>Watcher v{appVersion}</Text>
+        <Text style={[styles.version, { color: colors.textMuted }]}>Watcher v{appVersion}</Text>
       </ScrollView>
 
       {/* ── Reusable Update Dialog Modal ── */}

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, LogBox, View, ActivityIndicator, AppState } from 'react-native';
+import { Platform, LogBox, View, AppState, StatusBar } from 'react-native';
+import { LoadingIndicator } from '@/src/components/shared/LoadingIndicator';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
@@ -15,6 +16,7 @@ import { registerForPushNotificationsAsync, syncPushTokenAndWatchlist } from '@/
 import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 import GlobalSnackbar from '@/src/components/shared/GlobalSnackbar';
+import { ThemeProvider, useAppTheme } from '@/src/theme';
 import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, setOnSavedItemsChangedListener } from '@/src/database';
 import { loadGlobalConfig, GLOBAL_CONFIG, fetchEmbeddingsBatch } from '@/src/tmdb';
 import { pollCloudChanges, prepareCloudSessionOnStartup, queueCloudMutation } from '@/src/cloudSync';
@@ -278,17 +280,32 @@ export default function RootLayout() {
   if (!isReady) {
     return (
       <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#E50914" />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
 
   return (
-    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#141414' }}>
+    <ThemeProvider>
+      <RootNavigator
+        showUpdateModal={showUpdateModal}
+        setShowUpdateModal={setShowUpdateModal}
+        updateResult={updateResult}
+      />
+    </ThemeProvider>
+  );
+}
+
+function RootNavigator({ showUpdateModal, setShowUpdateModal, updateResult }: any) {
+  const { colors, isDark } = useAppTheme();
+
+  return (
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: colors.background }}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: '#141414' },
+          contentStyle: { backgroundColor: colors.background },
           animationDuration: 280,
           gestureEnabled: true,
           fullScreenGestureEnabled: true,

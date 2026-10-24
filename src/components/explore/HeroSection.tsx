@@ -10,6 +10,7 @@ import QuickAddButton from '../shared/QuickAddButton';
 import { HERO_HEIGHT, HORIZONTAL_MARGIN } from './ExploreConstants';
 import { observable } from '@legendapp/state';
 import { useSelector } from '@legendapp/state/react';
+import { useAppTheme } from '../../theme';
 
 export const heroScroll$ = observable({ isScrolledOut: false });
 
@@ -28,8 +29,8 @@ const RADIUS = 24;
 
 // Liquid indicator geometry
 const DOT = 6;
-const PITCH = 16; // distance between dot origins
-const ACTIVE_W = 14; // resting width of the red blob
+const PITCH = 18; // distance between dot origins
+const ACTIVE_W = 18; // resting width of the accent blob
 const BLOB_INSET = (PITCH - ACTIVE_W) / 2; // centres the blob in its slot, same as the dot
 const HIT_H = 32;
 
@@ -52,6 +53,7 @@ const LiquidIndicator = memo(function LiquidIndicator({
   reduceMotion: boolean;
   onSelect: (i: number) => void;
 }) {
+  const { colors } = useAppTheme();
   const animatedBlobStyle = useAnimatedStyle(() => {
     const targetX = index * PITCH + BLOB_INSET;
     return {
@@ -81,7 +83,7 @@ const LiquidIndicator = memo(function LiquidIndicator({
           </Pressable>
         ))}
       </View>
-      <Reanimated.View pointerEvents="none" style={[styles.blob, animatedBlobStyle]} />
+      <Reanimated.View pointerEvents="none" style={[styles.blob, { backgroundColor: colors.primary, shadowColor: colors.primary }, animatedBlobStyle]} />
     </View>
   );
 });
@@ -272,6 +274,17 @@ const styles = StyleSheet.create({
   // Liquid indicator
   dotRow: { flexDirection: 'row' },
   dotHit: { width: PITCH, height: HIT_H, justifyContent: 'center', alignItems: 'center' },
-  dot: { width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: C.idle },
-  blob: { position: 'absolute', left: 0, top: (HIT_H - DOT) / 2, width: ACTIVE_W, height: DOT, borderRadius: DOT / 2, backgroundColor: C.accent },
+  dot: { width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: 'rgba(255, 255, 255, 0.45)' },
+  blob: {
+    position: 'absolute',
+    left: 0,
+    top: (HIT_H - DOT) / 2,
+    width: ACTIVE_W,
+    height: DOT,
+    borderRadius: DOT / 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.6,
+    shadowRadius: 4,
+    elevation: 4,
+  },
 });

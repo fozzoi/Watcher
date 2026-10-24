@@ -13,6 +13,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
 import { ThemedDialog } from "../src/components/shared/ThemedDialog";
+import { useAppTheme } from "../src/theme";
 
 interface HistoryItem {
   query: string;
@@ -36,6 +37,7 @@ const formatDate = (dateStr: string) => {
 };
 
 const HistoryPage = () => {
+  const { colors, isDark } = useAppTheme();
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const router = useRouter();
   const [currentlyOpenSwipeable, setCurrentlyOpenSwipeable] = useState<number | null>(null);
@@ -132,14 +134,14 @@ const HistoryPage = () => {
     const { animatedStyle, panHandlers } = getSwipeableItemProps(itemIndex);
     
     return (
-      <View key={itemIndex} style={[styles.swipeContainer, !isLast && { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' }]}>
+      <View key={itemIndex} style={[styles.swipeContainer, !isLast && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
         <Animated.View style={[styles.historyItemContainer, animatedStyle]} {...panHandlers}>
           <TouchableOpacity activeOpacity={0.95}
-            style={styles.historyItem}
+            style={[styles.historyItem, { backgroundColor: colors.surfaceContainer }]}
             onPress={() => router.push(`/search?prefillQuery=${encodeURIComponent(item.query)}`)}
           >
-            <Text style={styles.queryText} numberOfLines={1}>{item.query}</Text>
-            <Text style={styles.dateText}>{formatDate(item.date)}</Text>
+            <Text style={[styles.queryText, { color: colors.text }]} numberOfLines={1}>{item.query}</Text>
+            <Text style={[styles.dateText, { color: colors.textSecondary }]}>{formatDate(item.date)}</Text>
           </TouchableOpacity>
         </Animated.View>
         <TouchableOpacity activeOpacity={0.95} style={styles.deleteButton} onPress={() => deleteHistoryItem(itemIndex)}>
@@ -150,7 +152,7 @@ const HistoryPage = () => {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
       {/* --- Themed Clear History Dialog --- */}
       <ThemedDialog
         visible={isAlertVisible}
@@ -165,17 +167,21 @@ const HistoryPage = () => {
       />
 
       <View style={styles.header}>
-        <Text style={styles.title}>Search History</Text>
-        <TouchableOpacity activeOpacity={0.95} onPress={() => setIsAlertVisible(true)} style={styles.clearButtonContainer}>
-          <Text style={styles.clearButton}>Clear</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Search History</Text>
+        <TouchableOpacity
+          activeOpacity={0.95}
+          onPress={() => setIsAlertVisible(true)}
+          style={[styles.clearButtonContainer, { backgroundColor: colors.surfaceContainerHigh }]}
+        >
+          <Text style={[styles.clearButton, { color: colors.text }]}>Clear</Text>
         </TouchableOpacity>
       </View>
 
       {Object.entries(groupedHistory).map(([group, items], groupIndex) =>
         items.length > 0 ? (
           <View key={group} style={styles.groupContainer}>
-            <Text style={styles.groupTitle}>{group}</Text>
-            <View style={styles.itemsContainer}>
+            <Text style={[styles.groupTitle, { color: colors.primary }]}>{group}</Text>
+            <View style={[styles.itemsContainer, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
               {items.map((item, index) => {
                 let groupOffset = 0;
                 for (let i = 0; i < groupIndex; i++) {
@@ -190,7 +196,7 @@ const HistoryPage = () => {
 
       {history.length === 0 && (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No search history yet.</Text>
+          <Text style={[styles.emptyText, { color: colors.text }]}>No search history yet.</Text>
         </View>
       )}
     </ScrollView>

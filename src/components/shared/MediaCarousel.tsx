@@ -5,6 +5,7 @@ import { LegendList } from '@legendapp/list/react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import MovieCard from './MovieCard';
 import { EXPLORE_CARD_WIDTH, GAP_SIZE, HORIZONTAL_MARGIN } from '../explore/ExploreConstants';
+import { useAppTheme } from '../../theme';
 
 const C = {
   white: '#FAFAFA',
@@ -24,6 +25,7 @@ interface MediaCarouselProps {
 const MediaCarousel = memo(
   ({ title, type, data, toggleWatchlist }: MediaCarouselProps) => {
     const router = useRouter();
+    const { colors } = useAppTheme();
 
     // Limit horizontal shelf items to top 15 to prevent memory bloat and excessive off-screen render
     const validData = useMemo(() => {
@@ -62,9 +64,9 @@ const MediaCarousel = memo(
     return (
       <View style={styles.sectionContainer}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{title}</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
           <TouchableOpacity activeOpacity={0.8} onPress={handleViewAll}>
-            <MaterialIcons name="chevron-right" size={24} color={C.mutedSoft} />
+            <MaterialIcons name="chevron-right" size={24} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
@@ -96,15 +98,13 @@ export default MediaCarousel;
 
 const styles = StyleSheet.create({
   sectionContainer: {
-    minHeight: 280,
-    paddingBottom: 24,
-    overflow: 'hidden',
+    marginBottom: 10,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 10,
     paddingHorizontal: HORIZONTAL_MARGIN,
   },
   sectionTitle: {
@@ -115,5 +115,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: HORIZONTAL_MARGIN,
+    paddingVertical: 6,
+    minHeight: 260,
   },
 });

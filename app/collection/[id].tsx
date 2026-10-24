@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   StatusBar,
   FlatList,
-  ActivityIndicator,
   Platform,
   ToastAndroid,
 } from 'react-native';
@@ -24,6 +23,7 @@ import {
   TMDBResult,
 } from '../../src/tmdb';
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
+import { useAppTheme } from '../../src/theme';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
@@ -43,22 +43,26 @@ const C = {
 
 // --- SHIMMER COMPONENTS ---
 
-const MovieCardShimmer = () => (
-  <View style={styles.movieCard}>
-    <ShimmerBlock width={100} height={150} borderRadius={12} />
-    <View style={{ flex: 1, gap: 8, paddingVertical: 4 }}>
-      <ShimmerBlock width="65%" height={16} />
-      <ShimmerBlock width="30%" height={12} />
-      <ShimmerBlock width="100%" height={12} />
-      <ShimmerBlock width="80%" height={12} />
+const MovieCardShimmer = () => {
+  const { colors } = useAppTheme();
+  return (
+    <View style={[styles.movieCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
+      <ShimmerBlock width={100} height={150} borderRadius={12} />
+      <View style={{ flex: 1, gap: 8, paddingVertical: 4 }}>
+        <ShimmerBlock width="65%" height={16} />
+        <ShimmerBlock width="30%" height={12} />
+        <ShimmerBlock width="100%" height={12} />
+        <ShimmerBlock width="80%" height={12} />
+      </View>
     </View>
-  </View>
-);
+  );
+};
 
 // --- MAIN COMPONENT ---
 
 const CollectionDetails = () => {
   const router = useRouter();
+  const { colors, isDark } = useAppTheme();
   const { id, name, title } = useLocalSearchParams();
   const collectionId = Number(id);
   const collectionName = (name as string) || (title as string) || '';
@@ -188,28 +192,28 @@ const CollectionDetails = () => {
     const isItemWatched = watchedIds ? watchedIds.has(item.id) : hasSavedItem(item.id, 'history');
     return (
       <TouchableOpacity
-        style={styles.movieCard}
+        style={[styles.movieCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}
         onPress={() => handleMoviePress(item)}
         activeOpacity={0.95}
       >
         <Image
           source={{ uri: getImageUrl(item.poster_path, 'w185') }}
-          style={styles.moviePoster}
+          style={[styles.moviePoster, { backgroundColor: colors.surfaceContainerHigh }]}
           contentFit="cover"
           cachePolicy="disk"
         />
         <View style={styles.movieInfo}>
-          <Text style={styles.movieTitle} numberOfLines={2}>
+          <Text style={[styles.movieTitle, { color: colors.text }]} numberOfLines={2}>
             {item.title || item.name}
           </Text>
           <View style={styles.metaRow}>
             {year ? (
-              <Text style={styles.movieYear}>{year}</Text>
+              <Text style={[styles.movieYear, { color: colors.textSecondary }]}>{year}</Text>
             ) : null}
             {item.vote_average > 0 && (
               <View style={styles.ratingRow}>
                 <Ionicons name="star" size={11} color={C.gold} />
-                <Text style={styles.ratingText}>
+                <Text style={[styles.ratingText, { color: colors.textSecondary }]}>
                   {item.vote_average.toFixed(1)}
                 </Text>
               </View>
@@ -222,7 +226,7 @@ const CollectionDetails = () => {
             )}
           </View>
           {item.overview ? (
-            <Text style={styles.movieOverview} numberOfLines={3}>
+            <Text style={[styles.movieOverview, { color: colors.textSecondary }]} numberOfLines={3}>
               {item.overview}
             </Text>
           ) : null}
@@ -251,7 +255,7 @@ const CollectionDetails = () => {
             'rgba(10,10,11,0.1)',
             'transparent',
             'rgba(10,10,11,0.7)',
-            C.bg,
+            '#0A0A0B',
           ]}
           locations={[0, 0.3, 0.7, 1]}
           style={StyleSheet.absoluteFill}
@@ -259,39 +263,47 @@ const CollectionDetails = () => {
       </View>
 
       {/* Content */}
-      <View style={styles.contentContainer}>
-        <Text style={styles.eyebrow}>COLLECTION</Text>
-        <Text style={styles.collectionTitle}>
+      <View style={[styles.contentContainer, { backgroundColor: colors.background }]}>
+        <Text style={[styles.eyebrow, { color: colors.primary }]}>COLLECTION</Text>
+        <Text style={[styles.collectionTitle, { color: colors.text }]}>
           {collection?.name || collectionName}
         </Text>
         {collection?.overview ? (
-          <Text style={styles.collectionOverview}>
+          <Text style={[styles.collectionOverview, { color: colors.text }]}>
             {collection.overview}
           </Text>
         ) : null}
-        <View style={styles.countPill}>
-          <Ionicons name="film-outline" size={13} color={C.accent} />
-          <Text style={styles.countText}>
+        <View style={[styles.countPill, { backgroundColor: colors.badgeBg, borderColor: colors.border }]}>
+          <Ionicons name="film-outline" size={13} color={colors.primary} />
+          <Text style={[styles.countText, { color: colors.primary }]}>
             {sortedParts.length} {sortedParts.length === 1 ? 'Film' : 'Films'}
           </Text>
         </View>
 
         <View style={styles.actionsRow}>
           <TouchableOpacity activeOpacity={0.95} 
-            style={[styles.actionBtn, isInWatchlist && styles.actionBtnActive]} 
+            style={[
+              styles.actionBtn,
+              { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border },
+              isInWatchlist && { backgroundColor: colors.primary, borderColor: colors.primary }
+            ]} 
             onPress={toggleWatchlist}
           >
-            <Feather name={isInWatchlist ? "check" : "bookmark"} size={18} color={isInWatchlist ? "#000" : C.white} />
-            <Text style={[styles.actionBtnText, isInWatchlist && { color: "#000" }]}>
+            <Feather name={isInWatchlist ? "check" : "bookmark"} size={18} color={isInWatchlist ? colors.onPrimary : colors.text} />
+            <Text style={[styles.actionBtnText, { color: colors.text }, isInWatchlist && { color: colors.onPrimary }]}>
               {isInWatchlist ? "Saved" : "Save"}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.95} 
-            style={[styles.actionBtn, isWatched && styles.actionBtnActive]} 
+            style={[
+              styles.actionBtn,
+              { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border },
+              isWatched && { backgroundColor: colors.primary, borderColor: colors.primary }
+            ]} 
             onPress={toggleWatched}
           >
-            <Feather name={isWatched ? "eye-off" : "eye"} size={18} color={isWatched ? "#000" : C.white} />
-            <Text style={[styles.actionBtnText, isWatched && { color: "#000" }]}>
+            <Feather name={isWatched ? "eye-off" : "eye"} size={18} color={isWatched ? colors.onPrimary : colors.text} />
+            <Text style={[styles.actionBtnText, { color: colors.text }, isWatched && { color: colors.onPrimary }]}>
               {isWatched ? "Watched" : "Mark Watched"}
             </Text>
           </TouchableOpacity>
@@ -304,14 +316,14 @@ const CollectionDetails = () => {
     if (loading) return null;
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No movies found in this collection.</Text>
+        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No movies found in this collection.</Text>
       </View>
     );
   };
 
   return (
-    <View style={styles.root}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Back button */}
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
@@ -320,7 +332,7 @@ const CollectionDetails = () => {
           style={styles.glassBtn}
           activeOpacity={0.95}
         >
-          <Ionicons name="chevron-back" size={22} color={C.white} />
+          <Ionicons name="chevron-back" size={22} color="#FFF" />
         </TouchableOpacity>
       </View>
 
@@ -333,7 +345,7 @@ const CollectionDetails = () => {
               <View style={styles.backdropContainer}>
                 <ShimmerBlock width="100%" height="100%" borderRadius={0} />
               </View>
-              <View style={styles.contentContainer}>
+              <View style={[styles.contentContainer, { backgroundColor: colors.background }]}>
                 <ShimmerBlock width={80} height={12} style={{ marginBottom: 10 }} />
                 <ShimmerBlock width="70%" height={28} style={{ marginBottom: 12 }} />
                 <ShimmerBlock width="100%" height={14} style={{ marginBottom: 6 }} />

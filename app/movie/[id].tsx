@@ -10,7 +10,6 @@ import {
   Platform,
   ToastAndroid,
   Alert,
-  ActivityIndicator,
   useWindowDimensions,
   Linking,
   BackHandler,
@@ -22,6 +21,7 @@ import * as Clipboard from 'expo-clipboard';
 import { LegendList } from '@legendapp/list/react-native';
 import { useSelector } from '@legendapp/state/react';
 import { savedStore$, syncSavedStore, toggleWatchlistGlobal } from '../../src/state/savedState';
+import { LoadingIndicator } from '../../src/components/shared/LoadingIndicator';
 import {
   getImageUrl,
   getSimilarMedia,
@@ -50,6 +50,7 @@ import MovieChatSection from '../../src/components/movie/MovieChatSection';
 import { MovieDetailSkeleton } from '../../src/components/movie/MovieDetailSkeleton';
 import MovieMediaGallery from '../../src/components/movie/MovieMediaGallery';
 import MovieTorrentModal from '../../src/components/movie/MovieTorrentModal';
+import { useAppTheme } from '../../src/theme';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 const INITIAL_EPISODES_LIMIT = 8;
@@ -86,20 +87,26 @@ const C = {
   aiSoft: 'rgba(255,69,58,0.10)',
 };
 
-const AIShimmerBar = ({ width: w = '100%', height = 12 }: { width?: string | number; height?: number }) => (
-  <View style={{ width: w as any, height, borderRadius: 6, backgroundColor: C.aiSoft, marginBottom: 8 }} />
-);
+const AIShimmerBar = ({ width: w = '100%', height = 12 }: { width?: string | number; height?: number }) => {
+  const { colors } = useAppTheme();
+  return (
+    <View style={{ width: w as any, height, borderRadius: 6, backgroundColor: colors.surfaceContainerHigh, marginBottom: 8 }} />
+  );
+};
 
-const EpisodeShimmer = React.memo(({ thumbWidth }: { thumbWidth: number }) => (
-  <View style={styles.epRow}>
-    <ShimmerBlock width={thumbWidth} height={thumbWidth * 0.56} borderRadius={10} />
-    <View style={{ flex: 1, gap: 8, paddingVertical: 4 }}>
-      <ShimmerBlock width="35%" height={10} />
-      <ShimmerBlock width="85%" height={14} />
-      <ShimmerBlock width="100%" height={12} />
+const EpisodeShimmer = React.memo(({ thumbWidth }: { thumbWidth: number }) => {
+  const { colors } = useAppTheme();
+  return (
+    <View style={[styles.epRow, { backgroundColor: colors.surfaceContainer }]}>
+      <ShimmerBlock width={thumbWidth} height={thumbWidth * 0.56} borderRadius={10} />
+      <View style={{ flex: 1, gap: 8, paddingVertical: 4 }}>
+        <ShimmerBlock width="35%" height={10} />
+        <ShimmerBlock width="85%" height={14} />
+        <ShimmerBlock width="100%" height={12} />
+      </View>
     </View>
-  </View>
-));
+  );
+});
 
 const CardShimmer = React.memo(({ width, height }: { width: DimensionValue; height: DimensionValue }) => (
   <View style={{ width, marginRight: 12 }}>
@@ -112,6 +119,7 @@ const CardShimmer = React.memo(({ width, height }: { width: DimensionValue; heig
 ));
 
 const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => {
+  const { colors } = useAppTheme();
   const posterUrl = getImageUrl(item.poster_path, 'w342');
   return (
     <TouchableOpacity
@@ -121,7 +129,7 @@ const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => {
     >
       <Image
         source={{ uri: posterUrl }}
-        style={[styles.similarImg, { width: cardWidth, height: cardWidth * 1.5 }]}
+        style={[styles.similarImg, { width: cardWidth, height: cardWidth * 1.5, backgroundColor: colors.surfaceContainer }]}
         contentFit="cover"
         cachePolicy="disk"
         recyclingKey={posterUrl}
@@ -130,7 +138,7 @@ const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => {
         <Ionicons name="star" size={9} color={C.gold} />
         <Text style={styles.ratingText}>{item.vote_average ? item.vote_average.toFixed(1) : 'N/A'}</Text>
       </View>
-      <Text style={styles.similarTitle} numberOfLines={2}>
+      <Text style={[styles.similarTitle, { color: colors.text }]} numberOfLines={2}>
         {item.title || item.name}
       </Text>
     </TouchableOpacity>
@@ -138,27 +146,28 @@ const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => {
 });
 
 const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => {
+  const { colors } = useAppTheme();
   const profileUrl = item.profile_path
     ? getImageUrl(item.profile_path, 'w185')
     : 'https://via.placeholder.com/150';
   return (
     <TouchableOpacity
       activeOpacity={0.92}
-      style={styles.directorCard}
+      style={[styles.directorCard, { backgroundColor: colors.surfaceContainer }]}
       onPress={() => onPress(item.id)}
     >
       <Image
         source={{ uri: profileUrl }}
-        style={styles.directorImg}
+        style={[styles.directorImg, { backgroundColor: colors.surfaceContainerHigh }]}
         contentFit="cover"
         cachePolicy="disk"
         recyclingKey={profileUrl}
       />
       <View style={{ maxWidth: 140 }}>
-        <Text style={styles.directorName} numberOfLines={1}>
+        <Text style={[styles.directorName, { color: colors.text }]} numberOfLines={1}>
           {item.name}
         </Text>
-        <Text style={styles.directorRole} numberOfLines={1}>
+        <Text style={[styles.directorRole, { color: colors.textSecondary }]} numberOfLines={1}>
           {item.role || (mediaType === 'tv' ? 'Creator' : 'Director')}
         </Text>
       </View>
@@ -167,6 +176,7 @@ const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => {
 });
 
 const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => {
+  const { colors } = useAppTheme();
   const profileUrl = item.profile_path
     ? getImageUrl(item.profile_path, 'w185')
     : 'https://via.placeholder.com/150';
@@ -178,16 +188,16 @@ const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => {
     >
       <Image
         source={{ uri: profileUrl }}
-        style={[styles.castImg, { width: cardWidth, height: cardWidth * 1.35 }]}
+        style={[styles.castImg, { width: cardWidth, height: cardWidth * 1.35, backgroundColor: colors.surfaceContainer }]}
         contentFit="cover"
         cachePolicy="disk"
         recyclingKey={profileUrl}
       />
-      <Text style={styles.castName} numberOfLines={1}>
+      <Text style={[styles.castName, { color: colors.text }]} numberOfLines={1}>
         {item.name}
       </Text>
       {item.character ? (
-        <Text style={styles.castCharacter} numberOfLines={1}>
+        <Text style={[styles.castCharacter, { color: colors.textSecondary }]} numberOfLines={1}>
           {item.character}
         </Text>
       ) : null}
@@ -196,19 +206,24 @@ const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => {
 });
 
 const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay }: any) => {
+  const { colors } = useAppTheme();
   const stillUrl = ep.still_path
     ? getImageUrl(ep.still_path, 'w185')
     : 'https://via.placeholder.com/150';
   return (
     <TouchableOpacity
       activeOpacity={0.92}
-      style={[styles.epRow, isActive && styles.epRowActive]}
+      style={[
+        styles.epRow,
+        { backgroundColor: colors.surfaceContainer },
+        isActive && { backgroundColor: colors.badgeBg, borderWidth: 1, borderColor: colors.primary },
+      ]}
       onPress={() => onPlay(ep)}
     >
       <View style={{ position: 'relative' }}>
         <Image
           source={{ uri: stillUrl }}
-          style={[styles.epThumb, { width: episodeThumbWidth, height: episodeThumbWidth * 0.56 }]}
+          style={[styles.epThumb, { width: episodeThumbWidth, height: episodeThumbWidth * 0.56, backgroundColor: colors.surfaceContainerHigh }]}
           contentFit="cover"
           cachePolicy="disk"
           recyclingKey={stillUrl}
@@ -216,23 +231,23 @@ const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay
         <View style={styles.epPlayOverlay}>
           <Ionicons name="play" size={16} color="#FFF" />
         </View>
-        {isActive ? <View style={styles.epActiveDot} /> : null}
+        {isActive ? <View style={[styles.epActiveDot, { backgroundColor: colors.primary }]} /> : null}
       </View>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={[styles.epNum, isActive && { color: C.gold }]}>
+          <Text style={[styles.epNum, { color: colors.textSecondary }, isActive && { color: colors.primary, fontWeight: '800' }]}>
             EPISODE {ep.episode_number}
           </Text>
           {ep.air_date ? (
-            <Text style={{ fontSize: 11, color: C.muted }}>
+            <Text style={{ fontSize: 11, color: colors.textSecondary }}>
               {dayjs(ep.air_date).format('MMM D, YYYY')}
             </Text>
           ) : null}
         </View>
-        <Text style={styles.epTitle} numberOfLines={1}>
+        <Text style={[styles.epTitle, { color: colors.text }]} numberOfLines={1}>
           {ep.name}
         </Text>
-        <Text style={styles.epOverview} numberOfLines={2}>
+        <Text style={[styles.epOverview, { color: colors.textSecondary }]} numberOfLines={2}>
           {ep.overview}
         </Text>
       </View>
@@ -249,6 +264,7 @@ interface MovieActionDockProps {
 }
 
 const MovieActionDock = React.memo(({ movie }: MovieActionDockProps) => {
+  const { colors } = useAppTheme();
   const movieId = movie?.id;
   const isInWatchlist = useSelector(() => {
     if (!movieId) return false;
@@ -333,39 +349,47 @@ const MovieActionDock = React.memo(({ movie }: MovieActionDockProps) => {
     <View style={styles.actionRow}>
       <TouchableOpacity
         activeOpacity={0.8}
-        style={[styles.actionBtn, isInWatchlist && styles.actionBtnWatchlistActive]}
+        style={[
+          styles.actionBtn,
+          { backgroundColor: colors.surfaceContainer },
+          isInWatchlist && { backgroundColor: colors.badgeBg },
+        ]}
         onPress={toggleWatchlist}
       >
         <Ionicons
           name={isInWatchlist ? 'bookmark' : 'bookmark-outline'}
           size={18}
-          color={isInWatchlist ? C.red : C.white}
+          color={isInWatchlist ? colors.primary : colors.text}
         />
-        <Text style={[styles.actionBtnText, isInWatchlist && { color: C.red, fontWeight: '700' }]}>
+        <Text style={[styles.actionBtnText, { color: colors.textSecondary }, isInWatchlist && { color: colors.primary, fontWeight: '700' }]}>
           Watchlist
         </Text>
       </TouchableOpacity>
 
       <TouchableOpacity
         activeOpacity={0.8}
-        style={[styles.actionBtn, isWatched && styles.actionBtnActive]}
+        style={[
+          styles.actionBtn,
+          { backgroundColor: colors.surfaceContainer },
+          isWatched && styles.actionBtnActive,
+        ]}
         onPress={toggleWatched}
       >
         <Ionicons
           name={isWatched ? 'checkmark-circle' : 'checkmark-circle-outline'}
           size={18}
-          color={isWatched ? C.green : C.mutedSoft}
+          color={isWatched ? C.green : colors.textSecondary}
         />
-        <Text style={[styles.actionBtnText, isWatched && { color: C.green }]}>Watched</Text>
+        <Text style={[styles.actionBtnText, { color: colors.textSecondary }, isWatched && { color: C.green }]}>Watched</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
         activeOpacity={0.8}
-        style={styles.actionBtn}
+        style={[styles.actionBtn, { backgroundColor: colors.surfaceContainer }]}
         onPress={openTelegramSearch}
       >
-        <Ionicons name="paper-plane-outline" size={17} color={C.mutedSoft} />
-        <Text style={styles.actionBtnText}>Telegram</Text>
+        <Ionicons name="paper-plane-outline" size={17} color={colors.textSecondary} />
+        <Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>Telegram</Text>
       </TouchableOpacity>
     </View>
   );
@@ -376,18 +400,19 @@ interface MovieOverviewProps {
 }
 
 const MovieOverview = React.memo(({ overview }: MovieOverviewProps) => {
+  const { colors } = useAppTheme();
   const [isExpanded, setIsExpanded] = useState(false);
   if (!overview) return null;
   const isLong = overview.length > 220;
 
   return (
     <View style={styles.section}>
-      <Text style={styles.overviewText}>
+      <Text style={[styles.overviewText, { color: colors.text }]}>
         {isExpanded || !isLong ? overview : `${overview.slice(0, 220)}…`}
       </Text>
       {isLong ? (
         <TouchableOpacity activeOpacity={0.8} onPress={() => setIsExpanded((prev) => !prev)}>
-          <Text style={styles.readMore}>{isExpanded ? 'Less' : 'Read more'}</Text>
+          <Text style={[styles.readMore, { color: colors.primary }]}>{isExpanded ? 'Less' : 'Read more'}</Text>
         </TouchableOpacity>
       ) : null}
     </View>
@@ -402,6 +427,7 @@ interface PlayCTAButtonProps {
 }
 
 const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, onPlay }: PlayCTAButtonProps) => {
+  const { colors } = useAppTheme();
   const isUnavailable = sourceStatus === 'unavailable';
   const isChecking = sourceStatus === 'checking';
   const label = isChecking
@@ -417,12 +443,16 @@ const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, onPlay
   return (
     <TouchableOpacity
       activeOpacity={0.9}
-      style={[styles.primaryCtaBtn, isUnavailable && styles.primaryCtaDisabled]}
+      style={[
+        styles.primaryCtaBtn,
+        { backgroundColor: colors.primary },
+        isUnavailable && [styles.primaryCtaDisabled, { backgroundColor: colors.surfaceContainerHigh }],
+      ]}
       onPress={onPlay}
       disabled={sourceStatus !== 'available'}
     >
-      <Ionicons name={lastWatched ? 'play-skip-forward' : 'play'} size={20} color="#000" />
-      <Text style={styles.primaryCtaText}>{label}</Text>
+      <Ionicons name={lastWatched ? 'play-skip-forward' : 'play'} size={20} color={colors.onPrimary} />
+      <Text style={[styles.primaryCtaText, { color: colors.onPrimary }]}>{label}</Text>
     </TouchableOpacity>
   );
 });
@@ -444,6 +474,7 @@ const MovieAIPanel = React.memo(({
   similarCardWidth,
   renderSimilarItem,
 }: MovieAIPanelProps) => {
+  const { colors } = useAppTheme();
   const [aiTab, setAiTab] = useState<'lens' | 'chat' | 'vibe'>('lens');
   const [lensInsight, setLensInsight] = useState<any>(null);
   const [lensLoading, setLensLoading] = useState(false);
@@ -488,36 +519,36 @@ const MovieAIPanel = React.memo(({
   }, [movie]);
 
   return (
-    <View style={styles.aiPanel}>
+    <View style={[styles.aiPanel, { backgroundColor: colors.surfaceContainer }]}>
       <View style={styles.aiHeader}>
         <View style={styles.aiHeaderLeft}>
-          <MaterialCommunityIcons name="creation" size={18} color={C.ai} />
-          <Text style={styles.aiHeaderTitle}>AI Insights</Text>
+          <MaterialCommunityIcons name="creation" size={18} color={colors.primary} />
+          <Text style={[styles.aiHeaderTitle, { color: colors.text }]}>AI Insights</Text>
         </View>
-        <View style={styles.aiTabs}>
+        <View style={[styles.aiTabs, { backgroundColor: colors.surfaceContainerHigh }]}>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.aiTab, aiTab === 'lens' && styles.aiTabActive]}
+            style={[styles.aiTab, aiTab === 'lens' && { backgroundColor: colors.badgeBg }]}
             onPress={() => {
               setAiTab('lens');
               if (!lensInsight && !lensLoading) fetchLensInsight();
             }}
           >
-            <Text style={[styles.aiTabText, aiTab === 'lens' && styles.aiTabTextActive]}>Lens</Text>
+            <Text style={[styles.aiTabText, { color: colors.textSecondary }, aiTab === 'lens' && { color: colors.primary, fontWeight: '700' }]}>Lens</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.aiTab, aiTab === 'chat' && styles.aiTabActive]}
+            style={[styles.aiTab, aiTab === 'chat' && { backgroundColor: colors.badgeBg }]}
             onPress={() => setAiTab('chat')}
           >
-            <Text style={[styles.aiTabText, aiTab === 'chat' && styles.aiTabTextActive]}>Chat</Text>
+            <Text style={[styles.aiTabText, { color: colors.textSecondary }, aiTab === 'chat' && { color: colors.primary, fontWeight: '700' }]}>Chat</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.aiTab, aiTab === 'vibe' && styles.aiTabActive]}
+            style={[styles.aiTab, aiTab === 'vibe' && { backgroundColor: colors.badgeBg }]}
             onPress={() => setAiTab('vibe')}
           >
-            <Text style={[styles.aiTabText, aiTab === 'vibe' && styles.aiTabTextActive]}>Vibe</Text>
+            <Text style={[styles.aiTabText, { color: colors.textSecondary }, aiTab === 'vibe' && { color: colors.primary, fontWeight: '700' }]}>Vibe</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -532,41 +563,41 @@ const MovieAIPanel = React.memo(({
             </View>
           ) : lensError ? (
             <View>
-              <Text style={styles.aiErrorText}>Couldn't load insight.</Text>
+              <Text style={[styles.aiErrorText, { color: colors.textSecondary }]}>Couldn't load insight.</Text>
               <TouchableOpacity activeOpacity={0.8} onPress={fetchLensInsight} style={styles.aiRetry}>
-                <Feather name="rotate-cw" size={13} color={C.ai} />
-                <Text style={styles.aiRetryText}>Try again</Text>
+                <Feather name="rotate-cw" size={13} color={colors.primary} />
+                <Text style={[styles.aiRetryText, { color: colors.primary }]}>Try again</Text>
               </TouchableOpacity>
             </View>
           ) : lensInsight ? (
             <View>
-              <View style={styles.aiVerdictPill}>
-                <Text style={styles.aiVerdictText}>{lensInsight.worthIt}</Text>
+              <View style={[styles.aiVerdictPill, { backgroundColor: colors.badgeBg }]}>
+                <Text style={[styles.aiVerdictText, { color: colors.primary }]}>{lensInsight.worthIt}</Text>
               </View>
-              <Text style={styles.aiFriendVerdict}>"{lensInsight.friendVerdict}"</Text>
+              <Text style={[styles.aiFriendVerdict, { color: colors.text }]}>"{lensInsight.friendVerdict}"</Text>
               {lensInsight.vibe ? (
                 <View style={styles.aiField}>
-                  <Text style={styles.aiFieldLabel}>Vibe</Text>
-                  <Text style={styles.aiFieldValue}>{lensInsight.vibe}</Text>
+                  <Text style={[styles.aiFieldLabel, { color: colors.textSecondary }]}>Vibe</Text>
+                  <Text style={[styles.aiFieldValue, { color: colors.text }]}>{lensInsight.vibe}</Text>
                 </View>
               ) : null}
               {lensInsight.whatItsActuallyAbout ? (
                 <View style={styles.aiField}>
-                  <Text style={styles.aiFieldLabel}>Story & Premise</Text>
-                  <Text style={styles.aiFieldValue}>{lensInsight.whatItsActuallyAbout}</Text>
+                  <Text style={[styles.aiFieldLabel, { color: colors.textSecondary }]}>Story & Premise</Text>
+                  <Text style={[styles.aiFieldValue, { color: colors.text }]}>{lensInsight.whatItsActuallyAbout}</Text>
                 </View>
               ) : null}
               {(lensInsight.certificationWarning || lensInsight.whatYoullSee) ? (
-                <View style={styles.aiAdvisory}>
-                  <Text style={styles.aiAdvisoryLabel}>⚠ Content Advisory</Text>
-                  <Text style={styles.aiAdvisoryFieldValue}>{lensInsight.certificationWarning || lensInsight.whatYoullSee}</Text>
+                <View style={[styles.aiAdvisory, { backgroundColor: colors.surfaceContainerHigh }]}>
+                  <Text style={[styles.aiAdvisoryLabel, { color: colors.primary }]}>⚠ Content Advisory</Text>
+                  <Text style={[styles.aiAdvisoryFieldValue, { color: colors.text }]}>{lensInsight.certificationWarning || lensInsight.whatYoullSee}</Text>
                 </View>
               ) : null}
             </View>
           ) : (
-            <TouchableOpacity activeOpacity={0.8} onPress={fetchLensInsight} style={styles.aiGenerateBtn}>
-              <MaterialCommunityIcons name="creation" size={16} color={C.ai} />
-              <Text style={styles.aiGenerateText}>Generate Lens insight</Text>
+            <TouchableOpacity activeOpacity={0.8} onPress={fetchLensInsight} style={[styles.aiGenerateBtn, { backgroundColor: colors.surfaceContainerHigh }]}>
+              <MaterialCommunityIcons name="creation" size={16} color={colors.primary} />
+              <Text style={[styles.aiGenerateText, { color: colors.primary }]}>Generate Lens insight</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -600,9 +631,9 @@ const MovieAIPanel = React.memo(({
               decelerationRate="normal"
             />
           ) : (
-            <TouchableOpacity activeOpacity={0.8} onPress={fetchAiRecommendations} style={styles.aiGenerateBtn}>
-              <MaterialCommunityIcons name="creation" size={16} color={C.ai} />
-              <Text style={styles.aiGenerateText}>Find similar vibes</Text>
+            <TouchableOpacity activeOpacity={0.8} onPress={fetchAiRecommendations} style={[styles.aiGenerateBtn, { backgroundColor: colors.surfaceContainerHigh }]}>
+              <MaterialCommunityIcons name="creation" size={16} color={colors.primary} />
+              <Text style={[styles.aiGenerateText, { color: colors.primary }]}>Find similar vibes</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -636,11 +667,12 @@ const MovieEpisodesSection = React.memo(({
   episodeThumbWidth,
   onPlay,
 }: MovieEpisodesSectionProps) => {
+  const { colors } = useAppTheme();
   const visibleEpisodes = episodes.slice(0, episodesLimit);
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Episodes</Text>
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>Episodes</Text>
 
       <ScrollView
         horizontal
@@ -655,14 +687,16 @@ const MovieEpisodesSection = React.memo(({
               key={s.id}
               style={[
                 styles.seasonPill,
-                selectedSeason === s.season_number && styles.seasonPillActive,
+                { backgroundColor: colors.surfaceContainer },
+                selectedSeason === s.season_number && { backgroundColor: colors.primary },
               ]}
               onPress={() => onSelectSeason(s.season_number)}
             >
               <Text
                 style={[
                   styles.seasonPillText,
-                  selectedSeason === s.season_number && styles.seasonPillActiveText,
+                  { color: colors.textSecondary },
+                  selectedSeason === s.season_number && { color: colors.onPrimary, fontWeight: '700' },
                 ]}
               >
                 {s.name}
@@ -697,10 +731,10 @@ const MovieEpisodesSection = React.memo(({
           {episodes.length > episodesLimit ? (
             <TouchableOpacity
               activeOpacity={0.8}
-              style={styles.showMoreEpBtn}
+              style={[styles.showMoreEpBtn, { backgroundColor: colors.surfaceContainer }]}
               onPress={onShowMore}
             >
-              <Text style={styles.showMoreEpText}>
+              <Text style={[styles.showMoreEpText, { color: colors.text }]}>
                 Show more episodes ({episodes.length - episodesLimit} remaining)
               </Text>
             </TouchableOpacity>
@@ -717,6 +751,7 @@ const MovieEpisodesSection = React.memo(({
 
 export default function DetailPage() {
   const router = useRouter();
+  const { colors, isDark } = useAppTheme();
   const { id, media_type } = useLocalSearchParams();
   const { width, height } = useWindowDimensions();
   const isTablet = width >= 768;
@@ -1045,17 +1080,17 @@ export default function DetailPage() {
   if (!movie) {
     if (!detailsError) return <MovieDetailSkeleton />;
     return (
-      <View style={[styles.root, styles.detailsLoading]}>
-        <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
-        <ActivityIndicator color={C.white} size="large" />
-        <Text style={styles.detailsError}>{detailsError}</Text>
+      <View style={[styles.root, styles.detailsLoading, { backgroundColor: colors.background }]}>
+        <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
+        <LoadingIndicator color={colors.primary} size="large" />
+        <Text style={[styles.detailsError, { color: colors.textSecondary }]}>{detailsError}</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.root}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Lightweight Static Hero Backdrop */}
       <View style={[styles.heroContainer, { height: HEADER_HEIGHT }]} pointerEvents="none">
@@ -1067,7 +1102,7 @@ export default function DetailPage() {
           priority="high"
         />
         <LinearGradient
-          colors={['rgba(10,10,11,0.1)', 'transparent', C.bg]}
+          colors={['rgba(10,10,11,0.1)', 'transparent', '#0A0A0B']}
           locations={[0, 0.45, 1]}
           style={StyleSheet.absoluteFill}
         />
@@ -1083,7 +1118,7 @@ export default function DetailPage() {
           }}
           style={styles.glassBtn}
         >
-          <Ionicons name="chevron-back" size={22} color={C.white} />
+          <Ionicons name="chevron-back" size={22} color="#FFF" />
         </TouchableOpacity>
       </View>
 
@@ -1097,50 +1132,50 @@ export default function DetailPage() {
         {/* Lowered Details Card Spacer */}
         <View style={{ height: HEADER_HEIGHT + 30 }} />
 
-        <View style={styles.cardTop}>
+        <View style={[styles.cardTop, { backgroundColor: colors.background }]}>
           {releaseYear ? (
-            <Text style={styles.heroEyebrow}>
+            <Text style={[styles.heroEyebrow, { color: colors.primary }]}>
               {movie.media_type === 'tv' ? 'SERIES' : 'FILM'} · {releaseYear}
             </Text>
           ) : null}
 
           <View style={styles.titleRow}>
-            <Text style={styles.title} numberOfLines={3}>
+            <Text style={[styles.title, { color: colors.text }]} numberOfLines={3}>
               {displayTitle}
             </Text>
             <TouchableOpacity activeOpacity={0.8} onPress={copyTitle} style={styles.copyBtn}>
-              <Feather name="copy" size={16} color={C.muted} />
+              <Feather name="copy" size={16} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           {/* Core Metadata */}
           <View style={styles.metaRow}>
             {movie.runtime && movie.runtime > 0 ? (
-              <Text style={styles.metaText}>
+              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
                 {Math.floor(movie.runtime / 60)}h {movie.runtime % 60}m
               </Text>
             ) : null}
             {movie.vote_average && movie.vote_average > 0 ? (
               <View style={styles.metaInline}>
-                {movie.runtime && movie.runtime > 0 ? <Text style={styles.metaDot}>·</Text> : null}
-                <Ionicons name="star" size={11} color={C.gold} />
-                <Text style={[styles.metaText, { marginLeft: 4 }]}>
+                {movie.runtime && movie.runtime > 0 ? <Text style={[styles.metaDot, { color: colors.textSecondary }]}>·</Text> : null}
+                <Ionicons name="star" size={11} color="#FFD60A" />
+                <Text style={[styles.metaText, { color: colors.textSecondary, marginLeft: 4 }]}>
                   {movie.vote_average.toFixed(1)}
                 </Text>
               </View>
             ) : null}
             {movie.certification ? (
               <View style={styles.metaInline}>
-                <Text style={styles.metaDot}>·</Text>
-                <View style={styles.certPill}>
-                  <Text style={styles.certText}>{movie.certification}</Text>
+                <Text style={[styles.metaDot, { color: colors.textSecondary }]}>·</Text>
+                <View style={[styles.certPill, { backgroundColor: colors.surfaceContainer }]}>
+                  <Text style={[styles.certText, { color: colors.text }]}>{movie.certification}</Text>
                 </View>
               </View>
             ) : null}
             {movie.media_type === 'tv' && movie.number_of_seasons ? (
               <View style={styles.metaInline}>
-                <Text style={styles.metaDot}>·</Text>
-                <Text style={styles.metaText}>{movie.number_of_seasons} Seasons</Text>
+                <Text style={[styles.metaDot, { color: colors.textSecondary }]}>·</Text>
+                <Text style={[styles.metaText, { color: colors.textSecondary }]}>{movie.number_of_seasons} Seasons</Text>
               </View>
             ) : null}
           </View>
@@ -1159,7 +1194,7 @@ export default function DetailPage() {
                   <TouchableOpacity
                     activeOpacity={0.8}
                     key={g.id}
-                    style={styles.genreCard}
+                    style={[styles.genreCard, { backgroundColor: colors.surfaceContainer, borderWidth: 0 }]}
                     onPress={() =>
                       router.push(
                         `/viewall?title=${encodeURIComponent(g.name)}&type=${encodeURIComponent(
@@ -1168,8 +1203,8 @@ export default function DetailPage() {
                       )
                     }
                   >
-                    <Ionicons name={iconName} size={13} color={C.red} style={styles.genreCardIcon} />
-                    <Text style={styles.genreCardText}>{g.name}</Text>
+                    <Ionicons name={iconName} size={13} color={colors.primary} style={styles.genreCardIcon} />
+                    <Text style={[styles.genreCardText, { color: colors.text }]}>{g.name}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -1187,11 +1222,11 @@ export default function DetailPage() {
           {/* Primary Download CTA */}
           <TouchableOpacity
             activeOpacity={0.9}
-            style={[styles.primaryCtaBtn, styles.downloadCtaBtn]}
+            style={[styles.primaryCtaBtn, styles.downloadCtaBtn, { backgroundColor: colors.surfaceContainer }]}
             onPress={() => setTorrentModalVisible(true)}
           >
-            <Feather name="download" size={19} color="#000" />
-            <Text style={styles.primaryCtaText}>Download</Text>
+            <Feather name="download" size={19} color={colors.text} />
+            <Text style={[styles.primaryCtaText, { color: colors.text }]}>Download</Text>
           </TouchableOpacity>
 
           {/* Micro-rendered Action Dock: Watchlist, Watched, Telegram */}
@@ -1205,7 +1240,7 @@ export default function DetailPage() {
             <>
               {/* Directors with In-Page Skeleton Placeholder */}
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>
                   {movie.media_type === 'tv' ? 'Created by' : 'Directed by'}
                 </Text>
                 {!directors || directors.length === 0 ? (
@@ -1240,7 +1275,7 @@ export default function DetailPage() {
 
               {/* Cast with In-Page Skeleton Placeholder */}
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Cast</Text>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Cast</Text>
                 {!cast || cast.length === 0 ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
                     {[1, 2, 3, 4].map((i) => (
@@ -1311,7 +1346,7 @@ export default function DetailPage() {
                     style={StyleSheet.absoluteFill}
                   />
                   <View style={styles.collectionContent}>
-                    <Text style={styles.collectionSubtitle}>
+                    <Text style={[styles.collectionSubtitle, { color: colors.primary }]}>
                       Part of a Collection {collectionData?.parts?.length ? `• ${collectionData.parts.length} Movies` : ''}
                     </Text>
                     <Text style={styles.collectionName} numberOfLines={2}>
@@ -1342,7 +1377,7 @@ export default function DetailPage() {
 
               {/* Similar Titles with In-Page Skeleton Placeholder */}
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>More like this</Text>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>More like this</Text>
                 {!similarMovies || similarMovies.length === 0 ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
                     {[1, 2, 3, 4].map((i) => (

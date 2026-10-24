@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getImageUrl } from '../../tmdb';
 import QuickAddButton from '../shared/QuickAddButton';
 import { HORIZONTAL_MARGIN } from './ExploreConstants';
+import { useAppTheme } from '../../theme';
 
 const CARD_WIDTH = 135;
 const CARD_HEIGHT = CARD_WIDTH * 1.5;
@@ -57,6 +58,7 @@ const RankedCard = memo(
     onPress: () => void;
     toggleWatchlist: (item: any) => void;
   }) => {
+    const { colors } = useAppTheme();
     const imagePath = item.poster_path || item.backdrop_path;
     const imageUrl = imagePath ? getImageUrl(imagePath, 'w342') : null;
     const year = (item.release_date || item.first_air_date || '').slice(0, 4);
@@ -102,10 +104,10 @@ const RankedCard = memo(
 
         {/* Title and Metadata below card */}
         <View style={styles.metaContainer}>
-          <Text style={styles.title} numberOfLines={1}>
+          <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
             {item.title || item.name}
           </Text>
-          <Text style={styles.subtext} numberOfLines={1}>
+          <Text style={[styles.subtext, { color: colors.textSecondary }]} numberOfLines={1}>
             {year ? `${year} • ` : ''}Top {rank}
           </Text>
         </View>
@@ -120,6 +122,7 @@ const RankedCard = memo(
 const RankedTop10Carousel = memo(
   ({ data, toggleWatchlist }: RankedTop10CarouselProps) => {
     const router = useRouter();
+    const { colors } = useAppTheme();
 
     const top10Data = useMemo(() => {
       if (!Array.isArray(data)) return [];
@@ -152,12 +155,12 @@ const RankedTop10Carousel = memo(
       <View style={styles.sectionContainer}>
         <View style={styles.headerRow}>
           <View style={styles.titleGroup}>
-            <Text style={styles.sectionTitle}>Top 10 Today</Text>
-            <View style={styles.liveBadge}>
-              <Text style={styles.liveBadgeText}>UPDATED HOURLY</Text>
-            </View>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Top 10 Today</Text>
+            {/* <View style={[styles.liveBadge, { backgroundColor: colors.badgeBg }]}>
+              <Text style={[styles.liveBadgeText, { color: colors.primary }]}>UPDATED HOURLY</Text>
+            </View> */}
           </View>
-          <Ionicons name="chevron-forward" size={18} color="#9B9BA3" />
+          {/* <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} /> */}
         </View>
 
         <LegendList
@@ -205,18 +208,18 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.3,
   },
-  liveBadge: {
-    backgroundColor: 'rgba(229, 9, 20, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  liveBadgeText: {
-    color: '#E50914',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
+  // liveBadge: {
+  //   backgroundColor: 'rgba(229, 9, 20, 0.15)',
+  //   paddingHorizontal: 6,
+  //   paddingVertical: 2,
+  //   borderRadius: 4,
+  // },
+  // liveBadgeText: {
+  //   color: '#E50914',
+  //   fontSize: 9,
+  //   fontWeight: '800',
+  //   letterSpacing: 0.5,
+  // },
   listContent: {
     paddingHorizontal: HORIZONTAL_MARGIN,
   },
@@ -230,9 +233,14 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: '#18181C',
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#24242A',
+    // borderWidth: 1,
+    // borderColor: '#24242A',
     position: 'relative',
+    shadowColor: '#000',
+    // shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 5,
   },
   placeholder: {
     backgroundColor: '#161618',
@@ -277,11 +285,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: -0.2,
+    paddingInlineStart: 4,
   },
   subtext: {
     color: '#9B9BA3',
     fontSize: 11,
     fontWeight: '500',
     marginTop: 2,
+    paddingInlineStart: 4,
   },
 });

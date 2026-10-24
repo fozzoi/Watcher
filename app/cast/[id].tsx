@@ -43,6 +43,7 @@ import {
   getFullDetails,
 } from '../../src/tmdb';
 import { CastDetailSkeleton } from '../../src/components/cast/CastDetailSkeleton';
+import { useAppTheme } from '../../src/theme';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
@@ -93,6 +94,7 @@ const CreditCard = React.memo(
     cardGap: number;
     onPress: (item: TMDBResult) => void;
   }) => {
+    const { colors } = useAppTheme();
     const handlePress = useCallback(() => {
       onPress(item);
     }, [onPress, item]);
@@ -105,18 +107,18 @@ const CreditCard = React.memo(
         <View>
           <Image
             source={{ uri: getImageUrl(imagePath || null, 'w342') }}
-            style={[styles.creditImage, { width: cardWidth, height: cardWidth * 1.5 }]}
+            style={[styles.creditImage, { width: cardWidth, height: cardWidth * 1.5, backgroundColor: colors.surfaceContainer }]}
             contentFit="cover"
             cachePolicy="disk"
             transition={150}
             recyclingKey={imagePath || String(item.id)}
           />
         </View>
-        <Text style={styles.creditTitle} numberOfLines={2}>
+        <Text style={[styles.creditTitle, { color: colors.text }]} numberOfLines={2}>
           {item.title || item.name}
         </Text>
         {item.character ? (
-          <Text style={styles.creditCharacter} numberOfLines={1}>
+          <Text style={[styles.creditCharacter, { color: colors.textSecondary }]} numberOfLines={1}>
             {item.character}
           </Text>
         ) : null}
@@ -157,6 +159,7 @@ const CreditCard = React.memo(
 
 export default function CastDetails() {
   const router = useRouter();
+  const { colors, isDark } = useAppTheme();
   const { id } = useLocalSearchParams();
   const personId = Number(id);
   const { width, height } = useWindowDimensions();
@@ -348,8 +351,8 @@ export default function CastDetails() {
   const heroImagePath = person.profile_path || (personImages.length > 0 ? personImages[0].file_path : null);
 
   return (
-    <View style={styles.root}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Lightweight Static Hero Backdrop (Matched with Movie DetailPage) */}
       <View style={[styles.heroContainer, { height: HEADER_HEIGHT }]} pointerEvents="none">
@@ -361,7 +364,7 @@ export default function CastDetails() {
           priority="high"
         />
         <LinearGradient
-          colors={['rgba(10,10,11,0.1)', 'transparent', C.bg]}
+          colors={['rgba(10,10,11,0.1)', 'transparent', '#0A0A0B']}
           locations={[0, 0.45, 1]}
           style={StyleSheet.absoluteFill}
         />
@@ -370,7 +373,7 @@ export default function CastDetails() {
       {/* Top Bar HUD */}
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
         <TouchableOpacity activeOpacity={0.8} onPress={() => router.back()} style={styles.glassBtn}>
-          <Ionicons name="chevron-back" size={22} color={C.white} />
+          <Ionicons name="chevron-back" size={22} color="#FFF" />
         </TouchableOpacity>
       </View>
 
@@ -380,71 +383,71 @@ export default function CastDetails() {
       >
         <View style={{ height: HEADER_HEIGHT + 30 }} />
 
-        <View style={styles.cardTop}>
+        <View style={[styles.cardTop, { backgroundColor: colors.background }]}>
           {person.known_for_department ? (
-            <Text style={styles.heroEyebrow}>{person.known_for_department.toUpperCase()}</Text>
+            <Text style={[styles.heroEyebrow, { color: colors.primary }]}>{person.known_for_department.toUpperCase()}</Text>
           ) : null}
 
           <View style={styles.titleRow}>
-            <Text style={styles.title} numberOfLines={2}>
+            <Text style={[styles.title, { color: colors.text }]} numberOfLines={2}>
               {person.name}
             </Text>
             <TouchableOpacity activeOpacity={0.8} onPress={copyName} style={styles.copyBtn}>
-              <Feather name="copy" size={16} color={C.muted} />
+              <Feather name="copy" size={16} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           <View style={styles.metaRow}>
-            {person.birthday ? <Text style={styles.metaText}>Born {person.birthday.split('-')[0]}</Text> : null}
+            {person.birthday ? <Text style={[styles.metaText, { color: colors.textSecondary }]}>Born {person.birthday.split('-')[0]}</Text> : null}
             {person.popularity ? (
               <>
-                <Text style={styles.metaDot}>·</Text>
+                <Text style={[styles.metaDot, { color: colors.textSecondary }]}>·</Text>
                 <Ionicons name="flame" size={11} color={C.gold} />
-                <Text style={[styles.metaText, { marginLeft: 4 }]}>{Math.round(person.popularity)} popularity</Text>
+                <Text style={[styles.metaText, { color: colors.textSecondary, marginLeft: 4 }]}>{Math.round(person.popularity)} popularity</Text>
               </>
             ) : null}
           </View>
 
           {person.place_of_birth ? (
             <View style={styles.birthplaceRow}>
-              <Ionicons name="location-outline" size={13} color={C.mutedSoft} />
-              <Text style={styles.birthplaceText} numberOfLines={1}>
+              <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
+              <Text style={[styles.birthplaceText, { color: colors.textSecondary }]} numberOfLines={1}>
                 {person.place_of_birth}
               </Text>
             </View>
           ) : null}
 
-          <TouchableOpacity style={styles.playBtn} onPress={handleLovePress} activeOpacity={0.9}>
-            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={20} color="#000" />
-            <Text style={styles.playBtnText}>{isLiked ? 'Favorited' : 'Add to Favorites'}</Text>
+          <TouchableOpacity style={[styles.playBtn, { backgroundColor: colors.primary }]} onPress={handleLovePress} activeOpacity={0.9}>
+            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={20} color={colors.onPrimary} />
+            <Text style={[styles.playBtnText, { color: colors.onPrimary }]}>{isLiked ? 'Favorited' : 'Add to Favorites'}</Text>
           </TouchableOpacity>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity activeOpacity={0.8} style={styles.actionBtn} onPress={handlePageShare}>
-              <Feather name="share-2" size={17} color={C.mutedSoft} />
-              <Text style={styles.actionBtnText}>Share</Text>
+            <TouchableOpacity activeOpacity={0.8} style={[styles.actionBtn, { backgroundColor: colors.surfaceContainer }]} onPress={handlePageShare}>
+              <Feather name="share-2" size={17} color={colors.textSecondary} />
+              <Text style={[styles.actionBtnText, { color: colors.text }]}>Share</Text>
             </TouchableOpacity>
             {personImages.length > 0 && (
               <TouchableOpacity activeOpacity={0.8}
-                style={styles.actionBtn}
+                style={[styles.actionBtn, { backgroundColor: colors.surfaceContainer }]}
                 onPress={() => {
                   setGalleryVisible(true);
                 }}
               >
-                <Ionicons name="images-outline" size={18} color={C.mutedSoft} />
-                <Text style={styles.actionBtnText}>Gallery</Text>
+                <Ionicons name="images-outline" size={18} color={colors.textSecondary} />
+                <Text style={[styles.actionBtnText, { color: colors.text }]}>Gallery</Text>
               </TouchableOpacity>
             )}
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Biography</Text>
-            <Text style={styles.overviewText} numberOfLines={isBioExpanded ? undefined : 5}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Biography</Text>
+            <Text style={[styles.overviewText, { color: colors.text }]} numberOfLines={isBioExpanded ? undefined : 5}>
               {person.biography || 'No biography available for this person.'}
             </Text>
             {person.biography && person.biography.length > 220 && (
               <TouchableOpacity activeOpacity={0.8} onPress={() => setIsBioExpanded(!isBioExpanded)}>
-                <Text style={styles.readMore}>{isBioExpanded ? 'Less' : 'Read more'}</Text>
+                <Text style={[styles.readMore, { color: colors.primary }]}>{isBioExpanded ? 'Less' : 'Read more'}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -452,9 +455,9 @@ export default function CastDetails() {
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.sectionHeaderTitle}>Filmography</Text>
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>{credits.length}</Text>
+                <Text style={[styles.sectionHeaderTitle, { color: colors.text }]}>Filmography</Text>
+                <View style={[styles.countBadge, { backgroundColor: colors.surfaceContainerHigh }]}>
+                  <Text style={[styles.countBadgeText, { color: colors.text }]}>{credits.length}</Text>
                 </View>
               </View>
 
@@ -465,9 +468,9 @@ export default function CastDetails() {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                     setSortBy('popular');
                   }}
-                  style={[styles.sortPill, sortBy === 'popular' && styles.sortPillActive]}
+                  style={[styles.sortPill, { backgroundColor: colors.surfaceContainer }, sortBy === 'popular' && { backgroundColor: colors.primary }]}
                 >
-                  <Text style={[styles.sortPillText, sortBy === 'popular' && styles.sortPillTextActive]}>
+                  <Text style={[styles.sortPillText, { color: colors.textSecondary }, sortBy === 'popular' && { color: colors.onPrimary, fontWeight: '700' }]}>
                     Popular
                   </Text>
                 </TouchableOpacity>
@@ -478,9 +481,9 @@ export default function CastDetails() {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                     setSortBy('rating');
                   }}
-                  style={[styles.sortPill, sortBy === 'rating' && styles.sortPillActive]}
+                  style={[styles.sortPill, { backgroundColor: colors.surfaceContainer }, sortBy === 'rating' && { backgroundColor: colors.primary }]}
                 >
-                  <Text style={[styles.sortPillText, sortBy === 'rating' && styles.sortPillTextActive]}>
+                  <Text style={[styles.sortPillText, { color: colors.textSecondary }, sortBy === 'rating' && { color: colors.onPrimary, fontWeight: '700' }]}>
                     Rating
                   </Text>
                 </TouchableOpacity>
@@ -491,9 +494,9 @@ export default function CastDetails() {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                     setSortBy('latest');
                   }}
-                  style={[styles.sortPill, sortBy === 'latest' && styles.sortPillActive]}
+                  style={[styles.sortPill, { backgroundColor: colors.surfaceContainer }, sortBy === 'latest' && { backgroundColor: colors.primary }]}
                 >
-                  <Text style={[styles.sortPillText, sortBy === 'latest' && styles.sortPillTextActive]}>
+                  <Text style={[styles.sortPillText, { color: colors.textSecondary }, sortBy === 'latest' && { color: colors.onPrimary, fontWeight: '700' }]}>
                     Latest
                   </Text>
                 </TouchableOpacity>
