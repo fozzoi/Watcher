@@ -18,7 +18,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { GENRE_DATA, HORIZONTAL_MARGIN, GenreItem } from './ExploreConstants';
-import { useAppTheme } from '../../theme';
+import { useAppTheme, shadows, getActiveGlowShadow } from '../../theme';
 
 interface GenreFilterProps {
   selectedGenre: number;
@@ -58,31 +58,39 @@ const GenreChipItem = memo(({ item, isSelected, onPress, onLayout }: GenreChipIt
   return (
     <Animated.View style={animatedStyle} onLayout={onLayout}>
       <TouchableOpacity
-        activeOpacity={0.9}
+        activeOpacity={0.85}
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         style={[
           styles.genreChip,
-          {
-            backgroundColor: isSelected ? colors.primary : colors.surfaceContainer,
-            shadowColor: isSelected ? (isDark ? colors.primary : '#000000') : '#000000',
-          },
-          isSelected && styles.genreChipActive,
+          isSelected
+            ? [
+                styles.genreChipActive,
+                { backgroundColor: colors.primary },
+                getActiveGlowShadow(colors.primary),
+              ]
+            : [
+                shadows.sm,
+                {
+                  backgroundColor: colors.surfaceContainer,
+                  borderColor: isDark ? colors.outlineVariant : 'rgba(0, 0, 0, 0.08)',
+                },
+              ],
         ]}
       >
         {item.icon ? (
           <Ionicons
             name={item.icon}
-            size={15}
-            color={isSelected ? colors.onPrimary : colors.textSecondary}
+            size={16}
+            color={isSelected ? colors.onPrimary : (isDark ? '#D1D5DB' : colors.textSecondary)}
             style={styles.genreChipIcon}
           />
         ) : null}
         <Text
           style={[
             styles.genreChipText,
-            { color: isSelected ? colors.onPrimary : colors.textSecondary },
+            { color: isSelected ? colors.onPrimary : colors.text },
             isSelected && styles.genreChipTextActive,
           ]}
         >
@@ -197,30 +205,25 @@ const styles = StyleSheet.create({
   genreChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
     borderRadius: 22,
-    shadowColor: '#232222',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.03,
-    // shadowRadius: 3,
-    elevation: 3,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'transparent',
   },
   genreChipActive: {
-    // shadowOffset: { width: 0, height: 3 },
-    // shadowOpacity: 0.35,
-    // shadowRadius: 6,
-    // elevation: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   genreChipIcon: {
     marginRight: 6,
   },
   genreChipText: {
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: '500',
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
   },
   genreChipTextActive: {
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

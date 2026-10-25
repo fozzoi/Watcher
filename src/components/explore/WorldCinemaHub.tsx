@@ -9,7 +9,7 @@ import { getImageUrl } from '../../tmdb';
 import QuickAddButton from '../shared/QuickAddButton';
 import { HORIZONTAL_MARGIN } from './ExploreConstants';
 import { LANGUAGE_OPTIONS } from '../../userPreferences';
-import { useAppTheme } from '../../theme';
+import { useAppTheme, shadows, getActiveGlowShadow } from '../../theme';
 
 const CARD_WIDTH = 135;
 const CARD_HEIGHT = CARD_WIDTH * 1.5;
@@ -24,7 +24,7 @@ interface WorldCinemaHubProps {
 
 const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinemaHubProps) => {
   const router = useRouter();
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
 
   const availableLangs = useMemo(() => {
     if (!langData) return [];
@@ -97,8 +97,8 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
           onPress={() => handlePress(item)}
           style={styles.cardContainer}
         >
-          <View style={styles.cardShadow}>
-            <View style={styles.posterBox}>
+          <View style={[styles.cardShadow, { backgroundColor: colors.surfaceContainer }]}>
+            <View style={[styles.posterBox, { backgroundColor: colors.surfaceContainer }]}>
               {imageUrl ? (
                 <Image
                   source={{ uri: imageUrl }}
@@ -108,8 +108,8 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
                   recyclingKey={imageUrl}
                 />
               ) : (
-                <View style={[StyleSheet.absoluteFill, styles.placeholder]}>
-                  <Ionicons name="film-outline" size={24} color="#555" />
+                <View style={[StyleSheet.absoluteFill, styles.placeholder, { backgroundColor: colors.surfaceContainer }]}>
+                  <Ionicons name="film-outline" size={24} color={colors.textSecondary} />
                 </View>
               )}
 
@@ -168,10 +168,12 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
           onPress={() => setActiveCode('all')}
           style={[
             styles.tabChip,
-            { backgroundColor: activeCode === 'all' ? colors.primary : colors.surfaceContainer, borderColor: activeCode === 'all' ? colors.primary : colors.border },
+            activeCode === 'all'
+              ? [styles.tabChipActive, { backgroundColor: colors.primary, borderColor: colors.primary }, getActiveGlowShadow(colors.primary)]
+              : [shadows.sm, { backgroundColor: colors.surfaceContainer, borderColor: isDark ? colors.outlineVariant : 'rgba(0, 0, 0, 0.08)' }],
           ]}
         >
-          <Text style={[styles.tabText, { color: activeCode === 'all' ? colors.onPrimary : colors.textSecondary }]}>
+          <Text style={[styles.tabText, { color: activeCode === 'all' ? colors.onPrimary : colors.textSecondary }, activeCode === 'all' && styles.tabTextActive]}>
             {activeCode === 'all' ? '• All' : 'All'}
           </Text>
         </TouchableOpacity>
@@ -184,10 +186,12 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
               onPress={() => setActiveCode(lang.code)}
               style={[
                 styles.tabChip,
-                { backgroundColor: isSelected ? colors.primary : colors.surfaceContainer, borderColor: isSelected ? colors.primary : colors.border },
+                isSelected
+                  ? [styles.tabChipActive, { backgroundColor: colors.primary, borderColor: colors.primary }, getActiveGlowShadow(colors.primary)]
+                  : [shadows.sm, { backgroundColor: colors.surfaceContainer, borderColor: isDark ? colors.outlineVariant : 'rgba(0, 0, 0, 0.08)' }],
               ]}
             >
-              <Text style={[styles.tabText, { color: isSelected ? colors.onPrimary : colors.textSecondary }]}>
+              <Text style={[styles.tabText, { color: isSelected ? colors.onPrimary : colors.textSecondary }, isSelected && styles.tabTextActive]}>
                 {lang.label}
               </Text>
             </TouchableOpacity>
@@ -256,17 +260,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 16,
-    shadowColor: '#232222',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 3,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'transparent',
   },
   tabChipActive: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   tabText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   tabTextActive: {
     fontWeight: '700',
@@ -284,12 +287,7 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
     borderRadius: 14,
-    backgroundColor: '#18181C',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 6,
-    elevation: 4,
+    ...shadows.md,
     marginBottom: 8,
   },
   posterBox: {

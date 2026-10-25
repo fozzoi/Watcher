@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getImageUrl } from '../../tmdb';
 import QuickAddButton from '../shared/QuickAddButton';
 import { HORIZONTAL_MARGIN } from './ExploreConstants';
-import { useAppTheme } from '../../theme';
+import { useAppTheme, shadows } from '../../theme';
 
 const CARD_WIDTH = 135;
 const CARD_HEIGHT = CARD_WIDTH * 1.5;
@@ -66,40 +66,42 @@ const RankedCard = memo(
 
     return (
       <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.cardWrapper}>
-        <View style={styles.posterBox}>
-          {imageUrl ? (
-            <Image
-              source={{ uri: imageUrl }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              recyclingKey={imageUrl}
-            />
-          ) : (
-            <View style={[StyleSheet.absoluteFill, styles.placeholder]}>
-              <Ionicons name="film-outline" size={24} color="#555" />
-            </View>
-          )}
+        <View style={[styles.posterShadow, { backgroundColor: colors.surfaceContainer }]}>
+          <View style={[styles.posterBox, { backgroundColor: colors.surfaceContainer }]}>
+            {imageUrl ? (
+              <Image
+                source={{ uri: imageUrl }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                recyclingKey={imageUrl}
+              />
+            ) : (
+              <View style={[StyleSheet.absoluteFill, styles.placeholder, { backgroundColor: colors.surfaceContainer }]}>
+                <Ionicons name="film-outline" size={24} color={colors.textSecondary} />
+              </View>
+            )}
 
-          {/* Quick-Add Heart: granular reactivity without parent re-render */}
-          <View style={styles.heartOverlay}>
-            <QuickAddButton
-              item={item}
-              itemId={item.id}
-              onPress={() => toggleWatchlist(item)}
-            />
+            {/* Quick-Add Heart: granular reactivity without parent re-render */}
+            <View style={styles.heartOverlay}>
+              <QuickAddButton
+                item={item}
+                itemId={item.id}
+                onPress={() => toggleWatchlist(item)}
+              />
+            </View>
+
+            {/* Rating Badge */}
+            {rating && (
+              <View style={styles.ratingBadge}>
+                <Ionicons name="star" size={10} color="#FFD60A" />
+                <Text style={styles.ratingText}>{rating}</Text>
+              </View>
+            )}
+
+            {/* GPU Outlined Numeral via expo-image */}
+            <OutlinedNumeral rank={rank} />
           </View>
-
-          {/* Rating Badge */}
-          {rating && (
-            <View style={styles.ratingBadge}>
-              <Ionicons name="star" size={10} color="#FFD60A" />
-              <Text style={styles.ratingText}>{rating}</Text>
-            </View>
-          )}
-
-          {/* GPU Outlined Numeral via expo-image */}
-          <OutlinedNumeral rank={rank} />
         </View>
 
         {/* Title and Metadata below card */}
@@ -227,23 +229,20 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     marginRight: GAP,
   },
+  posterShadow: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    borderRadius: 14,
+    ...shadows.md,
+  },
   posterBox: {
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
     borderRadius: 14,
-    backgroundColor: '#18181C',
     overflow: 'hidden',
-    // borderWidth: 1,
-    // borderColor: '#24242A',
     position: 'relative',
-    shadowColor: '#000',
-    // shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 5,
   },
   placeholder: {
-    backgroundColor: '#161618',
     justifyContent: 'center',
     alignItems: 'center',
   },

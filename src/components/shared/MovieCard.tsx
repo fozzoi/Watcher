@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getImageUrl } from '../../tmdb';
 import QuickAddButton from './QuickAddButton';
 import { EXPLORE_CARD_WIDTH, SEARCH_CARD_WIDTH, GAP_SIZE } from '../explore/ExploreConstants';
-import { useAppTheme } from '../../theme';
+import { useAppTheme, shadows } from '../../theme';
 
 interface MovieCardProps {
   item: any;
@@ -38,8 +38,8 @@ const MovieCard = memo(
           marginBottom: isSearchMode ? 16 : 0,
         }}
       >
-        <View style={[styles.cardShadow, { width: cardWidth, height: cardHeight }]}>
-          <View style={[styles.cardContainer, { width: cardWidth, height: cardHeight }]}>
+        <View style={[styles.cardShadow, { width: cardWidth, height: cardHeight, backgroundColor: colors.surfaceContainer }]}>
+          <View style={[styles.cardContainer, { width: cardWidth, height: cardHeight, backgroundColor: colors.surfaceContainer }]}>
             {imageUrl ? (
               <Image
                 source={{ uri: imageUrl }}
@@ -49,8 +49,8 @@ const MovieCard = memo(
                 recyclingKey={imageUrl}
               />
             ) : (
-              <View style={[styles.placeholderCard, { width: cardWidth, height: cardHeight }]}>
-                <Ionicons name="film-outline" size={26} color="#555" />
+              <View style={[styles.placeholderCard, { width: cardWidth, height: cardHeight, backgroundColor: colors.surfaceContainer }]}>
+                <Ionicons name="film-outline" size={26} color={colors.textSecondary} />
               </View>
             )}
 
@@ -80,8 +80,8 @@ const MovieCard = memo(
             {item.title || item.name || 'Untitled'}
           </Text>
           <Text style={[styles.subtext, { color: colors.textSecondary }]} numberOfLines={1}>
-            {year ? `${year} • ` : ''}
-            {mediaType}
+            {year ? `${year} ` : ''}
+            {/* {mediaType} */}
           </Text>
         </View>
       </TouchableOpacity>
@@ -98,21 +98,14 @@ export default MovieCard;
 const styles = StyleSheet.create({
   cardShadow: {
     borderRadius: 14,
-    backgroundColor: '#18181C',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 6,
-    elevation: 4,
+    ...shadows.md,
   },
   cardContainer: {
     borderRadius: 14,
-    backgroundColor: '#18181C',
     overflow: 'hidden',
     position: 'relative',
   },
   placeholderCard: {
-    backgroundColor: '#18181C',
     alignItems: 'center',
     justifyContent: 'center',
   },

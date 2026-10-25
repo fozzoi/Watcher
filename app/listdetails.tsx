@@ -36,7 +36,7 @@ import Animated, {
   Easing,
   interpolate,
 } from 'react-native-reanimated';
-import { useAppTheme } from '../src/theme';
+import { useAppTheme, shadows, getActiveGlowShadow } from '../src/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -687,14 +687,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   selectedMovieCard: {
-    backgroundColor: 'rgba(229, 9, 20, 0.2)',
+    backgroundColor: 'rgba(229, 9, 20, 0.15)',
     borderWidth: 2,
     borderColor: '#E50914',
-    shadowColor: '#e50914ff',
-    shadowOffset: { width: 10, height: 10 },
-    shadowOpacity: 100,
-    shadowRadius: 10,
-    elevation: 10,
+    ...getActiveGlowShadow('#E50914'),
   },
   cardImage: {
     width: '100%',
@@ -758,11 +754,7 @@ const styles = StyleSheet.create({
     height: width * 0.52,
     borderRadius: 10,
     backgroundColor: '#2a2a2a',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
+    ...shadows.md,
   },
   headerInfo: {
     flex: 1,

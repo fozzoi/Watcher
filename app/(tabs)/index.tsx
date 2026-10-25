@@ -76,7 +76,7 @@ import SearchResultsList from '../../src/components/search/SearchResultsList';
 import SearchEmptyState from '../../src/components/search/SearchEmptyState';
 import { HORIZONTAL_MARGIN, GENRE_DATA } from '../../src/components/explore/ExploreConstants';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useAppTheme } from '../../src/theme';
+import { useAppTheme, shadows } from '../../src/theme';
 
 /* =========================================================================
    PERFORMANCE HELPERS (Aligned with Movie & Cast Detail Pages)
@@ -423,7 +423,7 @@ const ExploreSearchController = memo(
             pointerEvents="box-none"
           >
             <View style={styles.searchRow}>
-              <Animated.View style={[styles.searchInputContainer, animatedSearchStyle, { backgroundColor: colors.surfaceContainer }]}>
+              <Animated.View style={[styles.searchInputContainer, animatedSearchStyle, { backgroundColor: colors.surfaceContainer, borderColor: isDark ? colors.outlineVariant : 'rgba(0, 0, 0, 0.08)', borderWidth: StyleSheet.hairlineWidth }]}>
                 <View style={styles.searchIconContainer}>
                   <Ionicons name="search" size={20} color={colors.textSecondary} />
                 </View>
@@ -1107,12 +1107,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 24,
     height: 48,
-    backgroundColor: '#18181C',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 6,
+    ...shadows.md,
   },
   searchInput: {
     flex: 1,
@@ -1174,11 +1169,7 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    ...shadows.lg,
   },
   centerLoadingHost: {
     width: 36,

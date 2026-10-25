@@ -40,7 +40,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons, Feather } from '@expo/vector-icons';
 import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useAppTheme } from '../../src/theme';
+import { useAppTheme, shadows } from '../../src/theme';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -1791,12 +1791,7 @@ const styles = StyleSheet.create({
     height: 44,
     marginHorizontal: 16,
     borderRadius: 22,
-    backgroundColor: '#1C1C1E',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
+    ...shadows.lg,
     justifyContent: 'center',
   },
   filterScrollContent: { alignItems: 'center', gap: 6 },

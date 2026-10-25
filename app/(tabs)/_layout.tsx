@@ -5,7 +5,7 @@ import { Platform, Dimensions, View, StyleSheet, TouchableOpacity, DeviceEventEm
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { BlurView, BlurTargetView } from 'expo-blur';
-import { useAppTheme } from '../../src/theme';
+import { useAppTheme, shadows } from '../../src/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DOCK_MARGIN_BOTTOM = Platform.OS === 'ios' ? 40 : 35;
@@ -141,57 +141,58 @@ const CustomTabBar = ({ targetRef, targetReady }: { targetRef: any; targetReady:
                 style={[
                     localStyles.pillContainer,
                     { 
-                        borderColor: colors.divider,
                         transform: [{ scale: scaleAnim }, { translateY: translateYAnim }] 
                     },
                 ]}
             >
-                {blurEnabled && (
-                    <BlurView
-                        key="tab-bar-blur"
-                        intensity={40}
-                        tint={isDark ? 'dark' : 'light'}
-                        style={StyleSheet.absoluteFill}
-                        blurTarget={targetRef}
-                        blurMethod="dimezisBlurView"
+                <View style={[localStyles.pillInner, { borderColor: colors.divider }]}>
+                    {blurEnabled && (
+                        <BlurView
+                            key="tab-bar-blur"
+                            intensity={40}
+                            tint={isDark ? 'dark' : 'light'}
+                            style={StyleSheet.absoluteFill}
+                            blurTarget={targetRef}
+                            blurMethod="dimezisBlurView"
+                        />
+                    )}
+                    <View
+                        style={[
+                            StyleSheet.absoluteFill, 
+                            { backgroundColor: isDark ? 'rgba(28, 28, 30, 0.45)' : 'rgba(255, 255, 255, 0.70)' }
+                        ]}
+                        pointerEvents="none"
                     />
-                )}
-                <View
-                    style={[
-                        StyleSheet.absoluteFill, 
-                        { backgroundColor: isDark ? 'rgba(28, 28, 30, 0.45)' : 'rgba(255, 255, 255, 0.70)' }
-                    ]}
-                    pointerEvents="none"
-                />
-                <View style={localStyles.tabBarInner}>
-                    {TABS.map((tab) => {
-                        const isFocused =
-                            tab.path === '/'
-                                ? pathname === '/' || pathname === '/index'
-                                : pathname.startsWith(tab.path);
+                    <View style={localStyles.tabBarInner}>
+                        {TABS.map((tab) => {
+                            const isFocused =
+                                tab.path === '/'
+                                    ? pathname === '/' || pathname === '/index'
+                                    : pathname.startsWith(tab.path);
 
-                        const onPress = () => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                            if (!isFocused) {
-                                router.navigate(tab.path as any);
-                            }
-                        };
+                            const onPress = () => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                if (!isFocused) {
+                                    router.navigate(tab.path as any);
+                                }
+                            };
 
-                        const iconColor = isFocused ? colors.primary : (isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)');
+                            const iconColor = isFocused ? colors.primary : (isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)');
 
-                        return (
-                            <TouchableOpacity
-                                key={tab.name}
-                                accessibilityRole="button"
-                                accessibilityState={isFocused ? { selected: true } : {}}
-                                onPress={onPress}
-                                style={localStyles.tabButton}
-                                activeOpacity={0.95}
-                            >
-                                {tab.icon(isFocused, iconColor, 26)}
-                            </TouchableOpacity>
-                        );
-                    })}
+                            return (
+                                <TouchableOpacity
+                                    key={tab.name}
+                                    accessibilityRole="button"
+                                    accessibilityState={isFocused ? { selected: true } : {}}
+                                    onPress={onPress}
+                                    style={localStyles.tabButton}
+                                    activeOpacity={0.95}
+                                >
+                                    {tab.icon(isFocused, iconColor, 26)}
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </View>
                 </View>
             </Animated.View>
         </View>
@@ -218,15 +219,15 @@ const localStyles = StyleSheet.create({
         height: TAB_BAR_HEIGHT,
         marginBottom: DOCK_MARGIN_BOTTOM,
         borderRadius: TAB_BAR_HEIGHT / 2,
-        overflow: 'hidden',
-        borderColor: 'rgba(255, 255, 255, 0.12)',
-        borderWidth: 1,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.45,
-        shadowRadius: 8,
-        elevation: 10,
+        ...shadows.xl,
         backgroundColor: 'transparent',
+    },
+    pillInner: {
+        width: '100%',
+        height: '100%',
+        borderRadius: TAB_BAR_HEIGHT / 2,
+        overflow: 'hidden',
+        borderWidth: StyleSheet.hairlineWidth,
     },
     tabBarInner: {
         flexDirection: 'row',

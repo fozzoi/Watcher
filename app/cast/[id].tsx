@@ -43,7 +43,7 @@ import {
   getFullDetails,
 } from '../../src/tmdb';
 import { CastDetailSkeleton } from '../../src/components/cast/CastDetailSkeleton';
-import { useAppTheme } from '../../src/theme';
+import { useAppTheme, shadows } from '../../src/theme';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
@@ -104,7 +104,7 @@ const CreditCard = React.memo(
 
     const content = (
       <TouchableOpacity activeOpacity={0.95} onPress={handlePress}>
-        <View>
+        <View style={[styles.creditImageShadow, { width: cardWidth, height: cardWidth * 1.5, backgroundColor: colors.surfaceContainer }]}>
           <Image
             source={{ uri: getImageUrl(imagePath || null, 'w342') }}
             style={[styles.creditImage, { width: cardWidth, height: cardWidth * 1.5, backgroundColor: colors.surfaceContainer }]}
@@ -849,7 +849,11 @@ const styles = StyleSheet.create({
   readMore: { color: C.white, fontWeight: '700', marginTop: 8, fontSize: 13 },
 
   creditCard: { marginBottom: 18 },
-  creditImage: { borderRadius: 12, backgroundColor: C.surface2 },
+  creditImageShadow: {
+    borderRadius: 12,
+    ...shadows.md,
+  },
+  creditImage: { borderRadius: 12, overflow: 'hidden' },
   ratingBadge: {
     position: 'absolute',
     top: 6,

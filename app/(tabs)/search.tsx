@@ -19,7 +19,7 @@ import { searchTorrents } from '../../src/Scraper';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
-import { useAppTheme } from '../../src/theme';
+import { useAppTheme, shadows } from '../../src/theme';
 import { LoadingIndicator } from '../../src/components/shared/LoadingIndicator';
 import {
   Host,
@@ -392,18 +392,18 @@ export default function Index() {
                     </DockedSearchBar>
                 </Host>
             ) : (
-                <View style={styles.inputWrapper}>
+                <View style={[styles.inputWrapper, { backgroundColor: colors.surfaceContainer, borderColor: isDark ? colors.outlineVariant : 'rgba(0, 0, 0, 0.08)', borderWidth: StyleSheet.hairlineWidth }]}>
                     {prefillQuery || fromMovieId ? (
                         <TouchableOpacity activeOpacity={0.7} onPress={handleGoBack} style={{ paddingLeft: 14, paddingRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                            <Ionicons name="arrow-back" size={22} color="#FFF" />
+                            <Ionicons name="arrow-back" size={22} color={colors.text} />
                         </TouchableOpacity>
                     ) : (
-                        <Ionicons name="search" size={20} color="#666" style={{ marginLeft: 16 }} />
+                        <Ionicons name="search" size={20} color={colors.textSecondary} style={{ marginLeft: 16 }} />
                     )}
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, { color: colors.text }]}
                         placeholder="Search movies, shows, anime..."
-                        placeholderTextColor="#666"
+                        placeholderTextColor={colors.textSecondary}
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                         onSubmitEditing={() => handleSearch()}
@@ -492,11 +492,12 @@ const styles = StyleSheet.create({
   searchSection: { width: '100%', paddingHorizontal: 20 },
   searchSectionActive: { marginBottom: 10 }, 
   inputWrapper: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#1A1A1A', width: '100%', height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    height: 52,
     borderRadius: 26,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3, shadowRadius: 4.65, elevation: 8,
+    ...shadows.md,
   },
   input: { flex: 1, color: 'white', paddingHorizontal: 12, fontSize: 16 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 100 },

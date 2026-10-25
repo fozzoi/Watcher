@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { getImageUrl, getMovieCollectionInfo } from '../../tmdb';
 import { HORIZONTAL_MARGIN } from './ExploreConstants';
-import { useAppTheme } from '../../theme';
+import { useAppTheme, shadows } from '../../theme';
 
 const SPOTLIGHT_WIDTH = 280;
 const SPOTLIGHT_HEIGHT = 158;
@@ -30,8 +30,8 @@ const SpotlightCard = memo(
     const year = (item.release_date || item.first_air_date || '').slice(0, 4);
 
     return (
-      <View style={styles.cardWrapper}>
-        <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.cardContainer}>
+      <View style={[styles.cardWrapper, { backgroundColor: colors.surfaceContainer }]}>
+        <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={[styles.cardContainer, { backgroundColor: colors.surfaceContainer }]}>
           {imageUrl ? (
             <Image
               source={{ uri: imageUrl }}
@@ -41,8 +41,8 @@ const SpotlightCard = memo(
               recyclingKey={imageUrl}
             />
           ) : (
-            <View style={[StyleSheet.absoluteFill, styles.placeholder]}>
-              <Ionicons name="film-outline" size={32} color="#444" />
+            <View style={[StyleSheet.absoluteFill, styles.placeholder, { backgroundColor: colors.surfaceContainer }]}>
+              <Ionicons name="film-outline" size={32} color={colors.textSecondary} />
             </View>
           )}
 
@@ -177,18 +177,14 @@ const styles = StyleSheet.create({
     width: SPOTLIGHT_WIDTH,
     height: SPOTLIGHT_HEIGHT,
     marginRight: GAP,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 5,
+    borderRadius: 16,
+    ...shadows.lg,
     marginBottom: 8,
   },
   cardContainer: {
     width: '100%',
     height: '100%',
     borderRadius: 16,
-    backgroundColor: '#161618',
     overflow: 'hidden',
     position: 'relative',
   },
