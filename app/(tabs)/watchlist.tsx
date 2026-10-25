@@ -95,7 +95,7 @@ const WatchlistCard = React.memo(({
           recyclingKey={imageUrl}
           cachePolicy="disk"
         />
-        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.92)']} style={styles.cardGradient} />
+        <LinearGradient colors={['transparent', 'rgba(21, 23, 21, 0.8)']} style={styles.cardGradient} />
         <View style={styles.cardContent}>
           <Text style={styles.cardTitle} numberOfLines={2}>{title}</Text>
           {subtitle ? <Text style={styles.cardSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
@@ -157,7 +157,7 @@ const WatchlistHeaderTabs = React.memo(({
     >
       <LinearGradient
         colors={isDark ? ['#121212', 'rgba(18, 18, 18, 0.85)', 'transparent'] : [colors.background, 'rgba(248, 249, 250, 0.85)', 'transparent']}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insetsTop + 160 }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insetsTop + 100 }}
         pointerEvents="none"
       />
 
@@ -1847,7 +1847,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   cardImage: { width: '100%', height: '100%', backgroundColor: '#222' },
-  cardGradient: { position: 'absolute', left: 0, right: 0, bottom: -2, height: '55%', zIndex: 1 },
+  cardGradient: { position: 'absolute', left: 0, right: 0, bottom: -5, height: '30%', zIndex: 1 },
   cardContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 8, zIndex: 2 },
   cardTitle: { color: '#FFF', fontSize: 11.5, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 2 },
   cardSubtitle: { color: '#FFD700', fontSize: 10, fontFamily: 'GoogleSansFlex-Medium' },

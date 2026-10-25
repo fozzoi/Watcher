@@ -9,6 +9,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useAppTheme } from '../../theme';
 
 export interface ShimmerBlockProps {
   width?: DimensionValue;
@@ -23,6 +24,7 @@ export const ShimmerBlock: React.FC<ShimmerBlockProps> = ({
   borderRadius = 8,
   style,
 }) => {
+  const { colors, isDark } = useAppTheme();
   const shimmerProgress = useSharedValue(0);
 
   useEffect(() => {
@@ -43,11 +45,29 @@ export const ShimmerBlock: React.FC<ShimmerBlockProps> = ({
     };
   });
 
+  const baseBg = isDark ? colors.surfaceContainerHigh : colors.surfaceVariant;
+  const gradientColors = isDark
+    ? [
+        'rgba(255, 255, 255, 0)',
+        'rgba(255, 255, 255, 0.05)',
+        'rgba(255, 255, 255, 0.12)',
+        'rgba(255, 255, 255, 0.05)',
+        'rgba(255, 255, 255, 0)',
+      ] as const
+    : [
+        'rgba(255, 255, 255, 0)',
+        'rgba(255, 255, 255, 0.35)',
+        'rgba(255, 255, 255, 0.70)',
+        'rgba(255, 255, 255, 0.35)',
+        'rgba(255, 255, 255, 0)',
+      ] as const;
+
   return (
     <View
       style={[
         styles.container,
         {
+          backgroundColor: baseBg,
           width,
           height,
           borderRadius,
@@ -57,13 +77,7 @@ export const ShimmerBlock: React.FC<ShimmerBlockProps> = ({
     >
       <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]}>
         <LinearGradient
-          colors={[
-            'rgba(255, 255, 255, 0)',
-            'rgba(255, 255, 255, 0.06)',
-            'rgba(255, 255, 255, 0.12)',
-            'rgba(255, 255, 255, 0.06)',
-            'rgba(255, 255, 255, 0)',
-          ]}
+          colors={gradientColors as any}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={StyleSheet.absoluteFill}
@@ -75,7 +89,6 @@ export const ShimmerBlock: React.FC<ShimmerBlockProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#16161A',
     overflow: 'hidden',
     position: 'relative',
   },

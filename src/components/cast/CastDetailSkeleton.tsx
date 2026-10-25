@@ -25,7 +25,7 @@ export const CastDetailSkeleton: React.FC = () => {
         <View style={styles.headerBackdrop}>
           <ShimmerBlock width="100%" height={HEADER_HEIGHT} borderRadius={0} style={styles.heroShimmer} />
           <LinearGradient
-            colors={['rgba(10,10,11,0.2)', 'transparent', 'rgba(10,10,11,0.6)', '#0A0A0B']}
+            colors={isDark ? ['rgba(10,10,11,0.2)', 'transparent', 'rgba(10,10,11,0.6)', '#0B0B0E'] : ['rgba(255,255,255,0.2)', 'transparent', 'rgba(248,249,250,0.6)', '#F8F9FA']}
             locations={[0, 0.35, 0.75, 1]}
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
@@ -77,7 +77,6 @@ export const CastDetailSkeleton: React.FC = () => {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#0A0A0B',
   },
   topBar: {
     position: 'absolute',
@@ -100,14 +99,11 @@ const styles = StyleSheet.create({
   headerBackdrop: {
     height: HEADER_HEIGHT,
     overflow: 'hidden',
-    backgroundColor: '#000',
   },
   heroShimmer: {
-    backgroundColor: '#111114',
   },
   cardTop: {
     marginTop: -40,
-    backgroundColor: '#0A0A0B',
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingHorizontal: 20,

@@ -1124,7 +1124,7 @@ export default function DetailPage() {
           // contentPosition={{ top: 40, left: 'center' }}
         />
         <LinearGradient
-          colors={['rgba(10,10,11,0.1)', 'transparent', '#0A0A0B']}
+          colors={isDark ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E'] : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']}
           locations={[0, 0.45, 1]}
           style={StyleSheet.absoluteFill}
         />
