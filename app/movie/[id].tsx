@@ -427,7 +427,7 @@ interface PlayCTAButtonProps {
 }
 
 const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, onPlay }: PlayCTAButtonProps) => {
-  const { colors } = useAppTheme();
+  const { colors, isDark, useMaterialYou } = useAppTheme();
   const isUnavailable = sourceStatus === 'unavailable';
   const isChecking = sourceStatus === 'checking';
   const label = isChecking
@@ -440,12 +440,28 @@ const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, onPlay
       : 'Resume'
     : 'Play';
 
+  const buttonBg = isUnavailable
+    ? colors.surfaceContainerHigh
+    : useMaterialYou
+    ? colors.primary
+    : isDark
+    ? '#FFFFFF'
+    : (colors.surfaceVariant || '#E5E7EB');
+
+  const contentColor = isUnavailable
+    ? colors.textMuted
+    : useMaterialYou
+    ? colors.onPrimary
+    : isDark
+    ? '#000000'
+    : colors.text;
+
   return (
     <TouchableOpacity
       activeOpacity={0.9}
       style={[
         styles.primaryCtaBtn,
-        { backgroundColor: isUnavailable ? colors.surfaceContainerHigh : '#FFFFFF' },
+        { backgroundColor: buttonBg },
       ]}
       onPress={onPlay}
       disabled={sourceStatus !== 'available'}
@@ -453,9 +469,9 @@ const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, onPlay
       <Ionicons
         name={lastWatched ? 'play-skip-forward' : 'play'}
         size={20}
-        color={isUnavailable ? colors.textMuted : '#000000'}
+        color={contentColor}
       />
-      <Text style={[styles.primaryCtaText, { color: isUnavailable ? colors.textMuted : '#000000' }]}>
+      <Text style={[styles.primaryCtaText, { color: contentColor }]}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -762,7 +778,7 @@ export default function DetailPage() {
   const isTablet = width >= 768;
   const isLandscape = width > height;
 
-  const HEADER_HEIGHT = isLandscape ? height * 0.55 : height * 0.50;
+  const HEADER_HEIGHT = isLandscape ? height * 0.55 : height * 0.60;
 
   const [movie, setMovie] = useState<any>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
@@ -1105,7 +1121,7 @@ export default function DetailPage() {
           contentFit="cover"
           cachePolicy="disk"
           priority="high"
-          contentPosition={{ top: 40, left: 'center' }}
+          // contentPosition={{ top: 40, left: 'center' }}
         />
         <LinearGradient
           colors={['rgba(10,10,11,0.1)', 'transparent', '#0A0A0B']}
@@ -1136,7 +1152,7 @@ export default function DetailPage() {
         scrollEventThrottle={32}
       >
         {/* Lowered Details Card Spacer */}
-        <View style={{ height: HEADER_HEIGHT + 30 }} />
+        <View style={{ height: HEADER_HEIGHT -30}} />
 
         <View style={[styles.cardTop, { backgroundColor: colors.background }]}>
           {releaseYear ? (

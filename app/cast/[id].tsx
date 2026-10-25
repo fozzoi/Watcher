@@ -159,14 +159,14 @@ const CreditCard = React.memo(
 
 export default function CastDetails() {
   const router = useRouter();
-  const { colors, isDark } = useAppTheme();
+  const { colors, isDark, useMaterialYou } = useAppTheme();
   const { id } = useLocalSearchParams();
   const personId = Number(id);
   const { width, height } = useWindowDimensions();
   const isTablet = width >= 768;
   const isLandscape = width > height;
 
-  const HEADER_HEIGHT = isLandscape ? height * 0.55 : height * 0.50;
+  const HEADER_HEIGHT = isLandscape ? height * 0.55 : height * 0.65;
   const CARD_GAP = 12;
   const CARD_WIDTH = (width - 40 - CARD_GAP) / 2;
 
@@ -381,7 +381,7 @@ export default function CastDetails() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 60 }}
       >
-        <View style={{ height: HEADER_HEIGHT + 30 }} />
+        <View style={{ height: HEADER_HEIGHT -30}} />
 
         <View style={[styles.cardTop, { backgroundColor: colors.background }]}>
           {person.known_for_department ? (
@@ -417,9 +417,47 @@ export default function CastDetails() {
             </View>
           ) : null}
 
-          <TouchableOpacity style={[styles.playBtn, { backgroundColor: '#FFFFFF' }]} onPress={handleLovePress} activeOpacity={0.9}>
-            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={20} color={isLiked ? '#E50914' : '#000000'} />
-            <Text style={[styles.playBtnText, { color: '#000000' }]}>{isLiked ? 'Favorited' : 'Add to Favorites'}</Text>
+          <TouchableOpacity
+            style={[
+              styles.playBtn,
+              {
+                backgroundColor: useMaterialYou
+                  ? colors.primary
+                  : isDark
+                  ? '#FFFFFF'
+                  : (colors.surfaceVariant || '#E5E7EB'),
+              },
+            ]}
+            onPress={handleLovePress}
+            activeOpacity={0.9}
+          >
+            <Ionicons
+              name={isLiked ? 'heart' : 'heart-outline'}
+              size={20}
+              color={
+                useMaterialYou
+                  ? colors.onPrimary
+                  : isLiked
+                  ? '#E50914'
+                  : isDark
+                  ? '#000000'
+                  : colors.text
+              }
+            />
+            <Text
+              style={[
+                styles.playBtnText,
+                {
+                  color: useMaterialYou
+                    ? colors.onPrimary
+                    : isDark
+                    ? '#000000'
+                    : colors.text,
+                },
+              ]}
+            >
+              {isLiked ? 'Favorited' : 'Add to Favorites'}
+            </Text>
           </TouchableOpacity>
 
           <View style={styles.actionRow}>
