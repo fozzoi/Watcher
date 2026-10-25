@@ -34,7 +34,14 @@ jobs:
       - name: Read app version
         id: app
         shell: bash
-        run: echo "version=$(node -p "require('./app.json').expo.version")" >> "$GITHUB_OUTPUT"
+        run: |
+          version="$(node -p "require('./app.json').expo.version")"
+          if [ -z "$version" ] || [ "$version" = "undefined" ]; then
+            echo "Error: Failed to read valid version from app.json" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building app version: $version"
 
       - name: Build production APK with EAS
         env:

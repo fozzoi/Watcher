@@ -445,14 +445,19 @@ const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, onPlay
       activeOpacity={0.9}
       style={[
         styles.primaryCtaBtn,
-        { backgroundColor: colors.primary },
-        isUnavailable && [styles.primaryCtaDisabled, { backgroundColor: colors.surfaceContainerHigh }],
+        { backgroundColor: isUnavailable ? colors.surfaceContainerHigh : '#FFFFFF' },
       ]}
       onPress={onPlay}
       disabled={sourceStatus !== 'available'}
     >
-      <Ionicons name={lastWatched ? 'play-skip-forward' : 'play'} size={20} color={colors.onPrimary} />
-      <Text style={[styles.primaryCtaText, { color: colors.onPrimary }]}>{label}</Text>
+      <Ionicons
+        name={lastWatched ? 'play-skip-forward' : 'play'}
+        size={20}
+        color={isUnavailable ? colors.textMuted : '#000000'}
+      />
+      <Text style={[styles.primaryCtaText, { color: isUnavailable ? colors.textMuted : '#000000' }]}>
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 });
@@ -1100,6 +1105,7 @@ export default function DetailPage() {
           contentFit="cover"
           cachePolicy="disk"
           priority="high"
+          contentPosition={{ top: 40, left: 'center' }}
         />
         <LinearGradient
           colors={['rgba(10,10,11,0.1)', 'transparent', '#0A0A0B']}

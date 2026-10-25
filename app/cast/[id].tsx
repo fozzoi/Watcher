@@ -417,9 +417,9 @@ export default function CastDetails() {
             </View>
           ) : null}
 
-          <TouchableOpacity style={[styles.playBtn, { backgroundColor: colors.primary }]} onPress={handleLovePress} activeOpacity={0.9}>
-            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={20} color={colors.onPrimary} />
-            <Text style={[styles.playBtnText, { color: colors.onPrimary }]}>{isLiked ? 'Favorited' : 'Add to Favorites'}</Text>
+          <TouchableOpacity style={[styles.playBtn, { backgroundColor: '#FFFFFF' }]} onPress={handleLovePress} activeOpacity={0.9}>
+            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={20} color={isLiked ? '#E50914' : '#000000'} />
+            <Text style={[styles.playBtnText, { color: '#000000' }]}>{isLiked ? 'Favorited' : 'Add to Favorites'}</Text>
           </TouchableOpacity>
 
           <View style={styles.actionRow}>

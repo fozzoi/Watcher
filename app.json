@@ -39,7 +39,7 @@
       "bundler": "metro",
       "output": "single",
       "favicon": "assets/adaptive-icon.png",
-      "backgroundColor": "#000000",
+      "backgroundColor": "#000000"
     },
     "plugins": [
       [
