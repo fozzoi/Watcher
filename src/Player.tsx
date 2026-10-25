@@ -84,7 +84,7 @@ export default function Player() {
             } else {
                 setActiveProvider(
                   data.provider ||
-                  (data.stream_url?.includes('vidy.st') ? 'Vidy' : data.stream_url?.includes('movy.sx') ? 'Movy' : 'Web Player')
+                  (data.stream_url?.includes('vidy.st') ? 'Vidy' : data.stream_url?.includes('atlantic.st') ? 'Atlantic' : data.stream_url?.includes('movy.sx') ? 'Movy' : 'Web Player')
                 );
                 // 🎯 Pass the raw URL directly instead of building an iframe
                 setStreamData(data.stream_url); 
@@ -168,6 +168,7 @@ export default function Player() {
                 url.startsWith('data:') ||
                 url.startsWith('blob:') ||
                 url.includes('vidy.st') ||
+                url.includes('atlantic.st') ||
                 url.includes('movy.sx') ||
                 url.includes('vidlink.pro') ||
                 url.includes('vidsrc') ||

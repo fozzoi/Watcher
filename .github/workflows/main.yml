@@ -79,11 +79,20 @@ jobs:
       - name: Broadcast App Update Push Notification
         if: success()
         run: |
+          VERSION="${{ steps.app.outputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="$(jq -r '.expo.version // empty' app.json)"
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "Error: Failed to determine app version for push notification broadcast" >&2
+            exit 1
+          fi
+          echo "Broadcasting push notification for version $VERSION..."
           curl --fail-with-body --silent --show-error --retry 3 -X POST "https://watcher-api-rho.vercel.app/api/notify-update" \
             -H "Content-Type: application/json" \
             -H "x-notify-secret: ${{ secrets.NOTIFY_SECRET }}" \
-            -d '{
-              "version": "${{ steps.app.outputs.version }}",
-              "releaseName": "The Watcher ${{ steps.app.outputs.version }}",
-              "apkUrl": "https://github.com/${{ github.repository }}/releases/tag/v${{ steps.app.outputs.version }}"
-            }'
+            -d "{
+              \"version\": \"$VERSION\",
+              \"releaseName\": \"The Watcher $VERSION\",
+              \"apkUrl\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"
+            }"
