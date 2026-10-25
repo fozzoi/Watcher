@@ -82,24 +82,27 @@ export default function Player() {
                 setActiveProvider("Direct Link (Ad-Free)");
                 setStreamData(generateHlsHtml(data.stream_url));
             } else {
-                setActiveProvider(data.provider || (data.stream_url?.includes('movy.sx') ? "Movy" : "Web Player"));
+                setActiveProvider(
+                  data.provider ||
+                  (data.stream_url?.includes('vidy.st') ? 'Vidy' : data.stream_url?.includes('movy.sx') ? 'Movy' : 'Web Player')
+                );
                 // 🎯 Pass the raw URL directly instead of building an iframe
                 setStreamData(data.stream_url); 
             }
         } else {
-            const defaultMovyUrl = mediaType === 'tv'
-              ? `https://www.movy.sx/tv/${tmdbId}/${season || 1}/${episode || 1}`
-              : `https://www.movy.sx/movie/${tmdbId}`;
-            setActiveProvider("Movy");
-            setStreamData(defaultMovyUrl);
+            const defaultVidyUrl = mediaType === 'tv'
+              ? `https://www.vidy.st/tv/${tmdbId}/${season || 1}/${episode || 1}?color=E50914&nextEpisode=true&episodeSelector=true&autoplayNextEpisode=true`
+              : `https://www.vidy.st/movie/${tmdbId}?color=E50914`;
+            setActiveProvider("Vidy");
+            setStreamData(defaultVidyUrl);
         }
       } catch (error) {
         console.error("❌ Connection Error:", error);
-        const defaultMovyUrl = mediaType === 'tv'
-          ? `https://www.movy.sx/tv/${tmdbId}/${season || 1}/${episode || 1}`
-          : `https://www.movy.sx/movie/${tmdbId}`;
-        setActiveProvider("Movy");
-        setStreamData(defaultMovyUrl);
+        const defaultVidyUrl = mediaType === 'tv'
+          ? `https://www.vidy.st/tv/${tmdbId}/${season || 1}/${episode || 1}?color=E50914&nextEpisode=true&episodeSelector=true&autoplayNextEpisode=true`
+          : `https://www.vidy.st/movie/${tmdbId}?color=E50914`;
+        setActiveProvider("Vidy");
+        setStreamData(defaultVidyUrl);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -164,6 +167,7 @@ export default function Player() {
                 url === 'about:blank' ||
                 url.startsWith('data:') ||
                 url.startsWith('blob:') ||
+                url.includes('vidy.st') ||
                 url.includes('movy.sx') ||
                 url.includes('vidlink.pro') ||
                 url.includes('vidsrc') ||

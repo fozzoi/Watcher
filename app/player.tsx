@@ -166,26 +166,36 @@ export default function Player() {
             setActiveProvider("Direct Link (Ad-Free)");
             setStreamData(generateHlsHtml(data.stream_url, sourceSaved?.position ?? saved?.position ?? 0, sourcePreferences));
           } else {
-            setActiveProvider(data.provider || (data.stream_url?.includes('movy.sx') ? "Movy" : "Web Player"));
-            // 🎯 Pass the raw URL directly instead of building an iframe
-            setStreamData(data.stream_url);
+            setActiveProvider(
+              data.provider ||
+              (data.stream_url?.includes('vidy.st') ? 'Vidy' : data.stream_url?.includes('movy.sx') ? 'Movy' : 'Web Player')
+            );
+            // Append saved progress if vidy.st and not yet present
+            let finalUrl = data.stream_url;
+            const savedSecs = Math.floor(sourceSaved?.position ?? saved?.position ?? 0);
+            if (finalUrl?.includes('vidy.st') && !finalUrl.includes('progress=') && savedSecs > 10) {
+              finalUrl += `${finalUrl.includes('?') ? '&' : '?'}progress=${savedSecs}`;
+            }
+            setStreamData(finalUrl);
           }
         } else {
-          // Direct fallback to Movy.sx as the default provider
-          const defaultMovyUrl = mediaType === 'tv'
-            ? `https://www.movy.sx/tv/${tmdbId}/${season || 1}/${episode || 1}`
-            : `https://www.movy.sx/movie/${tmdbId}`;
-          setActiveProvider("Movy");
-          setStreamData(defaultMovyUrl);
+          // Direct fallback to Vidy as the default provider
+          const savedSecs = Math.floor(saved?.position || 0);
+          const progressParam = savedSecs > 10 ? `&progress=${savedSecs}` : '';
+          const defaultVidyUrl = mediaType === 'tv'
+            ? `https://www.vidy.st/tv/${tmdbId}/${season || 1}/${episode || 1}?color=E50914&nextEpisode=true&episodeSelector=true&autoplayNextEpisode=true${progressParam}`
+            : `https://www.vidy.st/movie/${tmdbId}?color=E50914${progressParam}`;
+          setActiveProvider("Vidy");
+          setStreamData(defaultVidyUrl);
         }
       } catch (error) {
         console.error("❌ Connection Error:", error);
         if (isMounted) {
-          const defaultMovyUrl = mediaType === 'tv'
-            ? `https://www.movy.sx/tv/${tmdbId}/${season || 1}/${episode || 1}`
-            : `https://www.movy.sx/movie/${tmdbId}`;
-          setActiveProvider("Movy");
-          setStreamData(defaultMovyUrl);
+          const defaultVidyUrl = mediaType === 'tv'
+            ? `https://www.vidy.st/tv/${tmdbId}/${season || 1}/${episode || 1}?color=E50914&nextEpisode=true&episodeSelector=true&autoplayNextEpisode=true`
+            : `https://www.vidy.st/movie/${tmdbId}?color=E50914`;
+          setActiveProvider("Vidy");
+          setStreamData(defaultVidyUrl);
         }
       } finally {
         if (isMounted) setLoading(false);
@@ -282,6 +292,10 @@ export default function Player() {
             try {
               const progress = JSON.parse(event.nativeEvent.data);
               if (progress.nearCredits && nextEpisode) setShowNextEpisode(true);
+              if (progress.event === 'ended' && nextEpisode) {
+                goToNextEpisode();
+                return;
+              }
               if (progress.type === 'playerSettings') {
                 const { type, ...changes } = progress;
                 savePlayerPreferences(sourceKey, changes).then((next) => {
@@ -289,14 +303,21 @@ export default function Player() {
                 }).catch((error) => console.warn('Failed to save player preferences:', error));
                 return;
               }
-              if (Number.isFinite(progress.position) && Number.isFinite(progress.duration)) {
+
+              // Handle both Vidy events (currentTime) and custom HTML events (position)
+              const pos = Number.isFinite(progress.currentTime) ? progress.currentTime : progress.position;
+              const dur = Number.isFinite(progress.duration) ? progress.duration : 0;
+              if (Number.isFinite(pos) && pos > 0) {
+                if (dur > 0 && pos / dur >= 0.8 && dur - pos <= 90 && nextEpisode) {
+                  setShowNextEpisode(true);
+                }
                 progressRef.current = {
                   tmdbId, mediaType, title, poster,
                   lastSeason: season || 1, lastEpisode: episode || 1,
-                  position: progress.position, duration: progress.duration, updatedAt: Date.now(),
+                  position: pos, duration: dur, updatedAt: Date.now(),
                 };
-                latestPositionRef.current = { position: progress.position, duration: progress.duration };
-                handleSaveProgress(progress.position, progress.duration);
+                latestPositionRef.current = { position: pos, duration: dur };
+                handleSaveProgress(pos, dur);
               }
             } catch {
               // Ignore non-progress messages from embedded players.
@@ -309,6 +330,7 @@ export default function Player() {
               url === 'about:blank' ||
               url.startsWith('data:') ||
               url.startsWith('blob:') ||
+              url.includes('vidy.st') ||
               url.includes('movy.sx') ||
               url.includes('vidlink.pro') ||
               url.includes('vidsrc') ||
