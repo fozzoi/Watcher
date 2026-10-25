@@ -82,13 +82,24 @@ export default function Player() {
                 setActiveProvider("Direct Link (Ad-Free)");
                 setStreamData(generateHlsHtml(data.stream_url));
             } else {
-                setActiveProvider("Web Player");
+                setActiveProvider(data.provider || (data.stream_url?.includes('movy.sx') ? "Movy" : "Web Player"));
                 // 🎯 Pass the raw URL directly instead of building an iframe
                 setStreamData(data.stream_url); 
             }
+        } else {
+            const defaultMovyUrl = mediaType === 'tv'
+              ? `https://www.movy.sx/tv/${tmdbId}/${season || 1}/${episode || 1}`
+              : `https://www.movy.sx/movie/${tmdbId}`;
+            setActiveProvider("Movy");
+            setStreamData(defaultMovyUrl);
         }
       } catch (error) {
         console.error("❌ Connection Error:", error);
+        const defaultMovyUrl = mediaType === 'tv'
+          ? `https://www.movy.sx/tv/${tmdbId}/${season || 1}/${episode || 1}`
+          : `https://www.movy.sx/movie/${tmdbId}`;
+        setActiveProvider("Movy");
+        setStreamData(defaultMovyUrl);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -149,7 +160,17 @@ export default function Player() {
             onShouldStartLoadWithRequest={(request) => {
               const url = request.url;
               // Only allow the main player, data streams, and safe CDNs
-              return url === 'about:blank' || url.startsWith('data:') || url.startsWith('blob:') || url.includes('embed.su') || url.includes('vidsrc');
+              return (
+                url === 'about:blank' ||
+                url.startsWith('data:') ||
+                url.startsWith('blob:') ||
+                url.includes('movy.sx') ||
+                url.includes('vidlink.pro') ||
+                url.includes('vidsrc') ||
+                url.includes('vixsrc') ||
+                url.includes('autoembed') ||
+                url.includes('embed.su')
+              );
             }}
           />
       ) : null}
