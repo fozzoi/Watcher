@@ -3,11 +3,8 @@ import { Skia } from '@shopify/react-native-skia';
 
 export interface ExtractedPalette {
   dominant: string;
-  bold: string;
-  ambientDark: string;
-  ambientLight: string;
-  gradientDark: [string, string, string];
-  gradientLight: [string, string, string];
+  pastelDark: string;
+  gradient: [string, string, string];
 }
 
 // In-memory cache to make re-renders and repeat visits instantaneous
@@ -151,30 +148,19 @@ export async function extractPaletteFromUrl(imageUrl: string): Promise<Extracted
 
     const [h, s] = rgbToHsl(avgR, avgG, avgB);
 
-    // 1. Bold Button Accent: Punchy, vibrant, high-contrast (48% lightness, high saturation)
-    const boldHex = hslToHex(h, Math.max(s, 0.82), 0.48);
+    // Soft desaturated pastel dark color from the image (consistent across all modes)
+    const pastelDark = hslToHex(h, 0.22, 0.13);
 
-    // 2. Ambient Dark: Deep atmospheric dark wash (8% lightness, soft 28% saturation)
-    const ambientDark = hslToHex(h, Math.min(s, 0.28), 0.08);
-
-    // 3. Ambient Light: Clean luminous light wash (96% lightness, soft 22% saturation)
-    const ambientLight = hslToHex(h, Math.min(s, 0.22), 0.96);
+    const gradient: [string, string, string] = [
+      `rgba(${avgR}, ${avgG}, ${avgB}, 0.05)`,
+      `rgba(${avgR}, ${avgG}, ${avgB}, 0.22)`,
+      pastelDark,
+    ];
 
     const palette: ExtractedPalette = {
       dominant: hslToHex(h, s, 0.5),
-      bold: boldHex,
-      ambientDark,
-      ambientLight,
-      gradientDark: [
-        `rgba(${avgR}, ${avgG}, ${avgB}, 0.15)`,
-        `rgba(${avgR}, ${avgG}, ${avgB}, 0.35)`,
-        ambientDark,
-      ],
-      gradientLight: [
-        `rgba(${avgR}, ${avgG}, ${avgB}, 0.08)`,
-        `rgba(${avgR}, ${avgG}, ${avgB}, 0.18)`,
-        ambientLight,
-      ],
+      pastelDark,
+      gradient,
     };
 
     paletteCache.set(imageUrl, palette);

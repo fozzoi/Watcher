@@ -35,7 +35,6 @@ import { DEFAULT_PLAYER_PREFERENCES, getPlayerPreferences, PlayerPreferences, sa
 import { cloudSync, MobileUserProfile, queueCloudValue } from '../src/cloudSync';
 import { signInWithNativeGoogle } from '../src/nativeGoogleAuth';
 import { notifyForYouListeners } from '../src/services/tasteProfile';
-import { snackbarService } from '../src/services/snackbar';
 import { useAppTheme } from '../src/theme';
 
 // Google OAuth via expo-auth-session
@@ -62,7 +61,15 @@ const Settings = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const tabBarHeight = 60; 
-  const { colors, isDark, toggleTheme, useMaterialYou, toggleMaterialYou } = useAppTheme(); 
+  const {
+    colors,
+    isDark,
+    toggleTheme,
+    useMaterialYou,
+    toggleMaterialYou,
+    ambientTheming,
+    toggleAmbientTheming,
+  } = useAppTheme(); 
 
   const [isHiRes, setIsHiRes] = useState(false);
   const [isNsfwFilter, setIsNsfwFilter] = useState(true);
@@ -77,12 +84,10 @@ const Settings = () => {
 
   const [refreshing, setRefreshing] = useState(false);
 
-  const showNativeSnackbar = (message: string, actionLabel: string = "Dismiss") => {
-    snackbarService.show({
-      message,
-      actionLabel,
-      duration: 'short',
-    });
+  const showToast = (message: string) => {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.SHORT);
+    }
   };
 
   const handleRefresh = async () => {
@@ -90,7 +95,7 @@ const Settings = () => {
     try {
       const res = await checkForAppUpdate();
       setUpdateResult(res);
-      showNativeSnackbar("Settings & updates checked", "OK");
+      showToast("Settings & updates checked");
     } catch (e) {
       // ignore
     } finally {
@@ -456,7 +461,7 @@ const Settings = () => {
           await FileSystem.makeDirectoryAsync(exportDir, { intermediates: true });
           const targetUri = `${exportDir}${fileName}`;
           await FileSystem.writeAsStringAsync(targetUri, fileContent, { encoding: FileSystem.EncodingType.UTF8 });
-          showNativeSnackbar(`Saved to Download/Watcher/export/${fileName}`, "OK");
+          showToast(`Saved to Download/Watcher/export/${fileName}`);
           return;
         } catch (exportErr) {
           console.warn('Direct Download/Watcher/export write failed, trying SAF:', exportErr);
@@ -481,7 +486,7 @@ const Settings = () => {
               const mimeType = format === 'json' ? 'application/json' : 'text/plain';
               const safFileUri = await SAF.createFileAsync(targetDirUri, fileName, mimeType);
               await SAF.writeAsStringAsync(safFileUri, fileContent, { encoding: FileSystem.EncodingType.UTF8 });
-              showNativeSnackbar(`Saved to Download/Watcher/export/${fileName}`, "OK");
+              showToast(`Saved to Download/Watcher/export/${fileName}`);
               return;
             }
           } catch (safErr) {
@@ -741,6 +746,13 @@ const Settings = () => {
             subtitle={useMaterialYou ? "Active (Extracting system palette from wallpaper)" : "Inactive (Using Watcher Red accent)"} 
             value={useMaterialYou} 
             onValueChange={toggleMaterialYou} 
+          />
+          <SettingSeparator />
+          <ToggleRow 
+            title="Poster Ambient Theming" 
+            subtitle={ambientTheming ? "Active (Details page reflects movie artwork colors)" : "Inactive (Using default app theme)"} 
+            value={ambientTheming} 
+            onValueChange={toggleAmbientTheming} 
           />
         </View>
 

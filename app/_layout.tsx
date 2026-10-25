@@ -15,7 +15,6 @@ import { setupNotificationChannel, registerBackgroundFetchAsync, isNotifications
 import { registerForPushNotificationsAsync, syncPushTokenAndWatchlist } from '@/src/pushNotifications';
 import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
-import GlobalSnackbar from '@/src/components/shared/GlobalSnackbar';
 import { ThemeProvider, useAppTheme } from '@/src/theme';
 import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, setOnSavedItemsChangedListener } from '@/src/database';
 import { loadGlobalConfig, GLOBAL_CONFIG, fetchEmbeddingsBatch } from '@/src/tmdb';
@@ -326,7 +325,6 @@ function RootNavigator({ showUpdateModal, setShowUpdateModal, updateResult }: an
         onClose={() => setShowUpdateModal(false)}
         updateResult={updateResult}
       />
-      <GlobalSnackbar />
     </SafeAreaProvider>
   );
 }

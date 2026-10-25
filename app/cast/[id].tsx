@@ -87,12 +87,14 @@ const CreditCard = React.memo(
     index,
     cardWidth,
     cardGap,
+    isAmbientActive,
     onPress,
   }: {
     item: TMDBResult;
     index: number;
     cardWidth: number;
     cardGap: number;
+    isAmbientActive?: boolean;
     onPress: (item: TMDBResult) => void;
   }) => {
     const { colors } = useAppTheme();
@@ -105,7 +107,13 @@ const CreditCard = React.memo(
 
     const content = (
       <TouchableOpacity activeOpacity={0.95} onPress={handlePress}>
-        <View style={[styles.creditImageShadow, { width: cardWidth, height: cardWidth * 1.5, backgroundColor: colors.surfaceContainer }]}>
+        <View
+          style={[
+            styles.creditImageShadow,
+            { width: cardWidth, height: cardWidth * 1.5, backgroundColor: colors.surfaceContainer },
+            isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+          ]}
+        >
           <Image
             source={{ uri: getImageUrl(imagePath || null, 'w342') }}
             style={[styles.creditImage, { width: cardWidth, height: cardWidth * 1.5, backgroundColor: colors.surfaceContainer }]}
@@ -155,12 +163,13 @@ const CreditCard = React.memo(
     prev.item.id === next.item.id &&
     prev.cardWidth === next.cardWidth &&
     prev.cardGap === next.cardGap &&
+    prev.isAmbientActive === next.isAmbientActive &&
     prev.onPress === next.onPress
 );
 
 export default function CastDetails() {
   const router = useRouter();
-  const { colors, isDark, useMaterialYou } = useAppTheme();
+  const { colors, isDark, useMaterialYou, ambientTheming } = useAppTheme();
   const { id } = useLocalSearchParams();
   const personId = Number(id);
   const { width, height } = useWindowDimensions();
@@ -353,12 +362,13 @@ export default function CastDetails() {
   const heroThumbUrl = heroImagePath ? getImageUrl(heroImagePath, 'w92') : null;
   const { palette } = useImagePalette(heroThumbUrl);
 
-  const detailsBg = palette
-    ? (isDark ? palette.ambientDark : palette.ambientLight)
-    : colors.background;
+  const isAmbientActive = Boolean(ambientTheming && palette?.pastelDark);
 
-  const heroGradientColors: readonly [string, string, ...string[]] = palette
-    ? (isDark ? palette.gradientDark : palette.gradientLight)
+  // In ambient mode, no light mode or dark mode distinction: always use the pastel dark color
+  const detailsBg = isAmbientActive ? palette!.pastelDark : colors.background;
+
+  const heroGradientColors: readonly [string, string, ...string[]] = isAmbientActive
+    ? palette!.gradient
     : (isDark
         ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E']
         : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']);
@@ -394,11 +404,13 @@ export default function CastDetails() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 60 }}
       >
-        <View style={{ height: HEADER_HEIGHT -30}} />
+        <View style={{ height: HEADER_HEIGHT - 30 }} />
 
         <View style={[styles.cardTop, { backgroundColor: detailsBg }]}>
           {person.known_for_department ? (
-            <Text style={[styles.heroEyebrow, { color: palette?.bold || colors.primary }]}>{person.known_for_department.toUpperCase()}</Text>
+            <Text style={[styles.heroEyebrow, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.65)' : colors.textSecondary }]}>
+              {person.known_for_department.toUpperCase()}
+            </Text>
           ) : null}
 
           <View style={styles.titleRow}>
@@ -434,12 +446,15 @@ export default function CastDetails() {
             style={[
               styles.playBtn,
               {
-                backgroundColor: useMaterialYou
+                backgroundColor: isAmbientActive
+                  ? 'rgba(255, 255, 255, 0.92)'
+                  : useMaterialYou
                   ? colors.primary
                   : isDark
                   ? '#FFFFFF'
                   : (colors.surfaceVariant || '#E5E7EB'),
               },
+              isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
             ]}
             onPress={handleLovePress}
             activeOpacity={0.9}
@@ -448,7 +463,9 @@ export default function CastDetails() {
               name={isLiked ? 'heart' : 'heart-outline'}
               size={20}
               color={
-                useMaterialYou
+                isAmbientActive
+                  ? (isLiked ? '#E50914' : '#000000')
+                  : useMaterialYou
                   ? colors.onPrimary
                   : isLiked
                   ? '#E50914'
@@ -461,7 +478,9 @@ export default function CastDetails() {
               style={[
                 styles.playBtnText,
                 {
-                  color: useMaterialYou
+                  color: isAmbientActive
+                    ? '#000000'
+                    : useMaterialYou
                     ? colors.onPrimary
                     : isDark
                     ? '#000000'
@@ -474,13 +493,26 @@ export default function CastDetails() {
           </TouchableOpacity>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity activeOpacity={0.8} style={[styles.actionBtn, { backgroundColor: colors.surfaceContainer }]} onPress={handlePageShare}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[
+                styles.actionBtn,
+                { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+                isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+              ]}
+              onPress={handlePageShare}
+            >
               <Feather name="share-2" size={17} color={colors.textSecondary} />
               <Text style={[styles.actionBtnText, { color: colors.text }]}>Share</Text>
             </TouchableOpacity>
             {personImages.length > 0 && (
-              <TouchableOpacity activeOpacity={0.8}
-                style={[styles.actionBtn, { backgroundColor: colors.surfaceContainer }]}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[
+                  styles.actionBtn,
+                  { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+                  isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+                ]}
                 onPress={() => {
                   setGalleryVisible(true);
                 }}
@@ -498,7 +530,7 @@ export default function CastDetails() {
             </Text>
             {person.biography && person.biography.length > 220 && (
               <TouchableOpacity activeOpacity={0.8} onPress={() => setIsBioExpanded(!isBioExpanded)}>
-                <Text style={[styles.readMore, { color: colors.primary }]}>{isBioExpanded ? 'Less' : 'Read more'}</Text>
+                <Text style={[styles.readMore, { color: isAmbientActive ? '#FFFFFF' : colors.primary }]}>{isBioExpanded ? 'Less' : 'Read more'}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -507,7 +539,7 @@ export default function CastDetails() {
             <View style={styles.sectionHeaderRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Text style={[styles.sectionHeaderTitle, { color: colors.text }]}>Filmography</Text>
-                <View style={[styles.countBadge, { backgroundColor: colors.surfaceContainerHigh }]}>
+                <View style={[styles.countBadge, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.12)' : colors.surfaceContainerHigh }]}>
                   <Text style={[styles.countBadgeText, { color: colors.text }]}>{credits.length}</Text>
                 </View>
               </View>
@@ -519,9 +551,14 @@ export default function CastDetails() {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                     setSortBy('popular');
                   }}
-                  style={[styles.sortPill, { backgroundColor: colors.surfaceContainer }, sortBy === 'popular' && { backgroundColor: colors.primary }]}
+                  style={[
+                    styles.sortPill,
+                    { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+                    sortBy === 'popular' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
+                    isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+                  ]}
                 >
-                  <Text style={[styles.sortPillText, { color: colors.textSecondary }, sortBy === 'popular' && { color: colors.onPrimary, fontWeight: '700' }]}>
+                  <Text style={[styles.sortPillText, { color: colors.textSecondary }, sortBy === 'popular' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
                     Popular
                   </Text>
                 </TouchableOpacity>
@@ -532,9 +569,14 @@ export default function CastDetails() {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                     setSortBy('rating');
                   }}
-                  style={[styles.sortPill, { backgroundColor: colors.surfaceContainer }, sortBy === 'rating' && { backgroundColor: colors.primary }]}
+                  style={[
+                    styles.sortPill,
+                    { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+                    sortBy === 'rating' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
+                    isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+                  ]}
                 >
-                  <Text style={[styles.sortPillText, { color: colors.textSecondary }, sortBy === 'rating' && { color: colors.onPrimary, fontWeight: '700' }]}>
+                  <Text style={[styles.sortPillText, { color: colors.textSecondary }, sortBy === 'rating' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
                     Rating
                   </Text>
                 </TouchableOpacity>
@@ -545,9 +587,14 @@ export default function CastDetails() {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                     setSortBy('latest');
                   }}
-                  style={[styles.sortPill, { backgroundColor: colors.surfaceContainer }, sortBy === 'latest' && { backgroundColor: colors.primary }]}
+                  style={[
+                    styles.sortPill,
+                    { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+                    sortBy === 'latest' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
+                    isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+                  ]}
                 >
-                  <Text style={[styles.sortPillText, { color: colors.textSecondary }, sortBy === 'latest' && { color: colors.onPrimary, fontWeight: '700' }]}>
+                  <Text style={[styles.sortPillText, { color: colors.textSecondary }, sortBy === 'latest' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
                     Latest
                   </Text>
                 </TouchableOpacity>
@@ -562,6 +609,7 @@ export default function CastDetails() {
                   index={index}
                   cardWidth={CARD_WIDTH}
                   cardGap={CARD_GAP}
+                  isAmbientActive={isAmbientActive}
                   onPress={handleCreditPress}
                 />
               ))}

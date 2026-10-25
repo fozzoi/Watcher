@@ -206,7 +206,7 @@ const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => {
   );
 });
 
-const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay }: any) => {
+const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, isAmbientActive, onPlay }: any) => {
   const { colors } = useAppTheme();
   const stillUrl = ep.still_path
     ? getImageUrl(ep.still_path, 'w185')
@@ -216,8 +216,13 @@ const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay
       activeOpacity={0.92}
       style={[
         styles.epRow,
-        { backgroundColor: colors.surfaceContainer },
-        isActive && { backgroundColor: colors.badgeBg, borderWidth: 1, borderColor: colors.primary },
+        { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.06)' : colors.surfaceContainer },
+        isActive && {
+          backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.14)' : colors.badgeBg,
+          borderWidth: 1,
+          borderColor: isAmbientActive ? 'rgba(255, 255, 255, 0.35)' : colors.primary,
+        },
+        isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
       ]}
       onPress={() => onPlay(ep)}
     >
@@ -232,11 +237,11 @@ const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay
         <View style={styles.epPlayOverlay}>
           <Ionicons name="play" size={16} color="#FFF" />
         </View>
-        {isActive ? <View style={[styles.epActiveDot, { backgroundColor: colors.primary }]} /> : null}
+        {isActive ? <View style={[styles.epActiveDot, { backgroundColor: isAmbientActive ? '#FFFFFF' : colors.primary }]} /> : null}
       </View>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={[styles.epNum, { color: colors.textSecondary }, isActive && { color: colors.primary, fontWeight: '800' }]}>
+          <Text style={[styles.epNum, { color: colors.textSecondary }, isActive && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '800' }]}>
             EPISODE {ep.episode_number}
           </Text>
           {ep.air_date ? (
@@ -262,9 +267,10 @@ const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, onPlay
 
 interface MovieActionDockProps {
   movie: any;
+  isAmbientActive?: boolean;
 }
 
-const MovieActionDock = React.memo(({ movie }: MovieActionDockProps) => {
+const MovieActionDock = React.memo(({ movie, isAmbientActive }: MovieActionDockProps) => {
   const { colors } = useAppTheme();
   const movieId = movie?.id;
   const isInWatchlist = useSelector(() => {
@@ -352,17 +358,18 @@ const MovieActionDock = React.memo(({ movie }: MovieActionDockProps) => {
         activeOpacity={0.8}
         style={[
           styles.actionBtn,
-          { backgroundColor: colors.surfaceContainer },
-          isInWatchlist && { backgroundColor: colors.badgeBg },
+          { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+          isInWatchlist && (isAmbientActive ? { backgroundColor: 'rgba(255, 255, 255, 0.16)' } : { backgroundColor: colors.badgeBg }),
+          isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
         ]}
         onPress={toggleWatchlist}
       >
         <Ionicons
           name={isInWatchlist ? 'bookmark' : 'bookmark-outline'}
           size={18}
-          color={isInWatchlist ? colors.primary : colors.text}
+          color={isInWatchlist ? (isAmbientActive ? '#FFFFFF' : colors.primary) : colors.text}
         />
-        <Text style={[styles.actionBtnText, { color: colors.textSecondary }, isInWatchlist && { color: colors.primary, fontWeight: '700' }]}>
+        <Text style={[styles.actionBtnText, { color: colors.textSecondary }, isInWatchlist && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>
           Watchlist
         </Text>
       </TouchableOpacity>
@@ -371,8 +378,9 @@ const MovieActionDock = React.memo(({ movie }: MovieActionDockProps) => {
         activeOpacity={0.8}
         style={[
           styles.actionBtn,
-          { backgroundColor: colors.surfaceContainer },
-          isWatched && styles.actionBtnActive,
+          { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+          isWatched && (isAmbientActive ? { backgroundColor: 'rgba(48, 209, 88, 0.16)' } : styles.actionBtnActive),
+          isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
         ]}
         onPress={toggleWatched}
       >
@@ -386,7 +394,11 @@ const MovieActionDock = React.memo(({ movie }: MovieActionDockProps) => {
 
       <TouchableOpacity
         activeOpacity={0.8}
-        style={[styles.actionBtn, { backgroundColor: colors.surfaceContainer }]}
+        style={[
+          styles.actionBtn,
+          { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+          isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+        ]}
         onPress={openTelegramSearch}
       >
         <Ionicons name="paper-plane-outline" size={17} color={colors.textSecondary} />
@@ -398,9 +410,10 @@ const MovieActionDock = React.memo(({ movie }: MovieActionDockProps) => {
 
 interface MovieOverviewProps {
   overview?: string;
+  isAmbientActive?: boolean;
 }
 
-const MovieOverview = React.memo(({ overview }: MovieOverviewProps) => {
+const MovieOverview = React.memo(({ overview, isAmbientActive }: MovieOverviewProps) => {
   const { colors } = useAppTheme();
   const [isExpanded, setIsExpanded] = useState(false);
   if (!overview) return null;
@@ -413,7 +426,7 @@ const MovieOverview = React.memo(({ overview }: MovieOverviewProps) => {
       </Text>
       {isLong ? (
         <TouchableOpacity activeOpacity={0.8} onPress={() => setIsExpanded((prev) => !prev)}>
-          <Text style={[styles.readMore, { color: colors.primary }]}>{isExpanded ? 'Less' : 'Read more'}</Text>
+          <Text style={[styles.readMore, { color: isAmbientActive ? '#FFFFFF' : colors.primary }]}>{isExpanded ? 'Less' : 'Read more'}</Text>
         </TouchableOpacity>
       ) : null}
     </View>
@@ -424,11 +437,11 @@ interface PlayCTAButtonProps {
   sourceStatus: 'checking' | 'available' | 'unavailable';
   lastWatched: any;
   mediaType?: string;
-  boldColor?: string;
+  isAmbientMode?: boolean;
   onPlay: () => void;
 }
 
-const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, boldColor, onPlay }: PlayCTAButtonProps) => {
+const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, isAmbientMode, onPlay }: PlayCTAButtonProps) => {
   const { colors, isDark, useMaterialYou } = useAppTheme();
   const isUnavailable = sourceStatus === 'unavailable';
   const isChecking = sourceStatus === 'checking';
@@ -444,8 +457,8 @@ const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, boldCo
 
   const buttonBg = isUnavailable
     ? colors.surfaceContainerHigh
-    : boldColor
-    ? boldColor
+    : isAmbientMode
+    ? 'rgba(255, 255, 255, 0.92)'
     : useMaterialYou
     ? colors.primary
     : isDark
@@ -454,15 +467,13 @@ const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, boldCo
 
   const contentColor = isUnavailable
     ? colors.textMuted
-    : boldColor
-    ? '#FFFFFF'
+    : isAmbientMode
+    ? '#000000'
     : useMaterialYou
     ? colors.onPrimary
     : isDark
     ? '#000000'
     : colors.text;
-
-  const glowStyle = boldColor && !isUnavailable ? getActiveGlowShadow(boldColor) : null;
 
   return (
     <TouchableOpacity
@@ -470,7 +481,7 @@ const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, boldCo
       style={[
         styles.primaryCtaBtn,
         { backgroundColor: buttonBg },
-        glowStyle,
+        isAmbientMode ? { elevation: 0, shadowOpacity: 0 } : null,
       ]}
       onPress={onPlay}
       disabled={sourceStatus !== 'available'}
@@ -494,6 +505,7 @@ interface MovieAIPanelProps {
   genres: any[];
   similarCardWidth: number;
   renderSimilarItem: (props: any) => React.ReactElement;
+  isAmbientActive?: boolean;
 }
 
 const MovieAIPanel = React.memo(({
@@ -503,6 +515,7 @@ const MovieAIPanel = React.memo(({
   genres,
   similarCardWidth,
   renderSimilarItem,
+  isAmbientActive,
 }: MovieAIPanelProps) => {
   const { colors } = useAppTheme();
   const [aiTab, setAiTab] = useState<'lens' | 'chat' | 'vibe'>('lens');
@@ -549,36 +562,42 @@ const MovieAIPanel = React.memo(({
   }, [movie]);
 
   return (
-    <View style={[styles.aiPanel, { backgroundColor: colors.surfaceContainer }]}>
+    <View
+      style={[
+        styles.aiPanel,
+        { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.06)' : colors.surfaceContainer },
+        isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+      ]}
+    >
       <View style={styles.aiHeader}>
         <View style={styles.aiHeaderLeft}>
-          <MaterialCommunityIcons name="creation" size={18} color={colors.primary} />
+          <MaterialCommunityIcons name="creation" size={18} color={isAmbientActive ? '#FFFFFF' : colors.primary} />
           <Text style={[styles.aiHeaderTitle, { color: colors.text }]}>AI Insights</Text>
         </View>
-        <View style={[styles.aiTabs, { backgroundColor: colors.surfaceContainerHigh }]}>
+        <View style={[styles.aiTabs, { backgroundColor: isAmbientActive ? 'rgba(0, 0, 0, 0.25)' : colors.surfaceContainerHigh }]}>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.aiTab, aiTab === 'lens' && { backgroundColor: colors.badgeBg }]}
+            style={[styles.aiTab, aiTab === 'lens' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : colors.badgeBg }]}
             onPress={() => {
               setAiTab('lens');
               if (!lensInsight && !lensLoading) fetchLensInsight();
             }}
           >
-            <Text style={[styles.aiTabText, { color: colors.textSecondary }, aiTab === 'lens' && { color: colors.primary, fontWeight: '700' }]}>Lens</Text>
+            <Text style={[styles.aiTabText, { color: colors.textSecondary }, aiTab === 'lens' && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>Lens</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.aiTab, aiTab === 'chat' && { backgroundColor: colors.badgeBg }]}
+            style={[styles.aiTab, aiTab === 'chat' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : colors.badgeBg }]}
             onPress={() => setAiTab('chat')}
           >
-            <Text style={[styles.aiTabText, { color: colors.textSecondary }, aiTab === 'chat' && { color: colors.primary, fontWeight: '700' }]}>Chat</Text>
+            <Text style={[styles.aiTabText, { color: colors.textSecondary }, aiTab === 'chat' && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>Chat</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.aiTab, aiTab === 'vibe' && { backgroundColor: colors.badgeBg }]}
+            style={[styles.aiTab, aiTab === 'vibe' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : colors.badgeBg }]}
             onPress={() => setAiTab('vibe')}
           >
-            <Text style={[styles.aiTabText, { color: colors.textSecondary }, aiTab === 'vibe' && { color: colors.primary, fontWeight: '700' }]}>Vibe</Text>
+            <Text style={[styles.aiTabText, { color: colors.textSecondary }, aiTab === 'vibe' && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>Vibe</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -595,14 +614,14 @@ const MovieAIPanel = React.memo(({
             <View>
               <Text style={[styles.aiErrorText, { color: colors.textSecondary }]}>Couldn't load insight.</Text>
               <TouchableOpacity activeOpacity={0.8} onPress={fetchLensInsight} style={styles.aiRetry}>
-                <Feather name="rotate-cw" size={13} color={colors.primary} />
-                <Text style={[styles.aiRetryText, { color: colors.primary }]}>Try again</Text>
+                <Feather name="rotate-cw" size={13} color={isAmbientActive ? '#FFFFFF' : colors.primary} />
+                <Text style={[styles.aiRetryText, { color: isAmbientActive ? '#FFFFFF' : colors.primary }]}>Try again</Text>
               </TouchableOpacity>
             </View>
           ) : lensInsight ? (
             <View>
-              <View style={[styles.aiVerdictPill, { backgroundColor: colors.badgeBg }]}>
-                <Text style={[styles.aiVerdictText, { color: colors.primary }]}>{lensInsight.worthIt}</Text>
+              <View style={[styles.aiVerdictPill, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.12)' : colors.badgeBg }]}>
+                <Text style={[styles.aiVerdictText, { color: isAmbientActive ? '#FFFFFF' : colors.primary }]}>{lensInsight.worthIt}</Text>
               </View>
               <Text style={[styles.aiFriendVerdict, { color: colors.text }]}>"{lensInsight.friendVerdict}"</Text>
               {lensInsight.vibe ? (
@@ -618,16 +637,24 @@ const MovieAIPanel = React.memo(({
                 </View>
               ) : null}
               {(lensInsight.certificationWarning || lensInsight.whatYoullSee) ? (
-                <View style={[styles.aiAdvisory, { backgroundColor: colors.surfaceContainerHigh }]}>
-                  <Text style={[styles.aiAdvisoryLabel, { color: colors.primary }]}>⚠ Content Advisory</Text>
+                <View style={[styles.aiAdvisory, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainerHigh }]}>
+                  <Text style={[styles.aiAdvisoryLabel, { color: isAmbientActive ? '#FFD60A' : colors.primary }]}>⚠ Content Advisory</Text>
                   <Text style={[styles.aiAdvisoryFieldValue, { color: colors.text }]}>{lensInsight.certificationWarning || lensInsight.whatYoullSee}</Text>
                 </View>
               ) : null}
             </View>
           ) : (
-            <TouchableOpacity activeOpacity={0.8} onPress={fetchLensInsight} style={[styles.aiGenerateBtn, { backgroundColor: colors.surfaceContainerHigh }]}>
-              <MaterialCommunityIcons name="creation" size={16} color={colors.primary} />
-              <Text style={[styles.aiGenerateText, { color: colors.primary }]}>Generate Lens insight</Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={fetchLensInsight}
+              style={[
+                styles.aiGenerateBtn,
+                { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainerHigh },
+                isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+              ]}
+            >
+              <MaterialCommunityIcons name="creation" size={16} color={isAmbientActive ? '#FFFFFF' : colors.primary} />
+              <Text style={[styles.aiGenerateText, { color: isAmbientActive ? '#FFFFFF' : colors.primary }]}>Generate Lens insight</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -661,9 +688,17 @@ const MovieAIPanel = React.memo(({
               decelerationRate="normal"
             />
           ) : (
-            <TouchableOpacity activeOpacity={0.8} onPress={fetchAiRecommendations} style={[styles.aiGenerateBtn, { backgroundColor: colors.surfaceContainerHigh }]}>
-              <MaterialCommunityIcons name="creation" size={16} color={colors.primary} />
-              <Text style={[styles.aiGenerateText, { color: colors.primary }]}>Find similar vibes</Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={fetchAiRecommendations}
+              style={[
+                styles.aiGenerateBtn,
+                { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainerHigh },
+                isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+              ]}
+            >
+              <MaterialCommunityIcons name="creation" size={16} color={isAmbientActive ? '#FFFFFF' : colors.primary} />
+              <Text style={[styles.aiGenerateText, { color: isAmbientActive ? '#FFFFFF' : colors.primary }]}>Find similar vibes</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -682,6 +717,7 @@ interface MovieEpisodesSectionProps {
   onShowMore: () => void;
   lastWatched: any;
   episodeThumbWidth: number;
+  isAmbientActive?: boolean;
   onPlay: (ep: TMDBEpisode) => void;
 }
 
@@ -695,6 +731,7 @@ const MovieEpisodesSection = React.memo(({
   onShowMore,
   lastWatched,
   episodeThumbWidth,
+  isAmbientActive,
   onPlay,
 }: MovieEpisodesSectionProps) => {
   const { colors } = useAppTheme();
@@ -717,8 +754,9 @@ const MovieEpisodesSection = React.memo(({
               key={s.id}
               style={[
                 styles.seasonPill,
-                { backgroundColor: colors.surfaceContainer },
-                selectedSeason === s.season_number && { backgroundColor: colors.primary },
+                { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+                selectedSeason === s.season_number && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
+                isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
               ]}
               onPress={() => onSelectSeason(s.season_number)}
             >
@@ -726,7 +764,7 @@ const MovieEpisodesSection = React.memo(({
                 style={[
                   styles.seasonPillText,
                   { color: colors.textSecondary },
-                  selectedSeason === s.season_number && { color: colors.onPrimary, fontWeight: '700' },
+                  selectedSeason === s.season_number && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' },
                 ]}
               >
                 {s.name}
@@ -753,6 +791,7 @@ const MovieEpisodesSection = React.memo(({
                 ep={ep}
                 isActive={isActive}
                 episodeThumbWidth={episodeThumbWidth}
+                isAmbientActive={isAmbientActive}
                 onPlay={onPlay}
               />
             );
@@ -761,7 +800,11 @@ const MovieEpisodesSection = React.memo(({
           {episodes.length > episodesLimit ? (
             <TouchableOpacity
               activeOpacity={0.8}
-              style={[styles.showMoreEpBtn, { backgroundColor: colors.surfaceContainer }]}
+              style={[
+                styles.showMoreEpBtn,
+                { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+                isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+              ]}
               onPress={onShowMore}
             >
               <Text style={[styles.showMoreEpText, { color: colors.text }]}>
@@ -781,7 +824,7 @@ const MovieEpisodesSection = React.memo(({
 
 export default function DetailPage() {
   const router = useRouter();
-  const { colors, isDark } = useAppTheme();
+  const { colors, isDark, ambientTheming } = useAppTheme();
   const { id, media_type } = useLocalSearchParams();
   const { width, height } = useWindowDimensions();
   const isTablet = width >= 768;
@@ -860,12 +903,13 @@ export default function DetailPage() {
     : null;
   const { palette } = useImagePalette(heroThumbUrl);
 
-  const detailsBg = palette
-    ? (isDark ? palette.ambientDark : palette.ambientLight)
-    : colors.background;
+  const isAmbientActive = Boolean(ambientTheming && palette?.pastelDark);
 
-  const heroGradientColors: readonly [string, string, ...string[]] = palette
-    ? (isDark ? palette.gradientDark : palette.gradientLight)
+  // In ambient mode, no light mode or dark mode distinction: always use the pastel dark color
+  const detailsBg = isAmbientActive ? palette!.pastelDark : colors.background;
+
+  const heroGradientColors: readonly [string, string, ...string[]] = isAmbientActive
+    ? palette!.gradient
     : (isDark
         ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E']
         : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']);
@@ -1136,11 +1180,11 @@ export default function DetailPage() {
   }
 
   return (
-    <View style={[styles.root, { backgroundColor: detailsBg }]}>
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Lightweight Static Hero Backdrop */}
-      <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: detailsBg }]} pointerEvents="none">
+      <View style={[styles.heroContainer, { height: HEADER_HEIGHT }]} pointerEvents="none">
         <Image
           source={{ uri: getImageUrl(movie.poster_path, 'w500') }}
           style={StyleSheet.absoluteFill}
@@ -1150,7 +1194,7 @@ export default function DetailPage() {
           // contentPosition={{ top: 40, left: 'center' }}
         />
         <LinearGradient
-          colors={heroGradientColors}
+          colors={isDark ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E'] : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']}
           locations={[0, 0.45, 1]}
           style={StyleSheet.absoluteFill}
         />
@@ -1180,7 +1224,7 @@ export default function DetailPage() {
         {/* Lowered Details Card Spacer */}
         <View style={{ height: HEADER_HEIGHT -30}} />
 
-        <View style={[styles.cardTop, { backgroundColor: detailsBg }]}>
+        <View style={[styles.cardTop, { backgroundColor: colors.background }]}>
           {releaseYear ? (
             <Text style={[styles.heroEyebrow, { color: colors.primary }]}>
               {movie.media_type === 'tv' ? 'SERIES' : 'FILM'} · {releaseYear}
@@ -1242,7 +1286,11 @@ export default function DetailPage() {
                   <TouchableOpacity
                     activeOpacity={0.8}
                     key={g.id}
-                    style={[styles.genreCard, { backgroundColor: colors.surfaceContainer, borderWidth: 0 }]}
+                    style={[
+                      styles.genreCard,
+                      { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer, borderWidth: 0 },
+                      isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+                    ]}
                     onPress={() =>
                       router.push(
                         `/viewall?title=${encodeURIComponent(g.name)}&type=${encodeURIComponent(
@@ -1251,7 +1299,7 @@ export default function DetailPage() {
                       )
                     }
                   >
-                    <Ionicons name={iconName} size={13} color={colors.primary} style={styles.genreCardIcon} />
+                    <Ionicons name={iconName} size={13} color={isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary} style={styles.genreCardIcon} />
                     <Text style={[styles.genreCardText, { color: colors.text }]}>{g.name}</Text>
                   </TouchableOpacity>
                 );
@@ -1264,14 +1312,19 @@ export default function DetailPage() {
             sourceStatus={sourceStatus}
             lastWatched={lastWatched}
             mediaType={movie.media_type}
-            boldColor={palette?.bold}
+            isAmbientMode={isAmbientActive}
             onPlay={() => handlePlay()}
           />
 
           {/* Primary Download CTA */}
           <TouchableOpacity
             activeOpacity={0.9}
-            style={[styles.primaryCtaBtn, styles.downloadCtaBtn, { backgroundColor: colors.surfaceContainer }]}
+            style={[
+              styles.primaryCtaBtn,
+              styles.downloadCtaBtn,
+              { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+              isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+            ]}
             onPress={() => setTorrentModalVisible(true)}
           >
             <Feather name="download" size={19} color={colors.text} />
@@ -1279,10 +1332,16 @@ export default function DetailPage() {
           </TouchableOpacity>
 
           {/* Micro-rendered Action Dock: Watchlist, Watched, Telegram */}
-          <MovieActionDock movie={movie} />
+          <MovieActionDock
+            movie={movie}
+            isAmbientActive={isAmbientActive}
+          />
 
           {/* Micro-rendered Overview */}
-          <MovieOverview overview={movie.overview} />
+          <MovieOverview
+            overview={movie.overview}
+            isAmbientActive={isAmbientActive}
+          />
 
           {/* TIER 1: Directors & Cast (Mounts first, immediately below overview) */}
           {renderStage >= 1 && (
@@ -1361,6 +1420,7 @@ export default function DetailPage() {
                   onShowMore={() => setEpisodesLimit((prev) => prev + 15)}
                   lastWatched={lastWatched}
                   episodeThumbWidth={episodeThumbWidth}
+                  isAmbientActive={isAmbientActive}
                   onPlay={handlePlay}
                 />
               ) : null}
@@ -1395,7 +1455,7 @@ export default function DetailPage() {
                     style={StyleSheet.absoluteFill}
                   />
                   <View style={styles.collectionContent}>
-                    <Text style={[styles.collectionSubtitle, { color: colors.primary }]}>
+                    <Text style={[styles.collectionSubtitle, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]}>
                       Part of a Collection {collectionData?.parts?.length ? `• ${collectionData.parts.length} Movies` : ''}
                     </Text>
                     <Text style={styles.collectionName} numberOfLines={2}>
@@ -1413,6 +1473,7 @@ export default function DetailPage() {
                 genres={genres}
                 similarCardWidth={similarCardWidth}
                 renderSimilarItem={renderSimilarItem}
+                isAmbientActive={isAmbientActive}
               />
 
               {/* Photos & Scene Images Gallery */}
