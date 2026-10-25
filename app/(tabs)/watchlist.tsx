@@ -156,8 +156,8 @@ const WatchlistHeaderTabs = React.memo(({
       pointerEvents="box-none"
     >
       <LinearGradient
-        colors={isDark ? ['#121212', 'rgba(18, 18, 18, 0.85)', 'transparent'] : [colors.background, 'rgba(248, 249, 250, 0.85)', 'transparent']}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insetsTop + 100 }}
+        colors={isDark ? ['#121212', 'rgba(18, 18, 18, 0.85)', 'transparent'] : [colors.background, 'rgba(226, 231, 236, 0.71)', 'transparent']}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insetsTop + 80 }}
         pointerEvents="none"
       />
 

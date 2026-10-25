@@ -50,7 +50,8 @@ import MovieChatSection from '../../src/components/movie/MovieChatSection';
 import { MovieDetailSkeleton } from '../../src/components/movie/MovieDetailSkeleton';
 import MovieMediaGallery from '../../src/components/movie/MovieMediaGallery';
 import MovieTorrentModal from '../../src/components/movie/MovieTorrentModal';
-import { useAppTheme } from '../../src/theme';
+import { useAppTheme, getActiveGlowShadow } from '../../src/theme';
+import { useImagePalette } from '../../src/utils/colorExtractor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 const INITIAL_EPISODES_LIMIT = 8;
@@ -423,10 +424,11 @@ interface PlayCTAButtonProps {
   sourceStatus: 'checking' | 'available' | 'unavailable';
   lastWatched: any;
   mediaType?: string;
+  boldColor?: string;
   onPlay: () => void;
 }
 
-const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, onPlay }: PlayCTAButtonProps) => {
+const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, boldColor, onPlay }: PlayCTAButtonProps) => {
   const { colors, isDark, useMaterialYou } = useAppTheme();
   const isUnavailable = sourceStatus === 'unavailable';
   const isChecking = sourceStatus === 'checking';
@@ -442,6 +444,8 @@ const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, onPlay
 
   const buttonBg = isUnavailable
     ? colors.surfaceContainerHigh
+    : boldColor
+    ? boldColor
     : useMaterialYou
     ? colors.primary
     : isDark
@@ -450,18 +454,23 @@ const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, onPlay
 
   const contentColor = isUnavailable
     ? colors.textMuted
+    : boldColor
+    ? '#FFFFFF'
     : useMaterialYou
     ? colors.onPrimary
     : isDark
     ? '#000000'
     : colors.text;
 
+  const glowStyle = boldColor && !isUnavailable ? getActiveGlowShadow(boldColor) : null;
+
   return (
     <TouchableOpacity
-      activeOpacity={0.9}
+      activeOpacity={0.88}
       style={[
         styles.primaryCtaBtn,
         { backgroundColor: buttonBg },
+        glowStyle,
       ]}
       onPress={onPlay}
       disabled={sourceStatus !== 'available'}
@@ -844,6 +853,23 @@ export default function DetailPage() {
   const castCardWidth = isTablet ? 120 : width * 0.26;
   const episodeThumbWidth = isTablet ? 200 : width * 0.34;
 
+  const heroThumbUrl = movie?.poster_path
+    ? getImageUrl(movie.poster_path, 'w92')
+    : movie?.backdrop_path
+    ? getImageUrl(movie.backdrop_path, 'w300')
+    : null;
+  const { palette } = useImagePalette(heroThumbUrl);
+
+  const detailsBg = palette
+    ? (isDark ? palette.ambientDark : palette.ambientLight)
+    : colors.background;
+
+  const heroGradientColors: readonly [string, string, ...string[]] = palette
+    ? (isDark ? palette.gradientDark : palette.gradientLight)
+    : (isDark
+        ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E']
+        : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']);
+
   useEffect(() => {
     const onBack = () => {
       if (router.canGoBack()) {
@@ -1110,11 +1136,11 @@ export default function DetailPage() {
   }
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
+    <View style={[styles.root, { backgroundColor: detailsBg }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Lightweight Static Hero Backdrop */}
-      <View style={[styles.heroContainer, { height: HEADER_HEIGHT }]} pointerEvents="none">
+      <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: detailsBg }]} pointerEvents="none">
         <Image
           source={{ uri: getImageUrl(movie.poster_path, 'w500') }}
           style={StyleSheet.absoluteFill}
@@ -1124,7 +1150,7 @@ export default function DetailPage() {
           // contentPosition={{ top: 40, left: 'center' }}
         />
         <LinearGradient
-          colors={isDark ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E'] : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']}
+          colors={heroGradientColors}
           locations={[0, 0.45, 1]}
           style={StyleSheet.absoluteFill}
         />
@@ -1154,7 +1180,7 @@ export default function DetailPage() {
         {/* Lowered Details Card Spacer */}
         <View style={{ height: HEADER_HEIGHT -30}} />
 
-        <View style={[styles.cardTop, { backgroundColor: colors.background }]}>
+        <View style={[styles.cardTop, { backgroundColor: detailsBg }]}>
           {releaseYear ? (
             <Text style={[styles.heroEyebrow, { color: colors.primary }]}>
               {movie.media_type === 'tv' ? 'SERIES' : 'FILM'} · {releaseYear}
@@ -1238,6 +1264,7 @@ export default function DetailPage() {
             sourceStatus={sourceStatus}
             lastWatched={lastWatched}
             mediaType={movie.media_type}
+            boldColor={palette?.bold}
             onPlay={() => handlePlay()}
           />
 

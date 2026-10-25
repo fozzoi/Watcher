@@ -43,7 +43,8 @@ import {
   getFullDetails,
 } from '../../src/tmdb';
 import { CastDetailSkeleton } from '../../src/components/cast/CastDetailSkeleton';
-import { useAppTheme, shadows } from '../../src/theme';
+import { useAppTheme, shadows, getActiveGlowShadow } from '../../src/theme';
+import { useImagePalette } from '../../src/utils/colorExtractor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
@@ -349,13 +350,25 @@ export default function CastDetails() {
   }
 
   const heroImagePath = person.profile_path || (personImages.length > 0 ? personImages[0].file_path : null);
+  const heroThumbUrl = heroImagePath ? getImageUrl(heroImagePath, 'w92') : null;
+  const { palette } = useImagePalette(heroThumbUrl);
+
+  const detailsBg = palette
+    ? (isDark ? palette.ambientDark : palette.ambientLight)
+    : colors.background;
+
+  const heroGradientColors: readonly [string, string, ...string[]] = palette
+    ? (isDark ? palette.gradientDark : palette.gradientLight)
+    : (isDark
+        ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E']
+        : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']);
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
+    <View style={[styles.root, { backgroundColor: detailsBg }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Lightweight Static Hero Backdrop (Matched with Movie DetailPage) */}
-      <View style={[styles.heroContainer, { height: HEADER_HEIGHT }]} pointerEvents="none">
+      <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: detailsBg }]} pointerEvents="none">
         <Image
           source={{ uri: getImageUrl(heroImagePath, 'w500') }}
           style={StyleSheet.absoluteFill}
@@ -364,7 +377,7 @@ export default function CastDetails() {
           priority="high"
         />
         <LinearGradient
-          colors={isDark ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E'] : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']}
+          colors={heroGradientColors}
           locations={[0, 0.45, 1]}
           style={StyleSheet.absoluteFill}
         />
@@ -383,9 +396,9 @@ export default function CastDetails() {
       >
         <View style={{ height: HEADER_HEIGHT -30}} />
 
-        <View style={[styles.cardTop, { backgroundColor: colors.background }]}>
+        <View style={[styles.cardTop, { backgroundColor: detailsBg }]}>
           {person.known_for_department ? (
-            <Text style={[styles.heroEyebrow, { color: colors.primary }]}>{person.known_for_department.toUpperCase()}</Text>
+            <Text style={[styles.heroEyebrow, { color: palette?.bold || colors.primary }]}>{person.known_for_department.toUpperCase()}</Text>
           ) : null}
 
           <View style={styles.titleRow}>
