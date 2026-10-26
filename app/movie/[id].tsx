@@ -51,7 +51,7 @@ import { MovieDetailSkeleton } from '../../src/components/movie/MovieDetailSkele
 import MovieMediaGallery from '../../src/components/movie/MovieMediaGallery';
 import MovieTorrentModal from '../../src/components/movie/MovieTorrentModal';
 import { useAppTheme, getActiveGlowShadow } from '../../src/theme';
-import { useImagePalette } from '../../src/utils/colorExtractor';
+import { useImagePalette, warmPaletteForMedia, AMBIENT_PENDING_BG } from '../../src/utils/colorExtractor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 const INITIAL_EPISODES_LIMIT = 8;
@@ -119,7 +119,7 @@ const CardShimmer = React.memo(({ width, height }: { width: DimensionValue; heig
   </View>
 ));
 
-const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => {
+const MemoizedSimilarCard = React.memo(({ item, cardWidth, isAmbientActive, onPress }: any) => {
   const { colors } = useAppTheme();
   const posterUrl = getImageUrl(item.poster_path, 'w342');
   return (
@@ -130,7 +130,7 @@ const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => {
     >
       <Image
         source={{ uri: posterUrl }}
-        style={[styles.similarImg, { width: cardWidth, height: cardWidth * 1.5, backgroundColor: colors.surfaceContainer }]}
+        style={[styles.similarImg, { width: cardWidth, height: cardWidth * 1.5, backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer }]}
         contentFit="cover"
         cachePolicy="disk"
         recyclingKey={posterUrl}
@@ -139,14 +139,14 @@ const MemoizedSimilarCard = React.memo(({ item, cardWidth, onPress }: any) => {
         <Ionicons name="star" size={9} color={C.gold} />
         <Text style={styles.ratingText}>{item.vote_average ? item.vote_average.toFixed(1) : 'N/A'}</Text>
       </View>
-      <Text style={[styles.similarTitle, { color: colors.text }]} numberOfLines={2}>
+      <Text style={[styles.similarTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]} numberOfLines={2}>
         {item.title || item.name}
       </Text>
     </TouchableOpacity>
   );
 });
 
-const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => {
+const MemoizedDirectorCard = React.memo(({ item, mediaType, isAmbientActive, onPress }: any) => {
   const { colors } = useAppTheme();
   const profileUrl = item.profile_path
     ? getImageUrl(item.profile_path, 'w185')
@@ -154,21 +154,25 @@ const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => {
   return (
     <TouchableOpacity
       activeOpacity={0.92}
-      style={[styles.directorCard, { backgroundColor: colors.surfaceContainer }]}
-      onPress={() => onPress(item.id)}
+      style={[
+        styles.directorCard,
+        { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+        isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+      ]}
+      onPress={() => onPress(item.id, item)}
     >
       <Image
         source={{ uri: profileUrl }}
-        style={[styles.directorImg, { backgroundColor: colors.surfaceContainerHigh }]}
+        style={[styles.directorImg, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainerHigh }]}
         contentFit="cover"
         cachePolicy="disk"
         recyclingKey={profileUrl}
       />
       <View style={{ maxWidth: 140 }}>
-        <Text style={[styles.directorName, { color: colors.text }]} numberOfLines={1}>
+        <Text style={[styles.directorName, { color: isAmbientActive ? '#FFFFFF' : colors.text }]} numberOfLines={1}>
           {item.name}
         </Text>
-        <Text style={[styles.directorRole, { color: colors.textSecondary }]} numberOfLines={1}>
+        <Text style={[styles.directorRole, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]} numberOfLines={1}>
           {item.role || (mediaType === 'tv' ? 'Creator' : 'Director')}
         </Text>
       </View>
@@ -176,7 +180,7 @@ const MemoizedDirectorCard = React.memo(({ item, mediaType, onPress }: any) => {
   );
 });
 
-const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => {
+const MemoizedCastCard = React.memo(({ item, cardWidth, isAmbientActive, onPress }: any) => {
   const { colors } = useAppTheme();
   const profileUrl = item.profile_path
     ? getImageUrl(item.profile_path, 'w185')
@@ -185,20 +189,20 @@ const MemoizedCastCard = React.memo(({ item, cardWidth, onPress }: any) => {
     <TouchableOpacity
       activeOpacity={0.92}
       style={{ width: cardWidth }}
-      onPress={() => onPress(item.id)}
+      onPress={() => onPress(item.id, item)}
     >
       <Image
         source={{ uri: profileUrl }}
-        style={[styles.castImg, { width: cardWidth, height: cardWidth * 1.35, backgroundColor: colors.surfaceContainer }]}
+        style={[styles.castImg, { width: cardWidth, height: cardWidth * 1.35, backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer }]}
         contentFit="cover"
         cachePolicy="disk"
         recyclingKey={profileUrl}
       />
-      <Text style={[styles.castName, { color: colors.text }]} numberOfLines={1}>
+      <Text style={[styles.castName, { color: isAmbientActive ? '#FFFFFF' : colors.text }]} numberOfLines={1}>
         {item.name}
       </Text>
       {item.character ? (
-        <Text style={[styles.castCharacter, { color: colors.textSecondary }]} numberOfLines={1}>
+        <Text style={[styles.castCharacter, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]} numberOfLines={1}>
           {item.character}
         </Text>
       ) : null}
@@ -229,7 +233,7 @@ const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, isAmbi
       <View style={{ position: 'relative' }}>
         <Image
           source={{ uri: stillUrl }}
-          style={[styles.epThumb, { width: episodeThumbWidth, height: episodeThumbWidth * 0.56, backgroundColor: colors.surfaceContainerHigh }]}
+          style={[styles.epThumb, { width: episodeThumbWidth, height: episodeThumbWidth * 0.56, backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainerHigh }]}
           contentFit="cover"
           cachePolicy="disk"
           recyclingKey={stillUrl}
@@ -241,19 +245,23 @@ const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, isAmbi
       </View>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={[styles.epNum, { color: colors.textSecondary }, isActive && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '800' }]}>
+          <Text style={[
+            styles.epNum,
+            { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
+            isActive && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '800' }
+          ]}>
             EPISODE {ep.episode_number}
           </Text>
           {ep.air_date ? (
-            <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+            <Text style={{ fontSize: 11, color: isAmbientActive ? 'rgba(255, 255, 255, 0.60)' : colors.textSecondary }}>
               {dayjs(ep.air_date).format('MMM D, YYYY')}
             </Text>
           ) : null}
         </View>
-        <Text style={[styles.epTitle, { color: colors.text }]} numberOfLines={1}>
+        <Text style={[styles.epTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]} numberOfLines={1}>
           {ep.name}
         </Text>
-        <Text style={[styles.epOverview, { color: colors.textSecondary }]} numberOfLines={2}>
+        <Text style={[styles.epOverview, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]} numberOfLines={2}>
           {ep.overview}
         </Text>
       </View>
@@ -367,9 +375,9 @@ const MovieActionDock = React.memo(({ movie, isAmbientActive }: MovieActionDockP
         <Ionicons
           name={isInWatchlist ? 'bookmark' : 'bookmark-outline'}
           size={18}
-          color={isInWatchlist ? (isAmbientActive ? '#FFFFFF' : colors.primary) : colors.text}
+          color={isInWatchlist ? (isAmbientActive ? '#FFFFFF' : colors.primary) : (isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.text)}
         />
-        <Text style={[styles.actionBtnText, { color: colors.textSecondary }, isInWatchlist && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>
+        <Text style={[styles.actionBtnText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, isInWatchlist && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>
           Watchlist
         </Text>
       </TouchableOpacity>
@@ -387,9 +395,9 @@ const MovieActionDock = React.memo(({ movie, isAmbientActive }: MovieActionDockP
         <Ionicons
           name={isWatched ? 'checkmark-circle' : 'checkmark-circle-outline'}
           size={18}
-          color={isWatched ? C.green : colors.textSecondary}
+          color={isWatched ? C.green : (isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary)}
         />
-        <Text style={[styles.actionBtnText, { color: colors.textSecondary }, isWatched && { color: C.green }]}>Watched</Text>
+        <Text style={[styles.actionBtnText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, isWatched && { color: C.green }]}>Watched</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -401,8 +409,8 @@ const MovieActionDock = React.memo(({ movie, isAmbientActive }: MovieActionDockP
         ]}
         onPress={openTelegramSearch}
       >
-        <Ionicons name="paper-plane-outline" size={17} color={colors.textSecondary} />
-        <Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>Telegram</Text>
+        <Ionicons name="paper-plane-outline" size={17} color={isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary} />
+        <Text style={[styles.actionBtnText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]}>Telegram</Text>
       </TouchableOpacity>
     </View>
   );
@@ -421,7 +429,7 @@ const MovieOverview = React.memo(({ overview, isAmbientActive }: MovieOverviewPr
 
   return (
     <View style={styles.section}>
-      <Text style={[styles.overviewText, { color: colors.text }]}>
+      <Text style={[styles.overviewText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.88)' : colors.text }]}>
         {isExpanded || !isLong ? overview : `${overview.slice(0, 220)}…`}
       </Text>
       {isLong ? (
@@ -456,7 +464,7 @@ const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, isAmbi
     : 'Play';
 
   const buttonBg = isUnavailable
-    ? colors.surfaceContainerHigh
+    ? (isAmbientMode ? 'rgba(255, 255, 255, 0.15)' : colors.surfaceContainerHigh)
     : isAmbientMode
     ? 'rgba(255, 255, 255, 0.92)'
     : useMaterialYou
@@ -466,7 +474,7 @@ const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, isAmbi
     : (colors.surfaceVariant || '#E5E7EB');
 
   const contentColor = isUnavailable
-    ? colors.textMuted
+    ? (isAmbientMode ? 'rgba(255, 255, 255, 0.45)' : colors.textMuted)
     : isAmbientMode
     ? '#000000'
     : useMaterialYou
@@ -572,7 +580,7 @@ const MovieAIPanel = React.memo(({
       <View style={styles.aiHeader}>
         <View style={styles.aiHeaderLeft}>
           <MaterialCommunityIcons name="creation" size={18} color={isAmbientActive ? '#FFFFFF' : colors.primary} />
-          <Text style={[styles.aiHeaderTitle, { color: colors.text }]}>AI Insights</Text>
+          <Text style={[styles.aiHeaderTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>AI Insights</Text>
         </View>
         <View style={[styles.aiTabs, { backgroundColor: isAmbientActive ? 'rgba(0, 0, 0, 0.25)' : colors.surfaceContainerHigh }]}>
           <TouchableOpacity
@@ -583,21 +591,21 @@ const MovieAIPanel = React.memo(({
               if (!lensInsight && !lensLoading) fetchLensInsight();
             }}
           >
-            <Text style={[styles.aiTabText, { color: colors.textSecondary }, aiTab === 'lens' && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>Lens</Text>
+            <Text style={[styles.aiTabText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, aiTab === 'lens' && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>Lens</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.8}
             style={[styles.aiTab, aiTab === 'chat' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : colors.badgeBg }]}
             onPress={() => setAiTab('chat')}
           >
-            <Text style={[styles.aiTabText, { color: colors.textSecondary }, aiTab === 'chat' && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>Chat</Text>
+            <Text style={[styles.aiTabText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, aiTab === 'chat' && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>Chat</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.8}
             style={[styles.aiTab, aiTab === 'vibe' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : colors.badgeBg }]}
             onPress={() => setAiTab('vibe')}
           >
-            <Text style={[styles.aiTabText, { color: colors.textSecondary }, aiTab === 'vibe' && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>Vibe</Text>
+            <Text style={[styles.aiTabText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, aiTab === 'vibe' && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>Vibe</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -612,7 +620,7 @@ const MovieAIPanel = React.memo(({
             </View>
           ) : lensError ? (
             <View>
-              <Text style={[styles.aiErrorText, { color: colors.textSecondary }]}>Couldn't load insight.</Text>
+              <Text style={[styles.aiErrorText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]}>Couldn't load insight.</Text>
               <TouchableOpacity activeOpacity={0.8} onPress={fetchLensInsight} style={styles.aiRetry}>
                 <Feather name="rotate-cw" size={13} color={isAmbientActive ? '#FFFFFF' : colors.primary} />
                 <Text style={[styles.aiRetryText, { color: isAmbientActive ? '#FFFFFF' : colors.primary }]}>Try again</Text>
@@ -623,23 +631,23 @@ const MovieAIPanel = React.memo(({
               <View style={[styles.aiVerdictPill, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.12)' : colors.badgeBg }]}>
                 <Text style={[styles.aiVerdictText, { color: isAmbientActive ? '#FFFFFF' : colors.primary }]}>{lensInsight.worthIt}</Text>
               </View>
-              <Text style={[styles.aiFriendVerdict, { color: colors.text }]}>"{lensInsight.friendVerdict}"</Text>
+              <Text style={[styles.aiFriendVerdict, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>"{lensInsight.friendVerdict}"</Text>
               {lensInsight.vibe ? (
                 <View style={styles.aiField}>
-                  <Text style={[styles.aiFieldLabel, { color: colors.textSecondary }]}>Vibe</Text>
-                  <Text style={[styles.aiFieldValue, { color: colors.text }]}>{lensInsight.vibe}</Text>
+                  <Text style={[styles.aiFieldLabel, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.65)' : colors.textSecondary }]}>Vibe</Text>
+                  <Text style={[styles.aiFieldValue, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>{lensInsight.vibe}</Text>
                 </View>
               ) : null}
               {lensInsight.whatItsActuallyAbout ? (
                 <View style={styles.aiField}>
-                  <Text style={[styles.aiFieldLabel, { color: colors.textSecondary }]}>Story & Premise</Text>
-                  <Text style={[styles.aiFieldValue, { color: colors.text }]}>{lensInsight.whatItsActuallyAbout}</Text>
+                  <Text style={[styles.aiFieldLabel, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.65)' : colors.textSecondary }]}>Story & Premise</Text>
+                  <Text style={[styles.aiFieldValue, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>{lensInsight.whatItsActuallyAbout}</Text>
                 </View>
               ) : null}
               {(lensInsight.certificationWarning || lensInsight.whatYoullSee) ? (
                 <View style={[styles.aiAdvisory, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainerHigh }]}>
                   <Text style={[styles.aiAdvisoryLabel, { color: isAmbientActive ? '#FFD60A' : colors.primary }]}>⚠ Content Advisory</Text>
-                  <Text style={[styles.aiAdvisoryFieldValue, { color: colors.text }]}>{lensInsight.certificationWarning || lensInsight.whatYoullSee}</Text>
+                  <Text style={[styles.aiAdvisoryFieldValue, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>{lensInsight.certificationWarning || lensInsight.whatYoullSee}</Text>
                 </View>
               ) : null}
             </View>
@@ -664,6 +672,7 @@ const MovieAIPanel = React.memo(({
           releaseYear={releaseYear}
           directors={directors}
           genres={genres}
+          isAmbientActive={isAmbientActive}
         />
       ) : (
         <View>
@@ -739,7 +748,7 @@ const MovieEpisodesSection = React.memo(({
 
   return (
     <View style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>Episodes</Text>
+      <Text style={[styles.sectionTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>Episodes</Text>
 
       <ScrollView
         horizontal
@@ -763,7 +772,7 @@ const MovieEpisodesSection = React.memo(({
               <Text
                 style={[
                   styles.seasonPillText,
-                  { color: colors.textSecondary },
+                  { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
                   selectedSeason === s.season_number && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' },
                 ]}
               >
@@ -807,7 +816,7 @@ const MovieEpisodesSection = React.memo(({
               ]}
               onPress={onShowMore}
             >
-              <Text style={[styles.showMoreEpText, { color: colors.text }]}>
+              <Text style={[styles.showMoreEpText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>
                 Show more episodes ({episodes.length - episodesLimit} remaining)
               </Text>
             </TouchableOpacity>
@@ -897,19 +906,27 @@ export default function DetailPage() {
   const episodeThumbWidth = isTablet ? 200 : width * 0.34;
 
   const heroThumbUrl = movie?.poster_path
-    ? getImageUrl(movie.poster_path, 'w92')
+    ? getImageUrl(movie.poster_path, 'w185')
     : movie?.backdrop_path
     ? getImageUrl(movie.backdrop_path, 'w300')
     : null;
-  const { palette } = useImagePalette(heroThumbUrl);
+  const { palette, failed: paletteFailed } = useImagePalette(heroThumbUrl);
 
-  const isAmbientActive = Boolean(ambientTheming && palette?.pastelDark);
+  // Palette still extracting (or being warmed by the list screen we came from):
+  // enter ambient mode immediately with the neutral backdrop instead of painting
+  // the default theme first and switching afterwards.
+  const palettePending = Boolean(ambientTheming && heroThumbUrl && !palette && !paletteFailed);
+  const isAmbientActive = Boolean(ambientTheming && (palette?.pastelDark || palettePending));
 
   // In ambient mode, no light mode or dark mode distinction: always use the pastel dark color
-  const detailsBg = isAmbientActive ? palette!.pastelDark : colors.background;
+  const detailsBg = palette?.pastelDark
+    ? palette.pastelDark
+    : isAmbientActive
+    ? AMBIENT_PENDING_BG
+    : colors.background;
 
   const heroGradientColors: readonly [string, string, ...string[]] = isAmbientActive
-    ? palette!.gradient
+    ? palette?.gradient ?? ['transparent', 'rgba(255,255,255,0.06)', AMBIENT_PENDING_BG]
     : (isDark
         ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E']
         : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']);
@@ -1156,12 +1173,14 @@ export default function DetailPage() {
       <MemoizedSimilarCard
         item={item}
         cardWidth={similarCardWidth}
-        onPress={(clicked: any) =>
-          router.push(`/movie/${clicked.id}?media_type=${clicked.media_type || 'movie'}`)
-        }
+        isAmbientActive={isAmbientActive}
+        onPress={(clicked: any) => {
+          warmPaletteForMedia(clicked);
+          router.push(`/movie/${clicked.id}?media_type=${clicked.media_type || 'movie'}`);
+        }}
       />
     ),
-    [similarCardWidth, router]
+    [similarCardWidth, isAmbientActive, router]
   );
 
   const displayTitle = movie?.title || movie?.name;
@@ -1180,11 +1199,11 @@ export default function DetailPage() {
   }
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
+    <View style={[styles.root, { backgroundColor: detailsBg }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={isAmbientActive || isDark ? "light-content" : "dark-content"} />
 
       {/* Lightweight Static Hero Backdrop */}
-      <View style={[styles.heroContainer, { height: HEADER_HEIGHT }]} pointerEvents="none">
+      <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: detailsBg }]} pointerEvents="none">
         <Image
           source={{ uri: getImageUrl(movie.poster_path, 'w500') }}
           style={StyleSheet.absoluteFill}
@@ -1194,7 +1213,7 @@ export default function DetailPage() {
           // contentPosition={{ top: 40, left: 'center' }}
         />
         <LinearGradient
-          colors={isDark ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E'] : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']}
+          colors={heroGradientColors}
           locations={[0, 0.45, 1]}
           style={StyleSheet.absoluteFill}
         />
@@ -1222,52 +1241,52 @@ export default function DetailPage() {
         scrollEventThrottle={32}
       >
         {/* Lowered Details Card Spacer */}
-        <View style={{ height: HEADER_HEIGHT -30}} />
+        <View style={{ height: HEADER_HEIGHT - 30 }} />
 
-        <View style={[styles.cardTop, { backgroundColor: colors.background }]}>
+        <View style={[styles.cardTop, { backgroundColor: detailsBg }]}>
           {releaseYear ? (
-            <Text style={[styles.heroEyebrow, { color: colors.primary }]}>
+            <Text style={[styles.heroEyebrow, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]}>
               {movie.media_type === 'tv' ? 'SERIES' : 'FILM'} · {releaseYear}
             </Text>
           ) : null}
 
           <View style={styles.titleRow}>
-            <Text style={[styles.title, { color: colors.text }]} numberOfLines={3}>
+            <Text style={[styles.title, { color: isAmbientActive ? '#FFFFFF' : colors.text }]} numberOfLines={3}>
               {displayTitle}
             </Text>
             <TouchableOpacity activeOpacity={0.8} onPress={copyTitle} style={styles.copyBtn}>
-              <Feather name="copy" size={16} color={colors.textSecondary} />
+              <Feather name="copy" size={16} color={isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           {/* Core Metadata */}
           <View style={styles.metaRow}>
             {movie.runtime && movie.runtime > 0 ? (
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+              <Text style={[styles.metaText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]}>
                 {Math.floor(movie.runtime / 60)}h {movie.runtime % 60}m
               </Text>
             ) : null}
             {movie.vote_average && movie.vote_average > 0 ? (
               <View style={styles.metaInline}>
-                {movie.runtime && movie.runtime > 0 ? <Text style={[styles.metaDot, { color: colors.textSecondary }]}>·</Text> : null}
+                {movie.runtime && movie.runtime > 0 ? <Text style={[styles.metaDot, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.45)' : colors.textSecondary }]}>·</Text> : null}
                 <Ionicons name="star" size={11} color="#FFD60A" />
-                <Text style={[styles.metaText, { color: colors.textSecondary, marginLeft: 4 }]}>
+                <Text style={[styles.metaText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary, marginLeft: 4 }]}>
                   {movie.vote_average.toFixed(1)}
                 </Text>
               </View>
             ) : null}
             {movie.certification ? (
               <View style={styles.metaInline}>
-                <Text style={[styles.metaDot, { color: colors.textSecondary }]}>·</Text>
-                <View style={[styles.certPill, { backgroundColor: colors.surfaceContainer }]}>
-                  <Text style={[styles.certText, { color: colors.text }]}>{movie.certification}</Text>
+                <Text style={[styles.metaDot, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.45)' : colors.textSecondary }]}>·</Text>
+                <View style={[styles.certPill, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.12)' : colors.surfaceContainer }]}>
+                  <Text style={[styles.certText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>{movie.certification}</Text>
                 </View>
               </View>
             ) : null}
             {movie.media_type === 'tv' && movie.number_of_seasons ? (
               <View style={styles.metaInline}>
-                <Text style={[styles.metaDot, { color: colors.textSecondary }]}>·</Text>
-                <Text style={[styles.metaText, { color: colors.textSecondary }]}>{movie.number_of_seasons} Seasons</Text>
+                <Text style={[styles.metaDot, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.45)' : colors.textSecondary }]}>·</Text>
+                <Text style={[styles.metaText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]}>{movie.number_of_seasons} Seasons</Text>
               </View>
             ) : null}
           </View>
@@ -1300,7 +1319,7 @@ export default function DetailPage() {
                     }
                   >
                     <Ionicons name={iconName} size={13} color={isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary} style={styles.genreCardIcon} />
-                    <Text style={[styles.genreCardText, { color: colors.text }]}>{g.name}</Text>
+                    <Text style={[styles.genreCardText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>{g.name}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -1327,8 +1346,8 @@ export default function DetailPage() {
             ]}
             onPress={() => setTorrentModalVisible(true)}
           >
-            <Feather name="download" size={19} color={colors.text} />
-            <Text style={[styles.primaryCtaText, { color: colors.text }]}>Download</Text>
+            <Feather name="download" size={19} color={isAmbientActive ? '#FFFFFF' : colors.text} />
+            <Text style={[styles.primaryCtaText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>Download</Text>
           </TouchableOpacity>
 
           {/* Micro-rendered Action Dock: Watchlist, Watched, Telegram */}
@@ -1348,7 +1367,7 @@ export default function DetailPage() {
             <>
               {/* Directors with In-Page Skeleton Placeholder */}
               <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                <Text style={[styles.sectionTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>
                   {movie.media_type === 'tv' ? 'Created by' : 'Directed by'}
                 </Text>
                 {!directors || directors.length === 0 ? (
@@ -1374,7 +1393,11 @@ export default function DetailPage() {
                         key={director.id}
                         item={director}
                         mediaType={movie?.media_type}
-                        onPress={(personId: number) => router.push(`/cast/${personId}`)}
+                        isAmbientActive={isAmbientActive}
+                        onPress={(personId: number, person?: any) => {
+                          warmPaletteForMedia(person);
+                          router.push(`/cast/${personId}`);
+                        }}
                       />
                     ))}
                   </ScrollView>
@@ -1383,7 +1406,7 @@ export default function DetailPage() {
 
               {/* Cast with In-Page Skeleton Placeholder */}
               <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Cast</Text>
+                <Text style={[styles.sectionTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>Cast</Text>
                 {!cast || cast.length === 0 ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
                     {[1, 2, 3, 4].map((i) => (
@@ -1401,7 +1424,11 @@ export default function DetailPage() {
                         key={castMember.id}
                         item={castMember}
                         cardWidth={castCardWidth}
-                        onPress={(personId: number) => router.push(`/cast/${personId}`)}
+                        isAmbientActive={isAmbientActive}
+                        onPress={(personId: number, person?: any) => {
+                          warmPaletteForMedia(person);
+                          router.push(`/cast/${personId}`);
+                        }}
                       />
                     ))}
                   </ScrollView>
@@ -1483,11 +1510,12 @@ export default function DetailPage() {
                 fallbackBackdrop={movie.backdrop_path}
                 fallbackPoster={movie.poster_path}
                 title={displayTitle}
+                isAmbientActive={isAmbientActive}
               />
 
               {/* Similar Titles with In-Page Skeleton Placeholder */}
               <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>More like this</Text>
+                <Text style={[styles.sectionTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>More like this</Text>
                 {!similarMovies || similarMovies.length === 0 ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
                     {[1, 2, 3, 4].map((i) => (

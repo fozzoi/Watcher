@@ -19,7 +19,7 @@ import { searchTorrents } from '../../src/Scraper';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
-import { useAppTheme, shadows } from '../../src/theme';
+import { useAppTheme, shadows, palette } from '../../src/theme';
 import { LoadingIndicator } from '../../src/components/shared/LoadingIndicator';
 import {
   Host,
@@ -262,30 +262,30 @@ export default function Index() {
     return visibleResults.map((item, index) => {
       const quality = getQualityInfo(item.name);
       const seedsCount = item.seeds || 0;
-      let seedColor = '#E50914'; 
-      if (seedsCount > 40) seedColor = '#30D158'; 
-      else if (seedsCount > 10) seedColor = '#FFD60A'; 
+      let seedColor = colors.primary; 
+      if (seedsCount > 40) seedColor = palette.green;
+      else if (seedsCount > 10) seedColor = palette.yellow;
 
       const match = item.url.match(/urn:btih:([a-fA-F0-9]{40})/i);
       const hash = match ? match[1].toUpperCase() : null;
       const isDownloadingThis = downloadingHash === hash;
 
       return (
-        <Animated.View key={index} entering={FadeInUp.delay(index * 60).springify()} style={styles.card}>
+        <Animated.View key={index} entering={FadeInUp.delay(index * 60).springify()} style={[styles.card, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
           {/* Top Row: Quality badge & Source */}
           <View style={styles.cardHeader}>
             <View style={[styles.qualityBadge, { backgroundColor: quality.bg, borderColor: quality.color + '40' }]}>
               <Text style={[styles.qualityText, { color: quality.color }]}>{quality.label}</Text>
             </View>
             {item.source ? (
-              <View style={styles.sourceBadge}>
-                <Text style={styles.sourceText}>{item.source}</Text>
+              <View style={[styles.sourceBadge, { backgroundColor: colors.surfaceContainerHigh }]}>
+                <Text style={[styles.sourceText, { color: colors.textMuted }]}>{item.source}</Text>
               </View>
             ) : null}
           </View>
 
           {/* Torrent Title */}
-          <Text style={styles.cardTitle} numberOfLines={2}>
+          <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
             {item.name}
           </Text>
 
@@ -297,15 +297,15 @@ export default function Index() {
             </View>
 
             <View style={styles.statPill}>
-              <Feather name="arrow-down" size={12} color="#888" />
-              <Text style={styles.statValue}>{item.peers || 0} Peers</Text>
+              <Feather name="arrow-down" size={12} color={colors.textSecondary} />
+              <Text style={[styles.statValue, { color: colors.textSecondary }]}>{item.peers || 0} Peers</Text>
             </View>
 
-            <View style={styles.dotSeparator} />
+            <View style={[styles.dotSeparator, { backgroundColor: colors.border }]} />
 
             <View style={styles.statPill}>
-              <MaterialCommunityIcons name="harddisk" size={12} color="#A8A8B6" />
-              <Text style={styles.sizeText}>{item.size}</Text>
+              <MaterialCommunityIcons name="harddisk" size={12} color={colors.textMuted} />
+              <Text style={[styles.sizeText, { color: colors.text }]}>{item.size}</Text>
             </View>
           </View>
 
@@ -314,16 +314,16 @@ export default function Index() {
             {/* Share .torrent file button */}
             <TouchableOpacity
               activeOpacity={0.85}
-              style={styles.shareFileBtn}
+              style={[styles.shareFileBtn, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}
               onPress={() => handleShareAsFile(item.url, item.name)}
               disabled={isDownloadingThis}
             >
               {isDownloadingThis ? (
-                <LoadingIndicator size={18} color="#FFF" />
+                <LoadingIndicator size={18} color={colors.text} />
               ) : (
                 <>
-                  <Feather name="share-2" size={15} color="#E5E5EB" style={{ marginRight: 6 }} />
-                  <Text style={styles.shareFileText}>Share .torrent</Text>
+                  <Feather name="share-2" size={15} color={colors.text} style={{ marginRight: 6 }} />
+                  <Text style={[styles.shareFileText, { color: colors.text }]}>Share .torrent</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -331,16 +331,16 @@ export default function Index() {
             {/* Copy Magnet Link Icon Button */}
             <TouchableOpacity
               activeOpacity={0.85}
-              style={styles.copyMagnetBtn}
+              style={[styles.copyMagnetBtn, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}
               onPress={() => handleCopyMagnet(item.url)}
             >
-              <Feather name="copy" size={15} color="#A8A8B6" />
+              <Feather name="copy" size={15} color={colors.textMuted} />
             </TouchableOpacity>
 
             {/* Primary Open Magnet Button */}
             <TouchableOpacity
               activeOpacity={0.88}
-              style={styles.openMagnetBtn}
+              style={[styles.openMagnetBtn, { backgroundColor: colors.primary }]}
               onPress={() => handleOpenMagnet(item.url)}
             >
               <MaterialCommunityIcons name="magnet" size={17} color="#FFF" style={{ marginRight: 6 }} />
@@ -368,14 +368,14 @@ export default function Index() {
 
         {!hasSearched && (
             <View style={styles.brandContainer}>
-                <MaterialCommunityIcons name="magnet-on" size={60} color="#E50914" style={{ marginBottom: 16 }} />
-                <Text style={styles.brandTitle}>Torrent Search</Text>
+                <MaterialCommunityIcons name="magnet-on" size={60} color={colors.primary} style={{ marginBottom: 16 }} />
+                <Text style={[styles.brandTitle, { color: colors.text }]}>Torrent Search</Text>
                 <TouchableOpacity activeOpacity={0.95} 
                     onPress={() => router.push("/history")}
-                    style={styles.historyPill}
+                    style={[styles.historyPill, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}
                 >
-                    <MaterialIcons name="history" size={16} color="#CCC" />
-                    <Text style={{ color: '#CCC', fontSize: 12, fontWeight: '600' }}>History</Text>
+                    <MaterialIcons name="history" size={16} color={colors.textSecondary} />
+                    <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '600' }}>History</Text>
                 </TouchableOpacity>
             </View>
         )}
@@ -408,11 +408,11 @@ export default function Index() {
                         onChangeText={setSearchQuery}
                         onSubmitEditing={() => handleSearch()}
                         returnKeyType="search"
-                        keyboardAppearance="dark"
+                        keyboardAppearance={isDark ? 'dark' : 'light'}
                     />
                     {searchQuery.length > 0 && (
                         <TouchableOpacity activeOpacity={0.95} onPress={handleClear} style={{ padding: 10 }}>
-                            <Ionicons name="close-circle" size={18} color="#666" />
+                            <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
                         </TouchableOpacity>
                     )}
                 </View>
@@ -433,29 +433,29 @@ export default function Index() {
                 }}
             >
                 <View style={styles.resultsHeader}>
-                     <Text style={styles.resultsTitle}>{loading ? 'Searching...' : `${results.length} Results`}</Text>
+                     <Text style={[styles.resultsTitle, { color: colors.text }]}>{loading ? 'Searching...' : `${results.length} Results`}</Text>
                      <TouchableOpacity activeOpacity={0.95} style={styles.historyIconBtn} onPress={() => router.push("/history")}>
-                        <MaterialIcons name="history" size={24} color="#666" />
+                        <MaterialIcons name="history" size={24} color={colors.textSecondary} />
                      </TouchableOpacity>
                 </View>
 
                 {loading ? (
                     <View style={styles.loaderContainer}>
                         <LoadingIndicator size={44} color={colors.primary} />
-                        <Text style={styles.loadingText}>Scraping sources...</Text>
+                        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Scraping sources...</Text>
                     </View>
                 ) : (
                     <View style={{ gap: 16 }}>
                         {results.length > 0 ? renderResults() : (
                             <View style={styles.emptyState}>
-                                <Text style={styles.emptyText}>No results found.</Text>
+                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No results found.</Text>
                             </View>
                         )}
                         
                         {results.length > 5 && (
                             <TouchableOpacity activeOpacity={0.95} onPress={() => setShowMore(!showMore)} style={styles.showMoreBtn}>
-                                <Text style={styles.showMoreText}>{showMore ? "Show Less" : "Show More Results"}</Text>
-                                <Feather name={showMore ? "chevron-up" : "chevron-down"} size={16} color="#888" />
+                                <Text style={[styles.showMoreText, { color: colors.textSecondary }]}>{showMore ? "Show Less" : "Show More Results"}</Text>
+                                <Feather name={showMore ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
                             </TouchableOpacity>
                         )}
                     </View>
@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   contentWrapper: { flex: 1, width: '100%' },
   brandContainer: { alignItems: 'center', marginBottom: 40 },
-  brandTitle: { color: 'white', fontSize: 28, fontWeight: 'bold', marginBottom: 20 },
+  brandTitle: { fontSize: 28, fontWeight: 'bold', marginBottom: 20 },
   historyPill: { 
       flexDirection: 'row', alignItems: 'center', gap: 6,
       backgroundColor: '#1A1A1A', paddingHorizontal: 16, paddingVertical: 8,
@@ -509,7 +509,7 @@ const styles = StyleSheet.create({
   historyIconBtn: { padding: 4 },
   card: {
     backgroundColor: '#151518',
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 14,
     borderWidth: 1,
     borderColor: '#282832',
@@ -614,7 +614,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#E50914',
     paddingVertical: 9,
     paddingHorizontal: 12,
     borderRadius: 12,

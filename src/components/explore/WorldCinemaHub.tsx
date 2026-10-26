@@ -10,6 +10,7 @@ import QuickAddButton from '../shared/QuickAddButton';
 import { HORIZONTAL_MARGIN } from './ExploreConstants';
 import { LANGUAGE_OPTIONS } from '../../userPreferences';
 import { useAppTheme, shadows, getActiveGlowShadow } from '../../theme';
+import { warmPaletteForMedia } from '../../utils/colorExtractor';
 
 const CARD_WIDTH = 135;
 const CARD_HEIGHT = CARD_WIDTH * 1.5;
@@ -78,6 +79,7 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
 
   const handlePress = useCallback(
     (item: any) => {
+      warmPaletteForMedia(item);
       const mediaType = item._mediaType || item.media_type || (item.first_air_date ? 'tv' : 'movie');
       router.push(`/movie/${item.id}?media_type=${mediaType}`);
     },
@@ -113,20 +115,31 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
                 </View>
               )}
 
-              {/* Quick Watchlist Heart: granular reactivity without parent re-render */}
+              {/* Quick Watchlist Heart: bare, top-right, granular reactivity without parent re-render */}
               <View style={styles.heartOverlay}>
                 <QuickAddButton
                   item={item}
                   itemId={item.id}
+                  plain
                   onPress={() => toggleWatchlist(item)}
                 />
               </View>
 
-              {/* Rating Badge */}
+              {/* Rating — anchored to the poster bottom */}
               {item.vote_average ? (
-                <View style={styles.ratingBadge}>
-                  <Ionicons name="star" size={10} color="#FFD60A" />
-                  <Text style={styles.ratingText}>{item.vote_average.toFixed(1)}</Text>
+                <View
+                  style={[
+                    styles.ratingChip,
+                    {
+                      backgroundColor: isDark ? 'rgba(10, 10, 12, 0.72)' : 'rgba(255, 255, 255, 0.92)',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.07)',
+                    },
+                  ]}
+                >
+                  <Ionicons name="star" size={11} color={isDark ? '#FFD60A' : '#E6A700'} />
+                  <Text style={[styles.ratingText, { color: colors.text }]}>
+                    {item.vote_average.toFixed(1)}
+                  </Text>
                 </View>
               ) : null}
             </View>
@@ -306,26 +319,29 @@ const styles = StyleSheet.create({
   heartOverlay: {
     position: 'absolute',
     top: 6,
-    left: 6,
+    right: 6,
     zIndex: 10,
   },
-  ratingBadge: {
+  ratingChip: {
     position: 'absolute',
-    top: 6,
-    right: 6,
+    left: 8,
+    bottom: 8,
     zIndex: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    paddingHorizontal: 6,
-    paddingVertical: 2.5,
-    borderRadius: 5,
-    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+    filter: [
+      { dropShadow: { offsetX: 0, offsetY: 1, standardDeviation: 3, color: 'rgba(0, 0, 0, 0.35)' } },
+    ],
   },
   ratingText: {
-    color: '#FAFAFA',
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: 11.5,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   cardTitle: {
     color: '#FAFAFA',

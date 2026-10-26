@@ -1,7 +1,7 @@
 import React, { memo, useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
-  StyleSheet, StatusBar, Keyboard,
+  StyleSheet, Keyboard,
   KeyboardAvoidingView, Platform, PanResponder,
 } from 'react-native';
 import { LoadingIndicator } from '../../src/components/shared/LoadingIndicator';
@@ -32,6 +32,8 @@ import AiComparisonTable from '../../src/components/aichat/AiComparisonTable';
 import AiStructuredList from '../../src/components/aichat/AiStructuredList';
 import { parseAiReply } from '../../src/components/aichat/parseAiReply';
 import { ai } from '../../src/components/aichat/aiTheme';
+import { useAppTheme } from '../../src/theme';
+import { warmPaletteForMedia } from '../../src/utils/colorExtractor';
 
 // ────────────────────────────────────────────────────────────────
 // Types
@@ -116,6 +118,7 @@ const normalizeBotReply = (reply: any): ChatMessage => {
 
 const AiNameSetup = ({ onComplete }: { onComplete: (name: string) => void }) => {
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useAppTheme();
   const [name, setName] = useState('');
   const glowAnim = useSharedValue(0);
   const orbAnim1 = useSharedValue(0);
@@ -155,9 +158,8 @@ const AiNameSetup = ({ onComplete }: { onComplete: (name: string) => void }) => 
   };
 
   return (
-    <View style={[setupStyles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <LinearGradient colors={['#0A0A0F', '#0D0512', '#050208']} style={StyleSheet.absoluteFill} />
+    <View style={[setupStyles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+      <LinearGradient colors={isDark ? ['#0A0A0F', '#0D0512', '#050208'] : [colors.background, '#F3F0F7', '#FFFFFF']} style={StyleSheet.absoluteFill} />
 
       <Animated.View style={[setupStyles.orb, setupStyles.orb1, orb1Style]} />
       <Animated.View style={[setupStyles.orb, setupStyles.orb2, orb2Style]} />
@@ -173,22 +175,22 @@ const AiNameSetup = ({ onComplete }: { onComplete: (name: string) => void }) => 
           <MaterialCommunityIcons name="robot-happy-outline" size={48} color={ACCENT} />
         </Animated.View>
 
-        <Animated.Text entering={FadeInUp.delay(400).springify()} style={setupStyles.title}>
+        <Animated.Text entering={FadeInUp.delay(400).springify()} style={[setupStyles.title, { color: colors.text }]}>
           Name your{'\n'}Movie Assistant
         </Animated.Text>
-        <Animated.Text entering={FadeInUp.delay(550).springify()} style={setupStyles.subtitle}>
+        <Animated.Text entering={FadeInUp.delay(550).springify()} style={[setupStyles.subtitle, { color: isDark ? 'rgba(255,255,255,0.45)' : colors.textSecondary }]}>
           Give me a name and I'll be your personal movie guide
         </Animated.Text>
 
         <Animated.View entering={FadeInUp.delay(700).springify()} style={setupStyles.inputContainer}>
           <LinearGradient
-            colors={['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.02)']}
-            style={setupStyles.inputGradient}
+            colors={isDark ? ['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.02)'] : [colors.surfaceContainerHigh, colors.surfaceContainer]}
+            style={[setupStyles.inputGradient, { borderColor: isDark ? 'rgba(255,255,255,0.1)' : colors.border }]}
           >
             <TextInput
-              style={setupStyles.input}
+              style={[setupStyles.input, { color: colors.text }]}
               placeholder="Type a name..."
-              placeholderTextColor="#555"
+              placeholderTextColor={colors.textMuted}
               value={name}
               onChangeText={setName}
               maxLength={16}
@@ -204,10 +206,10 @@ const AiNameSetup = ({ onComplete }: { onComplete: (name: string) => void }) => 
             <TouchableOpacity
               activeOpacity={0.9}
               key={sug}
-              style={[setupStyles.suggestionChip, name === sug && setupStyles.suggestionChipActive]}
+              style={[setupStyles.suggestionChip, { borderColor: isDark ? 'rgba(255,255,255,0.12)' : colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : colors.surfaceContainer }, name === sug && setupStyles.suggestionChipActive]}
               onPress={() => { Haptics.selectionAsync(); setName(sug); }}
             >
-              <Text style={[setupStyles.suggestionText, name === sug && { color: 'white' }]}>{sug}</Text>
+              <Text style={[setupStyles.suggestionText, { color: isDark ? 'rgba(255,255,255,0.5)' : colors.textSecondary }, name === sug && { color: colors.text }]}>{sug}</Text>
             </TouchableOpacity>
           ))}
         </Animated.View>
@@ -258,29 +260,33 @@ const TypingDots = () => (
 );
 
 const IconBtn = ({
-  name, onPress, label, disabled, color = 'white',
+  name, onPress, label, disabled, color,
 }: {
   name: React.ComponentProps<typeof Ionicons>['name'];
   onPress: () => void;
   label: string;
   disabled?: boolean;
   color?: string;
-}) => (
-  <TouchableOpacity
-    activeOpacity={0.7}
-    onPress={onPress}
-    disabled={disabled}
-    accessibilityRole="button"
-    accessibilityLabel={label}
-    style={[styles.iconBtn, disabled && { opacity: 0.35 }]}
-  >
-    <Ionicons name={name} size={21} color={color} />
-  </TouchableOpacity>
-);
+}) => {
+  const { colors } = useAppTheme();
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={[styles.iconBtn, disabled && { opacity: 0.35 }]}
+    >
+      <Ionicons name={name} size={21} color={color ?? colors.text} />
+    </TouchableOpacity>
+  );
+};
 
 const MovieCard = memo(({
   movie, watched, onPress, lines = 2,
 }: { movie: Movie; watched: boolean; onPress: (movie: Movie) => void; lines?: number }) => {
+  const { colors, isDark } = useAppTheme();
   const title = movie.title || movie.name || 'Untitled';
   const year = (movie.release_date || movie.first_air_date)?.split('-')[0];
   const rating = Number(movie.vote_average) > 0 ? Number(movie.vote_average).toFixed(1) : null;
@@ -292,7 +298,7 @@ const MovieCard = memo(({
   return (
     <TouchableOpacity
       activeOpacity={0.85}
-      style={styles.movieCard}
+      style={[styles.movieCard, { backgroundColor: isDark ? ai.card : colors.surfaceContainer, borderColor: isDark ? ai.border : colors.border }]}
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={`Open ${title}`}
@@ -307,23 +313,23 @@ const MovieCard = memo(({
           recyclingKey={String(movie.id)}
         />
       ) : (
-        <View style={[styles.poster, styles.posterEmpty]}>
+        <View style={[styles.poster, styles.posterEmpty, { backgroundColor: isDark ? '#1A1A20' : colors.surfaceContainerHigh }]}>
           <Ionicons name="film-outline" size={22} color={ai.textMute} />
         </View>
       )}
 
       <View style={styles.movieBody}>
-        <Text style={styles.movieTitle} numberOfLines={2}>{title}</Text>
+        <Text style={[styles.movieTitle, { color: colors.text }]} numberOfLines={2}>{title}</Text>
         <View style={styles.metaRow}>
           {rating && (
             <>
               <Ionicons name="star" size={11} color="#FFD700" />
-              <Text style={styles.metaText}>{rating}</Text>
+              <Text style={[styles.metaText, { color: isDark ? '#DDD' : colors.textSecondary }]}>{rating}</Text>
             </>
           )}
           {!!year && <Text style={styles.metaMuted}>{rating ? '·  ' : ''}{year}</Text>}
           {watched && (
-            <View style={styles.watchedPill}>
+            <View style={[styles.watchedPill, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceContainerHigh }]}>
               <Ionicons name="checkmark" size={10} color={ai.textDim} />
               <Text style={styles.watchedText}>Watched</Text>
             </View>
@@ -351,6 +357,7 @@ const MovieCard = memo(({
 const AiChat = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useAppTheme();
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   const [aiName, setAiNameState] = useState<string | null>(null); // null = loading, '' = needs setup
@@ -636,6 +643,7 @@ const AiChat = () => {
 
   const navigateToDetails = (full: any) => {
     Keyboard.dismiss();
+    warmPaletteForMedia(full);
     const mType = full.media_type || (full.first_air_date ? 'tv' : 'movie');
     router.push(`/movie/${full.id}?media_type=${mType}`);
   };
@@ -648,6 +656,7 @@ const AiChat = () => {
 
   const navigateToCastDetails = (actor: Actor) => {
     Keyboard.dismiss();
+    warmPaletteForMedia(actor);
     router.push(`/cast/${actor.id}`);
   };
 
@@ -661,7 +670,7 @@ const AiChat = () => {
     if (!t) return null;
     return (
       <View style={styles.botRow}>
-        <FormattedMarkdownText text={t} style={styles.botText} baseColor="#E8E8E8" boldColor="#FFFFFF" selectable />
+        <FormattedMarkdownText text={t} style={[styles.botText, { color: isDark ? '#E8E8E8' : colors.textSecondary }]} baseColor={isDark ? '#E8E8E8' : colors.textSecondary} boldColor={colors.text} selectable />
       </View>
     );
   };
@@ -695,7 +704,7 @@ const AiChat = () => {
             ) : m.titles && m.titles.length > 0 ? (
               <View style={[styles.botRow, { marginTop: 6 }]}>
                 {m.titles.map((t: string, i: number) => (
-                  <Text key={i} style={[styles.botText, { marginBottom: 4 }]}>• {t}</Text>
+                  <Text key={i} style={[styles.botText, { marginBottom: 4, color: isDark ? '#E8E8E8' : colors.textSecondary }]}>• {t}</Text>
                 ))}
               </View>
             ) : null}
@@ -747,11 +756,11 @@ const AiChat = () => {
                           recyclingKey={String(item.id)}
                         />
                       ) : (
-                        <View style={[styles.actorAvatar, styles.posterEmpty]}>
+                        <View style={[styles.actorAvatar, styles.posterEmpty, { backgroundColor: isDark ? '#1A1A20' : colors.surfaceContainerHigh, borderColor: isDark ? ai.border : colors.border }]}>
                           <Ionicons name="person-outline" size={24} color={ai.textMute} />
                         </View>
                       )}
-                      <Text numberOfLines={1} style={styles.actorName}>{item.name}</Text>
+                      <Text numberOfLines={1} style={[styles.actorName, { color: colors.text }]}>{item.name}</Text>
                       {!!item.known_for && <Text numberOfLines={1} style={styles.actorKnownFor}>{item.known_for}</Text>}
                     </TouchableOpacity>
                   </Animated.View>
@@ -782,7 +791,7 @@ const AiChat = () => {
                   handleSend(m.retryText, true);
                 }}
               >
-                <Text style={styles.retryText}>Retry</Text>
+                <Text style={[styles.retryText, { color: colors.text }]}>Retry</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -802,8 +811,7 @@ const AiChat = () => {
   // ── Loading / setup ─────────────────────────────────────────
   if (aiName === null) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
         <LoadingIndicator size="large" color={ACCENT} />
       </View>
     );
@@ -822,7 +830,7 @@ const AiChat = () => {
       <View style={styles.heroIcon}>
         <MaterialCommunityIcons name="movie-open-outline" size={26} color={ACCENT} />
       </View>
-      <Text style={styles.heroTitle}>What do you want to watch?</Text>
+      <Text style={[styles.heroTitle, { color: colors.text }]}>What do you want to watch?</Text>
       <Text style={styles.heroSub}>
         Ask {aiName} for picks, comparisons, or facts about any movie or show.
       </Text>
@@ -831,10 +839,10 @@ const AiChat = () => {
           <TouchableOpacity
             key={label}
             activeOpacity={0.8}
-            style={styles.chip}
+            style={[styles.chip, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : colors.surfaceContainer, borderColor: isDark ? ai.border : colors.border }]}
             onPress={() => { Haptics.selectionAsync(); handleSend(label); }}
           >
-            <Text style={styles.chipText}>{label}</Text>
+            <Text style={[styles.chipText, { color: isDark ? ai.textDim : colors.textSecondary }]}>{label}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -843,21 +851,20 @@ const AiChat = () => {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
       behavior="padding"
       keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
       {...edgePanResponder.panHandlers}
     >
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <LinearGradient colors={['#0A0A0F', '#050208', '#000']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={isDark ? ['#0A0A0F', '#050208', '#000'] : [colors.background, '#F3F0F7', '#FFFFFF']} style={StyleSheet.absoluteFill} />
 
       {/* ── Header ── */}
-      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 6, borderBottomColor: isDark ? 'rgba(255,255,255,0.10)' : colors.border }]}>
         <IconBtn name="menu" label="Chat history" onPress={() => { Haptics.selectionAsync(); setSidebarOpen(true); }} />
 
         <View style={styles.headerTitleWrap}>
           <View style={styles.headerDot} />
-          <Text style={styles.headerTitle} numberOfLines={1}>{aiName}</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>{aiName}</Text>
         </View>
 
         <View style={{ flex: 1 }} />
@@ -871,7 +878,7 @@ const AiChat = () => {
         <IconBtn
           name="close"
           label="Close"
-          color="rgba(255,255,255,0.6)"
+          color={isDark ? 'rgba(255,255,255,0.6)' : colors.textSecondary}
           onPress={() => {
             Haptics.selectionAsync();
             if (router.canGoBack()) router.back();
@@ -920,12 +927,12 @@ const AiChat = () => {
           <View style={styles.jumpWrap} pointerEvents="box-none">
             <TouchableOpacity
               activeOpacity={0.85}
-              style={styles.jumpBtn}
+              style={[styles.jumpBtn, { backgroundColor: isDark ? '#1C1C22' : colors.surfaceContainer, borderColor: isDark ? 'rgba(255,255,255,0.14)' : colors.border }]}
               onPress={() => { nearBottom.current = true; scrollToEnd(); }}
               accessibilityRole="button"
               accessibilityLabel="Scroll to latest message"
             >
-              <Ionicons name="chevron-down" size={18} color="white" />
+              <Ionicons name="chevron-down" size={18} color={colors.text} />
             </TouchableOpacity>
           </View>
         )}
@@ -933,11 +940,11 @@ const AiChat = () => {
 
       {/* ── Input Bar ── */}
       <View style={[styles.inputBar, { paddingBottom: insets.bottom + 10 }]}>
-        <View style={[styles.inputWrap, inputFocused && styles.inputWrapFocused]}>
+        <View style={[styles.inputWrap, inputFocused && styles.inputWrapFocused, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : colors.surfaceContainer, borderColor: inputFocused ? ai.accentLine : (isDark ? ai.border : colors.border) }]}>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: colors.text }]}
             placeholder={`Ask ${aiName} anything...`}
-            placeholderTextColor="#5A5A64"
+            placeholderTextColor={colors.textMuted}
             value={input}
             onChangeText={setInput}
             onFocus={() => setInputFocused(true)}
@@ -949,14 +956,14 @@ const AiChat = () => {
 
         <TouchableOpacity
           activeOpacity={0.85}
-          style={[styles.sendBtn, canSend ? styles.sendBtnOn : styles.sendBtnOff]}
+          style={[styles.sendBtn, canSend ? styles.sendBtnOn : styles.sendBtnOff, !canSend && { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceContainerHigh }]}
           onPress={() => handleSend()}
           disabled={!canSend}
           accessibilityRole="button"
           accessibilityLabel="Send"
         >
           {sending
-            ? <LoadingIndicator size="small" color="white" />
+            ? <LoadingIndicator size="small" color={colors.text} />
             : <Ionicons name="arrow-up" size={20} color={canSend ? 'white' : ai.textMute} />}
         </TouchableOpacity>
       </View>

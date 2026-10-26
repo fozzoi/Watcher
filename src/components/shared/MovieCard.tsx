@@ -18,7 +18,7 @@ interface MovieCardProps {
 
 const MovieCard = memo(
   ({ item, onPress, isSearchMode = false, isAdded, toggleWatchlist }: MovieCardProps) => {
-    const { colors } = useAppTheme();
+    const { colors, isDark } = useAppTheme();
     if (!item || !item.id) return null;
 
     const cardWidth = isSearchMode ? SEARCH_CARD_WIDTH : EXPLORE_CARD_WIDTH;
@@ -54,21 +54,32 @@ const MovieCard = memo(
               </View>
             )}
 
-            {/* Quick Add Watchlist Heart */}
+            {/* Quick Add Watchlist Heart — bare, top-right */}
             <View style={styles.heartOverlay}>
               <QuickAddButton
                 item={item}
                 itemId={item.id}
                 isAdded={isAdded}
+                plain
                 onPress={toggleWatchlist ? () => toggleWatchlist(item) : undefined}
               />
             </View>
 
-            {/* Rating Badge */}
+            {/* Rating — anchored to the poster bottom */}
             {item.vote_average ? (
-              <View style={styles.ratingBadge}>
-                <Ionicons name="star" size={10} color="#FFD60A" />
-                <Text style={styles.ratingText}>{item.vote_average.toFixed(1)}</Text>
+              <View
+                style={[
+                  styles.ratingChip,
+                  {
+                    backgroundColor: isDark ? 'rgba(10, 10, 12, 0.72)' : 'rgba(255, 255, 255, 0.92)',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.07)',
+                  },
+                ]}
+              >
+                <Ionicons name="star" size={11} color={isDark ? '#FFD60A' : '#E6A700'} />
+                <Text style={[styles.ratingText, { color: colors.text }]}>
+                  {item.vote_average.toFixed(1)}
+                </Text>
               </View>
             ) : null}
           </View>
@@ -112,26 +123,29 @@ const styles = StyleSheet.create({
   heartOverlay: {
     position: 'absolute',
     top: 6,
-    left: 6,
+    right: 6,
     zIndex: 10,
   },
-  ratingBadge: {
+  ratingChip: {
     position: 'absolute',
-    top: 6,
-    right: 6,
+    left: 8,
+    bottom: 8,
     zIndex: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+    filter: [
+      { dropShadow: { offsetX: 0, offsetY: 1, standardDeviation: 3, color: 'rgba(0, 0, 0, 0.35)' } },
+    ],
   },
   ratingText: {
-    color: '#FAFAFA',
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: 11.5,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   metaContainer: {
     marginTop: 8,

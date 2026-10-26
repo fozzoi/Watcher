@@ -36,7 +36,8 @@ import Animated, {
   Easing,
   interpolate,
 } from 'react-native-reanimated';
-import { useAppTheme, shadows, getActiveGlowShadow } from '../src/theme';
+import { useAppTheme, shadows, getActiveGlowShadow, palette } from '../src/theme';
+import { warmPaletteForMedia } from '../src/utils/colorExtractor';
 
 const { width, height } = Dimensions.get('window');
 
@@ -55,6 +56,7 @@ const IMAGE_SIZES = {
 const SHIMMER_WIDTH = width * 0.7; // Width of the shimmering gradient
 
 const SkeletonShimmer = ({ children, containerStyle = {} }: any) => {
+  const { isDark } = useAppTheme();
   const shimmer = useSharedValue(-SHIMMER_WIDTH);
 
   useEffect(() => {
@@ -76,10 +78,10 @@ const SkeletonShimmer = ({ children, containerStyle = {} }: any) => {
       {children}
       <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]}>
         <LinearGradient
-          colors={['transparent', 'rgba(255, 255, 255, 0.15)', 'transparent']} // Slightly stronger shimmer
+          colors={isDark ? ['rgba(255, 255, 255, 0.05)', 'rgba(255, 255, 255, 0.18)', 'rgba(255, 255, 255, 0.05)'] : ['rgba(0, 0, 0, 0.04)', 'rgba(0, 0, 0, 0.10)', 'rgba(0, 0, 0, 0.04)']}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
-          style={styles.skeletonShimmerGradient}
+          // style={styles.skeletonShimmerGradient}
         />
       </Animated.View>
     </View>
@@ -87,78 +89,89 @@ const SkeletonShimmer = ({ children, containerStyle = {} }: any) => {
 };
 
 // 1. Corrected Skeleton Header (Single Shimmer Instance)
-const SkeletonHeader = () => (
+const SkeletonHeader = () => {
+  const { isDark } = useAppTheme();
+  const placeholderColor = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)';
+  return (
   <View style={styles.headerContainer}>
     <SkeletonShimmer containerStyle={styles.skeletonPosterImageContainer}>
       {/* Placeholder within the shimmer boundary */}
-      <View style={styles.skeletonPosterImage} /> 
+      <View style={[styles.skeletonPosterImage, { backgroundColor: placeholderColor }]} />
     </SkeletonShimmer>
 
     <View style={styles.headerInfo}>
       <SkeletonShimmer containerStyle={{ borderRadius: 4, width: '100%', height: 24, marginBottom: 8 }}>
-        <View style={[styles.skeletonLine, { width: '80%', height: 24 }]} />
+        <View style={[styles.skeletonLine, { width: '80%', height: 24, backgroundColor: placeholderColor }]} />
       </SkeletonShimmer>
 
       <SkeletonShimmer containerStyle={{ borderRadius: 4, width: '100%', height: 16 }}>
-        <View style={[styles.skeletonLine, { width: '50%', height: 16 }]} />
+        <View style={[styles.skeletonLine, { width: '50%', height: 16, backgroundColor: placeholderColor }]} />
       </SkeletonShimmer>
       
       <View style={styles.metaRow}>
-        <SkeletonShimmer containerStyle={styles.skeletonChipContainer}><View style={styles.skeletonChip} /></SkeletonShimmer>
-        <SkeletonShimmer containerStyle={styles.skeletonChipContainer}><View style={styles.skeletonChip} /></SkeletonShimmer>
-        <SkeletonShimmer containerStyle={styles.skeletonChipContainer}><View style={styles.skeletonChip} /></SkeletonShimmer>
+        <SkeletonShimmer containerStyle={[styles.skeletonChipContainer, { backgroundColor: placeholderColor }]}><View style={[styles.skeletonChip, { backgroundColor: placeholderColor }]} /></SkeletonShimmer>
+        <SkeletonShimmer containerStyle={[styles.skeletonChipContainer, { backgroundColor: placeholderColor }]}><View style={[styles.skeletonChip, { backgroundColor: placeholderColor }]} /></SkeletonShimmer>
+        <SkeletonShimmer containerStyle={[styles.skeletonChipContainer, { backgroundColor: placeholderColor }]}><View style={[styles.skeletonChip, { backgroundColor: placeholderColor }]} /></SkeletonShimmer>
       </View>
       
       <View style={styles.heroActionRow}>
-        <SkeletonShimmer containerStyle={styles.skeletonHeroIcon}><View style={styles.skeletonHeroIconPlaceholder} /></SkeletonShimmer>
-        <SkeletonShimmer containerStyle={styles.skeletonHeroIcon}><View style={styles.skeletonHeroIconPlaceholder} /></SkeletonShimmer>
-        <SkeletonShimmer containerStyle={styles.skeletonHeroIcon}><View style={styles.skeletonHeroIconPlaceholder} /></SkeletonShimmer>
+        <SkeletonShimmer containerStyle={[styles.skeletonHeroIcon, { backgroundColor: placeholderColor }]}><View style={[styles.skeletonHeroIconPlaceholder, { backgroundColor: placeholderColor }]} /></SkeletonShimmer>
+        <SkeletonShimmer containerStyle={[styles.skeletonHeroIcon, { backgroundColor: placeholderColor }]}><View style={[styles.skeletonHeroIconPlaceholder, { backgroundColor: placeholderColor }]} /></SkeletonShimmer>
+        <SkeletonShimmer containerStyle={[styles.skeletonHeroIcon, { backgroundColor: placeholderColor }]}><View style={[styles.skeletonHeroIconPlaceholder, { backgroundColor: placeholderColor }]} /></SkeletonShimmer>
       </View>
     </View>
   </View>
-);
+  );
+};
 
 // 2. Corrected Skeleton Section (Shimmer applied to each item, which is standard for lists)
-const SkeletonSection = ({ numItems = 6, itemWidth = width * 0.25, itemHeight = width * 0.34 + 30 }) => (
+const SkeletonSection = ({ numItems = 6, itemWidth = width * 0.25, itemHeight = width * 0.34 + 30 }) => {
+  const { isDark } = useAppTheme();
+  const placeholderColor = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)';
+  return (
   <View style={styles.section}>
     <SkeletonShimmer containerStyle={{ borderRadius: 4, width: '40%', height: 20, marginBottom: 12 }}>
-      <View style={[styles.skeletonLine, { width: '100%', height: 20 }]} />
+      <View style={[styles.skeletonLine, { width: '100%', height: 20, backgroundColor: placeholderColor }]} />
     </SkeletonShimmer>
     
     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
       {Array(numItems).fill(0).map((_, index) => (
         <View key={index} style={[styles.skeletonItem, { width: itemWidth, height: itemHeight }]}>
-          <SkeletonShimmer containerStyle={styles.skeletonItemShimmer}>
-            <View style={[styles.skeletonImagePlaceholder, { width: '100%', height: itemWidth * 1.4 }]} />
+          <SkeletonShimmer containerStyle={[styles.skeletonItemShimmer, { backgroundColor: placeholderColor }]}>
+            <View style={[styles.skeletonImagePlaceholder, { width: '100%', height: itemWidth * 1.4, backgroundColor: placeholderColor }]} />
           </SkeletonShimmer>
           
           <SkeletonShimmer containerStyle={{ borderRadius: 4, width: '100%', height: 12, marginTop: 6 }}>
-            <View style={[styles.skeletonLine, { width: '80%', height: 12 }]} />
+            <View style={[styles.skeletonLine, { width: '80%', height: 12, backgroundColor: placeholderColor }]} />
           </SkeletonShimmer>
           
           <SkeletonShimmer containerStyle={{ borderRadius: 4, width: '100%', height: 10, marginTop: 4 }}>
-            <View style={[styles.skeletonLine, { width: '60%', height: 10 }]} />
+            <View style={[styles.skeletonLine, { width: '60%', height: 10, backgroundColor: placeholderColor }]} />
           </SkeletonShimmer>
         </View>
       ))}
     </ScrollView>
   </View>
-);
+  );
+};
 
-const SkeletonDetails = () => (
+const SkeletonDetails = () => {
+  const { isDark } = useAppTheme();
+  const placeholderColor = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)';
+  return (
   <View style={styles.detailsContent}>
     <SkeletonHeader />
     
     {/* Overview section */}
     <View style={styles.section}>
       <SkeletonShimmer containerStyle={{ borderRadius: 4, width: '50%', height: 20, marginBottom: 12 }}>
-        <View style={[styles.skeletonLine, { width: '100%', height: 20 }]} />
+        <View style={[styles.skeletonLine, { width: '100%', height: 20, backgroundColor: placeholderColor }]} />
       </SkeletonShimmer>
       
       {/* Overview text lines */}
       {[1, 2, 3].map((i) => (
         <SkeletonShimmer key={i} containerStyle={{ borderRadius: 4, width: i === 3 ? '80%' : '100%', height: 14, marginBottom: 6 }}>
-          <View style={[styles.skeletonLine, { width: '100%', height: 14 }]} />
+          <View style={[styles.skeletonLine, { width: '100%', height: 14, backgroundColor: placeholderColor }]} />
         </SkeletonShimmer>
       ))}
     </View>
@@ -169,7 +182,8 @@ const SkeletonDetails = () => (
     {/* Similar section */}
     <SkeletonSection numItems={5} itemWidth={width * 0.28} itemHeight={width * 0.42 + 30}/> 
   </View>
-);
+  );
+};
 
 // --------------------------------------------------------
 
@@ -332,14 +346,14 @@ const ListDetails = ({ route }: any) => {
     >
       <Image
         source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }}
-        style={[styles.cardImage,selectedMovie?.id === item.id && styles.selectedMovieCard]}
+        style={[styles.cardImage, { backgroundColor: colors.surfaceContainerHigh }, selectedMovie?.id === item.id && [styles.selectedMovieCard, { backgroundColor: colors.primaryContainer, borderColor: colors.primary, ...getActiveGlowShadow(colors.primary) }]]}
       />
-      <Text style={styles.cardTitle} numberOfLines={2}>
+      <Text style={[styles.cardTitle, { color: colors.text, fontSize: 12 }]} numberOfLines={2}>
         {item.title || item.name}
       </Text>
       <View style={styles.ratingRow}>
-        <Ionicons name="star" size={12} color="#E50914" />
-        <Text style={styles.rating}>{item.vote_average.toFixed(1)}</Text>
+        <Ionicons name="star" size={12} color={palette.yellow} />
+        <Text style={[styles.rating, { color: colors.textSecondary }]}>{item.vote_average.toFixed(1)}</Text>
       </View>
     </TouchableOpacity>
     
@@ -355,7 +369,7 @@ const ListDetails = ({ route }: any) => {
         <View style={styles.headerContainer}>
           <Image
             source={{ uri: getImageUrl(selectedMovie.poster_path, IMAGE_SIZES.POSTER_DETAIL) }}
-            style={styles.posterImage}
+            style={[styles.posterImage, { backgroundColor: colors.surfaceContainerHigh }]}
           />
           <View style={styles.headerInfo}>
             <Text style={[styles.movieTitle, { color: colors.text }]}>
@@ -364,7 +378,7 @@ const ListDetails = ({ route }: any) => {
             
             <View style={styles.metaRow}>
               <View style={[styles.metaChip, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
-                <Ionicons name="star" size={14} color="#FFD60A" />
+                <Ionicons name="star" size={14} color={palette.yellow} />
                 <Text style={[styles.metaText, { color: colors.text }]}>{selectedMovie.vote_average.toFixed(1)}</Text>
               </View>
               <View style={[styles.metaChip, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
@@ -412,8 +426,11 @@ const ListDetails = ({ route }: any) => {
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Director</Text>
             <TouchableOpacity activeOpacity={0.95} 
-              style={styles.directorContainer}
-              onPress={() => router.push(`/cast/${selectedMovie.director.id}`)}
+              style={[styles.directorContainer, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}
+              onPress={() => {
+                warmPaletteForMedia(selectedMovie.director);
+                router.push(`/cast/${selectedMovie.director.id}`);
+              }}
             >
               <Text style={[styles.directorName, { color: colors.text }]}>{selectedMovie.director.name}</Text>
               <Feather name="chevron-right" size={20} color={colors.primary} />
@@ -432,7 +449,10 @@ const ListDetails = ({ route }: any) => {
               renderItem={({ item }) => ( 
                 <TouchableOpacity activeOpacity={0.95} 
                   style={styles.castItem}
-                  onPress={() => router.push(`/cast/${item.id}`)}
+                  onPress={() => {
+                    warmPaletteForMedia(item);
+                    router.push(`/cast/${item.id}`);
+                  }}
                 >
                   <Image
                     source={{ 
@@ -455,7 +475,7 @@ const ListDetails = ({ route }: any) => {
         {/* Add Seasons Section for TV Shows */}
         {selectedMovie.media_type === 'tv' && selectedMovie.seasons && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Seasons</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Seasons</Text>
             <ScrollView 
               horizontal 
               showsHorizontalScrollIndicator={false}
@@ -467,13 +487,15 @@ const ListDetails = ({ route }: any) => {
                   key={`season-${season.id}`}
                   style={[
                     styles.seasonTab,
-                    selectedSeason === season.season_number && styles.seasonTabActive
+                    { backgroundColor: colors.surfaceContainer, borderColor: colors.border, borderRadius: 22 },
+                    selectedSeason === season.season_number && [styles.seasonTabActive, { backgroundColor: colors.primaryContainer, borderColor: colors.primary }]
                   ]}
                   onPress={() => handleSeasonSelect(season.season_number)}
                 >
                   <Text style={[
                     styles.seasonTabText,
-                    selectedSeason === season.season_number && styles.seasonTabTextActive
+                    { color: colors.textSecondary },
+                    selectedSeason === season.season_number && [styles.seasonTabTextActive, { color: colors.primary }]
                   ]}>
                     {season.name}
                   </Text>
@@ -553,13 +575,13 @@ const ListDetails = ({ route }: any) => {
             >
               <Image
                 source={{ uri: getImageUrl(item.poster_path, IMAGE_SIZES.THUMBNAIL) }}
-                style={[styles.similarImage, { backgroundColor: colors.surfaceContainer }]}
+                style={[styles.similarImage, { backgroundColor: colors.surfaceContainerHigh }]}
               />
               <Text style={[styles.similarTitle, { color: colors.text }]} numberOfLines={2}>
                 {item.title || item.name}
               </Text>
               <View style={styles.ratingRow}>
-                <Ionicons name="star" size={12} color="#FFD60A" />
+                <Ionicons name="star" size={12} color={palette.yellow} />
                 <Text style={[styles.rating, { color: colors.textSecondary }]}>{item.vote_average.toFixed(1)}</Text>
               </View>
             </TouchableOpacity>
@@ -687,15 +709,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   selectedMovieCard: {
-    backgroundColor: 'rgba(229, 9, 20, 0.15)',
     borderWidth: 2,
-    borderColor: '#E50914',
-    ...getActiveGlowShadow('#E50914'),
   },
   cardImage: {
     width: '100%',
     height: width * 0.42,
-    borderRadius: 6,
+    borderRadius: 14,
     backgroundColor: '#2a2a2a',
   },
   cardTitle: {
@@ -752,7 +771,7 @@ const styles = StyleSheet.create({
   posterImage: {
     width: width * 0.35,
     height: width * 0.52,
-    borderRadius: 10,
+    borderRadius: 14,
     backgroundColor: '#2a2a2a',
     ...shadows.md,
   },
@@ -814,8 +833,9 @@ const styles = StyleSheet.create({
     marginTop: 24, 
   },
   sectionTitle: {
-    fontSize: 19,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.3,
     fontFamily: 'GoogleSansFlex-Bold',
     color: '#fff',
     marginBottom: 12,
@@ -857,7 +877,7 @@ const styles = StyleSheet.create({
   similarImage: {
     width: width * 0.28,
     height: width * 0.42,
-    borderRadius: 8,
+    borderRadius: 14,
     backgroundColor: '#2a2a2a',
   },
   similarTitle: {
@@ -881,7 +901,6 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   viewAll: {
-    color: '#E50914',
     fontWeight: '700',
     fontFamily: 'GoogleSansFlex-Bold',
     fontSize: 15,
@@ -899,8 +918,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   seasonTabActive: {
-    backgroundColor: 'rgba(229, 9, 20, 0.25)',
-    borderColor: '#E50914',
     borderWidth: 2,
   },
   seasonTabText: {
@@ -910,7 +927,6 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex-Medium',
   },
   seasonTabTextActive: {
-    color: '#fff',
     fontWeight: '700',
     fontFamily: 'GoogleSansFlex-Bold',
   },

@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { getSavedItems, subscribeToSavedItemsChanges, hasSavedItem } from '../../database';
 import { toggleWatchlistGlobal } from '../../state/savedState';
 import { getTrendingToday, getImageUrl, TMDBResult } from '../../tmdb';
+import { warmPaletteForMedia } from '../../utils/colorExtractor';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -135,6 +136,7 @@ export const ChromeStyleWidget = memo(({ onOpenSearch, onSelectTrending }: Chrom
     if (trendingItems.length > 0) {
       const randomIndex = Math.floor(Math.random() * trendingItems.length);
       const randomItem = trendingItems[randomIndex];
+      warmPaletteForMedia(randomItem);
       const mediaType = randomItem.media_type || (randomItem.first_air_date ? 'tv' : 'movie');
       router.push(`/movie/${randomItem.id}?media_type=${mediaType}`);
     }
@@ -164,6 +166,7 @@ export const ChromeStyleWidget = memo(({ onOpenSearch, onSelectTrending }: Chrom
     const currentItem = trendingItems[currentIndex];
     if (!currentItem) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    warmPaletteForMedia(currentItem);
     const mediaType = currentItem.media_type || (currentItem.first_air_date ? 'tv' : 'movie');
     router.push(`/movie/${currentItem.id}?media_type=${mediaType}`);
   }, [trendingItems, currentIndex, router]);

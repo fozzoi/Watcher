@@ -12,21 +12,13 @@ import {
   StyleSheet,
   RefreshControl,
   StatusBar,
-  ScrollView,
   TouchableOpacity,
   BackHandler,
   Keyboard,
   TextInput,
   DeviceEventEmitter,
-  Platform,
 } from 'react-native';
 
-import {
-  Host,
-  LoadingIndicator,
-  CircularProgressIndicator,
-} from '@expo/ui/jetpack-compose';
-import { size } from '@expo/ui/jetpack-compose/modifiers';
 import { LoadingIndicator as SharedLoadingIndicator } from '../../src/components/shared/LoadingIndicator';
 
 import { toggleWatchlistGlobal, syncSavedStore } from '../../src/state/savedState';
@@ -75,7 +67,6 @@ import WorldCinemaHub from '../../src/components/explore/WorldCinemaHub';
 import SearchResultsList from '../../src/components/search/SearchResultsList';
 import SearchEmptyState from '../../src/components/search/SearchEmptyState';
 import { HORIZONTAL_MARGIN, GENRE_DATA } from '../../src/components/explore/ExploreConstants';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useAppTheme, shadows } from '../../src/theme';
 
 /* =========================================================================
@@ -97,21 +88,6 @@ const runAfterTransition = (cb: () => void, delayMs = 320) => {
     if (rafId !== null) cancelAnimationFrame(rafId);
   };
 };
-
-const SkeletonCarousel = memo(() => (
-  <View style={styles.skeletonContainer}>
-    <View style={styles.skeletonTitle} />
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ paddingLeft: HORIZONTAL_MARGIN }}
-    >
-      {[1, 2, 3, 4].map((i) => (
-        <View key={i} style={styles.skeletonCard} />
-      ))}
-    </ScrollView>
-  </View>
-));
 
 type SectionLayoutType = 'ranked' | 'spotlight' | 'world_hub' | 'standard';
 
@@ -145,7 +121,6 @@ interface ExploreHeaderProps {
   selectedGenre: number;
   onSelectGenre: (genreId: number) => void;
   toggleWatchlist: (item: any) => void;
-  onOpenSearch?: () => void;
 }
 
 const ExploreHeader = memo(
@@ -246,6 +221,7 @@ interface ExploreSearchControllerProps {
   inSearchModeShared: SharedValue<boolean>;
   trendingItems?: any[];
   personalizedItems?: any[];
+  isScrolledPastHero?: boolean;
 }
 
 const ExploreSearchController = memo(
@@ -261,6 +237,7 @@ const ExploreSearchController = memo(
     inSearchModeShared,
     trendingItems,
     personalizedItems,
+    isScrolledPastHero,
   }: ExploreSearchControllerProps) => {
     const router = useRouter();
     const { colors, isDark } = useAppTheme();
@@ -377,16 +354,28 @@ const ExploreSearchController = memo(
       }, [query, isExpanded, handleClose])
     );
 
+    // Stable style objects: this controller re-renders on every keystroke, so
+    // these literals are memoized instead of being re-allocated per character.
+    const overlayStyle = useMemo(
+      () => ({ zIndex: 10, backgroundColor: colors.background }),
+      [colors.background]
+    );
+    const pillStyle = useMemo(
+      () => ({
+        backgroundColor: colors.surfaceContainer,
+        borderColor: isDark ? colors.outlineVariant : 'rgba(0, 0, 0, 0.08)',
+        borderWidth: StyleSheet.hairlineWidth,
+      }),
+      [colors.surfaceContainer, colors.outlineVariant, isDark]
+    );
+    const inputStyle = useMemo(() => ({ color: colors.text }), [colors.text]);
+
     return (
       <>
         {/* Interactive Search Overlay */}
         {isExpanded && (
           <Animated.View
-            style={[
-              StyleSheet.absoluteFill,
-              { zIndex: 10, backgroundColor: colors.background },
-              animatedBgStyle,
-            ]}
+            style={[StyleSheet.absoluteFill, overlayStyle, animatedBgStyle]}
           >
             {query.trim() === '' ? (
               <SearchEmptyState
@@ -413,17 +402,12 @@ const ExploreSearchController = memo(
 
         {/* Persistent App Header */}
         <View style={styles.headerWrapper} pointerEvents="box-none">
-          <LinearGradient
-            colors={isDark ? ['rgba(10, 10, 11, 0.95)', 'rgba(10, 10, 11, 0.6)', 'transparent'] : ['rgba(248, 249, 250, 0.95)', 'rgba(248, 249, 250, 0.6)', 'transparent']}
-            style={styles.gradientHeader}
-            pointerEvents="none"
-          />
           <Animated.View
             style={[styles.searchBarContainer, animatedHeaderStyle]}
             pointerEvents="box-none"
           >
             <View style={styles.searchRow}>
-              <Animated.View style={[styles.searchInputContainer, animatedSearchStyle, { backgroundColor: colors.surfaceContainer, borderColor: isDark ? colors.outlineVariant : 'rgba(0, 0, 0, 0.08)', borderWidth: StyleSheet.hairlineWidth }]}>
+              <Animated.View style={[styles.searchInputContainer, animatedSearchStyle, pillStyle]}>
                 <View style={styles.searchIconContainer}>
                   <Ionicons name="search" size={20} color={colors.textSecondary} />
                 </View>
@@ -437,7 +421,7 @@ const ExploreSearchController = memo(
                     onOpen();
                   }}
                   onSubmitEditing={() => saveSearchToHistory(query)}
-                  style={[styles.searchInput, { color: colors.text }]}
+                  style={[styles.searchInput, inputStyle]}
                   selectionColor={colors.primary}
                   returnKeyType="search"
                   keyboardAppearance={isDark ? "dark" : "light"}
@@ -474,6 +458,7 @@ const ExploreSearchController = memo(
   },
   (prev, next) =>
     prev.isExpanded === next.isExpanded &&
+    prev.isScrolledPastHero === next.isScrolledPastHero &&
     prev.trendingItems === next.trendingItems &&
     prev.personalizedItems === next.personalizedItems
 );
@@ -514,8 +499,10 @@ const ExplorePage = () => {
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
   const [forYouShelves, setForYouShelves] = useState<ForYouShelf[]>(() => getForYouShelvesSync());
 
-  // Progressive Staging: Tier 0 (Immediate Launch) -> Tier 1 (Post-transition) -> Tier 2 (On Scroll)
-  const [renderStage, setRenderStage] = useState<0 | 1>(0);
+  // Progressive Staging: Tier 0 (Immediate Launch) -> Tier 1 (Post-transition)
+  // -> Tier 2 lead (On Scroll) -> Tier 2 rest (one beat later, keeps the
+  // fold-scroll smooth instead of mounting ~10 horizontal lists at once)
+  const [renderStage, setRenderStage] = useState<0 | 1 | 2>(0);
   const [hasScrolledPastFold, setHasScrolledPastFold] = useState(false);
   const hasScrolledShared = useSharedValue(false);
 
@@ -546,15 +533,19 @@ const ExplorePage = () => {
 
   const contentRequestRef = useRef(0);
   const lastPrefsRef = useRef<string>('');
+  const stageCancelRef = useRef<null | (() => void)>(null);
 
   const bgOpacity = useSharedValue(0);
   const searchWidthAnim = useSharedValue(0);
   const searchBarTranslateY = useSharedValue(0);
   const isBarHidden = useSharedValue(false);
   const isHeroOutShared = useSharedValue(false);
+  const isPastHeroShared = useSharedValue(false);
+  const [isScrolledPastHero, setIsScrolledPastHero] = useState(false);
   const lastScrollY = useSharedValue(0);
   const isSearchFocusedShared = useSharedValue(false);
   const inSearchModeShared = useSharedValue(false);
+  const lastEmittedScrollY = useSharedValue(0);
 
   useEffect(() => {
     if (isExpanded) {
@@ -644,7 +635,10 @@ const ExplorePage = () => {
       setHasScrolledPastFold(false);
       setRenderStage(0);
 
-      const cancel = runAfterTransition(() => {
+      // Cancel any pending stage timer from a previous rapid genre switch
+      stageCancelRef.current?.();
+      stageCancelRef.current = runAfterTransition(() => {
+        stageCancelRef.current = null;
         setRenderStage(1);
       }, 200);
 
@@ -658,10 +652,12 @@ const ExplorePage = () => {
         feedOpacityAnim.value = withTiming(0.25, { duration: 180 });
         setContentLoading(true);
       }
-      return () => cancel();
     },
     [selectedGenre, feedOpacityAnim]
   );
+
+  // Cancel the pending stage timer on unmount
+  useEffect(() => () => stageCancelRef.current?.(), []);
 
   useFocusEffect(
     useCallback(() => {
@@ -710,48 +706,61 @@ const ExplorePage = () => {
   // =========================================================================
   // CURATED EDITORIAL HIERARCHY
   // =========================================================================
-  const exploreSections = useMemo(() => {
-    if (!rawContent) return [];
-    const sections: ExploreSection[] = [];
-    const todayStr = new Date().toISOString().split('T')[0];
-    const selectedGenreObj = GENRE_DATA.find((g) => g.id === selectedGenre);
-    const selectedGenreName = selectedGenreObj && selectedGenreObj.id !== 0 ? selectedGenreObj.name : null;
-
+  // Each content group is memoized on ONLY the state that feeds it. A background
+  // taste-profile update then re-renders just the shelves it changed instead of
+  // rebuilding every section (fresh .slice() arrays) and re-rendering all carousels.
+  const topSection = useMemo<ExploreSection | null>(() => {
+    if (!rawContent?.trendingMovies?.length) return null;
     // 1. Top 10 Today (Ranked Rail with Outlined Numerals)
-    if (rawContent.trendingMovies?.length) {
-      sections.push({
-        key: 'top-10-ranked',
-        title: 'Top 10 Today',
-        type: 'ranked',
-        layout: 'ranked',
-        data: rawContent.trendingMovies.slice(0, 10),
-      });
-    }
+    return {
+      key: 'top-10-ranked',
+      title: 'Top 10 Today',
+      type: 'ranked',
+      layout: 'ranked',
+      data: rawContent.trendingMovies.slice(0, 10),
+    };
+  }, [rawContent]);
+
+  const spotlightSection = useMemo<ExploreSection | null>(() => {
+    if (!rawContent) return null;
+    const todayStr = new Date().toISOString().split('T')[0];
 
     // 2. Personalized Franchise Spotlight (16:9 Landscape Rail)
     if (selectedGenre === 0 && forYouShelves.length > 0) {
       const topShelf = forYouShelves[0];
       const validItems = (topShelf.items || []).filter((item: any) => isMediaReleased(item, todayStr)).slice(0, 10);
       if (validItems.length > 0) {
-        sections.push({
+        return {
           key: `spotlight-${topShelf.shelfId}`,
           title: topShelf.title,
           type: 'spotlight',
           layout: 'spotlight',
           eyebrow: 'CONTINUE THE SAGA',
           data: validItems,
-        });
+        };
       }
-    } else if (rawContent.heroMovies?.length) {
-      sections.push({
+      // Original behaviour: with a personalized shelf present but nothing
+      // released yet, show no spotlight (no featured fallback).
+      return null;
+    }
+    if (rawContent.heroMovies?.length) {
+      return {
         key: 'spotlight-featured',
         title: 'Featured Spotlight',
         type: 'spotlight',
         layout: 'spotlight',
         eyebrow: 'MUST WATCH',
         data: rawContent.heroMovies.slice(0, 10),
-      });
+      };
     }
+    return null;
+  }, [rawContent, forYouShelves, selectedGenre]);
+
+  const midSections = useMemo<ExploreSection[]>(() => {
+    if (!rawContent) return [];
+    const sections: ExploreSection[] = [];
+    const selectedGenreObj = GENRE_DATA.find((g) => g.id === selectedGenre);
+    const selectedGenreName = selectedGenreObj && selectedGenreObj.id !== 0 ? selectedGenreObj.name : null;
 
     // 3. ELEVATED: Trending & Binge-Worthy TV Series
     if (rawContent.trendingTV?.length) {
@@ -790,35 +799,46 @@ const ExplorePage = () => {
       }
     }
 
-    // 6. Personalized "Because You Watched"
-    if (selectedGenre === 0 && becauseYouWatched.length > 0) {
-      const primaryRec = becauseYouWatched[0];
-      if (primaryRec?.items?.length) {
-        sections.push({
-          key: 'byw-primary',
-          title: `Because You Watched ${primaryRec.sourceTitle}`,
-          type: 'becauseyouwatched',
-          layout: 'standard',
-          data: primaryRec.items.slice(0, 15),
-        });
-      }
-    }
+    return sections;
+  }, [rawContent, selectedGenre]);
 
+  const bywSection = useMemo<ExploreSection | null>(() => {
+    if (!rawContent || selectedGenre !== 0 || becauseYouWatched.length === 0) return null;
+    const primaryRec = becauseYouWatched[0];
+    if (!primaryRec?.items?.length) return null;
+    // 6. Personalized "Because You Watched"
+    return {
+      key: 'byw-primary',
+      title: `Because You Watched ${primaryRec.sourceTitle}`,
+      type: 'becauseyouwatched',
+      layout: 'standard',
+      data: primaryRec.items.slice(0, 15),
+    };
+  }, [becauseYouWatched, selectedGenre]);
+
+  const secondaryShelfSection = useMemo<ExploreSection | null>(() => {
+    if (!rawContent || selectedGenre !== 0 || forYouShelves.length <= 1) return null;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const secondaryShelf = forYouShelves[1];
+    const items = (secondaryShelf.items || []).filter((item: any) => isMediaReleased(item, todayStr)).slice(0, 15);
+    if (items.length === 0) return null;
     // 7. Secondary Taste Profile Collection ("Your Sweet Spot")
-    if (selectedGenre === 0 && forYouShelves.length > 1) {
-      const secondaryShelf = forYouShelves[1];
-      const items = (secondaryShelf.items || []).filter((item: any) => isMediaReleased(item, todayStr)).slice(0, 15);
-      if (items.length > 0) {
-        sections.push({
-          key: `foryou-${secondaryShelf.shelfId}`,
-          title: secondaryShelf.title,
-          type: `foryou-${secondaryShelf.shelfId}`,
-          layout: 'standard',
-          eyebrow: secondaryShelf.subtitle || undefined,
-          data: items,
-        });
-      }
-    }
+    return {
+      key: `foryou-${secondaryShelf.shelfId}`,
+      title: secondaryShelf.title,
+      type: `foryou-${secondaryShelf.shelfId}`,
+      layout: 'standard',
+      eyebrow: secondaryShelf.subtitle || undefined,
+      data: items,
+    };
+  }, [rawContent, forYouShelves, selectedGenre]);
+
+  const tailSections = useMemo<ExploreSection[]>(() => {
+    if (!rawContent) return [];
+    const sections: ExploreSection[] = [];
+    const todayStr = new Date().toISOString().split('T')[0];
+    const selectedGenreObj = GENRE_DATA.find((g) => g.id === selectedGenre);
+    const selectedGenreName = selectedGenreObj && selectedGenreObj.id !== 0 ? selectedGenreObj.name : null;
 
     // 8. Popular / Trending
     if (rawContent.popularMovies?.length) {
@@ -890,12 +910,37 @@ const ExplorePage = () => {
     }
 
     return sections;
-  }, [rawContent, forYouShelves, becauseYouWatched, selectedGenre]);
+  }, [rawContent, selectedGenre]);
+
+  // Merge only — section objects keep their identity so ExploreSectionItem's
+  // memo comparator can skip shelves whose source data did not change.
+  const exploreSections = useMemo(
+    () =>
+      [
+        topSection,
+        spotlightSection,
+        ...midSections,
+        bywSection,
+        secondaryShelfSection,
+        ...tailSections,
+      ].filter((s): s is ExploreSection => s !== null),
+    [topSection, spotlightSection, midSections, bywSection, secondaryShelfSection, tailSections]
+  );
 
   // Tier slicing (matching Detail Page progressive mount pattern)
   const tier0Sections = useMemo(() => exploreSections.slice(0, 1), [exploreSections]);
   const tier1Sections = useMemo(() => exploreSections.slice(1, 4), [exploreSections]);
   const tier2Sections = useMemo(() => exploreSections.slice(4), [exploreSections]);
+  const tier2LeadSections = useMemo(() => tier2Sections.slice(0, 4), [tier2Sections]);
+  const tier2LateSections = useMemo(() => tier2Sections.slice(4), [tier2Sections]);
+
+  // Mount the remainder of tier 2 one beat after the fold-scroll so crossing
+  // the threshold never compiles every remaining shelf in a single frame.
+  useEffect(() => {
+    if (renderStage >= 2 || !hasScrolledPastFold) return;
+    const cancel = runAfterTransition(() => setRenderStage(2), 300);
+    return cancel;
+  }, [hasScrolledPastFold, renderStage]);
 
   const handleExploreAll = useCallback((item: ExploreSection) => {
     router.push({
@@ -910,6 +955,18 @@ const ExplorePage = () => {
   const handleOpenSearch = useCallback(() => setIsExpanded(true), []);
   const handleCloseSearch = useCallback(() => setIsExpanded(false), []);
 
+  // Stable references for the memoized search controller — the previous
+  // inline `|| []` fallbacks allocated a new array every render, which broke
+  // its memo comparator and re-rendered the header/search overlay each time.
+  const searchTrendingItems = useMemo(
+    () => (trendingToday.length > 0 ? trendingToday : (rawContent?.trendingMovies ?? [])),
+    [trendingToday, rawContent]
+  );
+  const searchPersonalizedItems = useMemo(() => {
+    if (becauseYouWatched.length > 0) return becauseYouWatched[0]?.items ?? [];
+    return forYouShelves[0]?.items ?? [];
+  }, [becauseYouWatched, forYouShelves]);
+
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
       'worklet';
@@ -917,14 +974,27 @@ const ExplorePage = () => {
       const diff = currentY - lastScrollY.value;
       lastScrollY.value = currentY;
 
-      // Tab bar shrink sync (0.8 scale on scroll down, restore on scroll up / top)
-      runOnJS(emitExploreScroll)(currentY);
+      // Tab bar shrink sync — throttled: only bridge to JS when the offset
+      // moved >= 12px or crossed the 50px shrink threshold, instead of every frame.
+      const crossedShrinkThreshold =
+        currentY <= 50 !== lastEmittedScrollY.value <= 50;
+      if (Math.abs(currentY - lastEmittedScrollY.value) >= 12 || crossedShrinkThreshold) {
+        lastEmittedScrollY.value = currentY;
+        runOnJS(emitExploreScroll)(currentY);
+      }
 
       // Pause hero autoplay and animations when scrolled completely off-screen (> 450px)
       const isHeroOut = currentY > 450;
       if (isHeroOut !== isHeroOutShared.value) {
         isHeroOutShared.value = isHeroOut;
         runOnJS(updateHeroScrollOut)(isHeroOut);
+      }
+
+      // Toggle past-hero threshold for dynamic status bar & header styling
+      const isPastHero = currentY > 180;
+      if (isPastHero !== isPastHeroShared.value) {
+        isPastHeroShared.value = isPastHero;
+        runOnJS(setIsScrolledPastHero)(isPastHero);
       }
 
       // Unlock Tier 2 shelves once scrolled past hero/fold
@@ -960,20 +1030,23 @@ const ExplorePage = () => {
     },
   });
 
+  // Top-bar shade removed: the status bar now adapts to the surface beneath it —
+  // dark theme background => white icons, light theme background => dark icons.
+  const statusBarTheme = isDark ? 'light-content' : 'dark-content';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
+      <StatusBar translucent backgroundColor="transparent" barStyle={statusBarTheme} />
 
       {/* Main Smooth ScrollView with Progressive Tier Mounts (Matched with Detail Page) */}
       <Animated.ScrollView
-        style={[{ flex: 1 }, animatedFeedStyle as any]}
+        style={[styles.feed, animatedFeedStyle as any]}
         contentContainerStyle={styles.scrollContent}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         overScrollMode="never"
         keyboardDismissMode="on-drag"
-        onScrollBeginDrag={() => Keyboard.dismiss()}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -991,7 +1064,6 @@ const ExplorePage = () => {
             selectedGenre={selectedGenre}
             onSelectGenre={handleSelectGenre}
             toggleWatchlist={handleToggleWatchlist}
-            onOpenSearch={handleOpenSearch}
           />
 
         {!(contentLoading && !rawContent) && (
@@ -1017,9 +1089,19 @@ const ExplorePage = () => {
                 />
               ))}
 
-            {/* TIER 2: Anchored to Scroll Past Fold */}
+            {/* TIER 2: Anchored to Scroll Past Fold — lead shelves first, the rest one beat later */}
             {hasScrolledPastFold &&
-              tier2Sections.map((item) => (
+              tier2LeadSections.map((item) => (
+                <ExploreSectionItem
+                  key={item.key}
+                  item={item}
+                  toggleWatchlist={handleToggleWatchlist}
+                  onExploreAll={handleExploreAll}
+                />
+              ))}
+            {hasScrolledPastFold &&
+              renderStage >= 2 &&
+              tier2LateSections.map((item) => (
                 <ExploreSectionItem
                   key={item.key}
                   item={item}
@@ -1030,7 +1112,7 @@ const ExplorePage = () => {
           </>
         )}
 
-        <View style={{ height: 40 }} />
+        <View style={styles.feedEndSpacer} />
       </Animated.ScrollView>
 
       {/* Jetpack Compose LoadingIndicator in the Middle of the Screen when Genre / Content is Loading */}
@@ -1053,8 +1135,9 @@ const ExplorePage = () => {
         toggleWatchlist={handleToggleWatchlist}
         isSearchFocusedShared={isSearchFocusedShared}
         inSearchModeShared={inSearchModeShared}
-        trendingItems={trendingToday.length > 0 ? trendingToday : (rawContent?.trendingMovies || [])}
-        personalizedItems={becauseYouWatched.length > 0 ? becauseYouWatched[0]?.items : (forYouShelves[0]?.items || [])}
+        trendingItems={searchTrendingItems}
+        personalizedItems={searchPersonalizedItems}
+        isScrolledPastHero={isScrolledPastHero}
       />
     </View>
   );
@@ -1067,6 +1150,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0A0A0B',
     overflow: 'hidden',
+  },
+  feed: {
+    flex: 1,
+  },
+  feedEndSpacer: {
+    height: 40,
   },
   scrollContent: {
     paddingTop: (StatusBar.currentHeight || 0) + 70,
@@ -1081,13 +1170,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 100,
-  },
-  gradientHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: (StatusBar.currentHeight || 0) + 60,
   },
   searchBarContainer: {
     paddingHorizontal: HORIZONTAL_MARGIN,
@@ -1114,7 +1196,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     height: 48,
     fontSize: 15.5,
-    color: '#FFFFFF',
     paddingLeft: 4,
     fontFamily: 'GoogleSansFlex-Medium',
   },
@@ -1128,30 +1209,6 @@ const styles = StyleSheet.create({
     paddingRight: 16,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  searchLoadingHost: {
-    width: 22,
-    height: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  skeletonContainer: {
-    marginBottom: 24,
-    paddingLeft: HORIZONTAL_MARGIN,
-  },
-  skeletonTitle: {
-    width: 140,
-    height: 20,
-    backgroundColor: '#222',
-    borderRadius: 4,
-    marginBottom: 12,
-  },
-  skeletonCard: {
-    width: 130,
-    height: 195,
-    backgroundColor: '#222',
-    borderRadius: 8,
-    marginRight: 12,
   },
   centerLoadingOverlay: {
     position: 'absolute',
@@ -1170,11 +1227,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     ...shadows.lg,
-  },
-  centerLoadingHost: {
-    width: 36,
-    height: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });

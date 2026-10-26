@@ -688,7 +688,7 @@ const Settings = () => {
         ) : (
           <Switch 
             trackColor={{ false: colors.border, true: colors.primary }} 
-            thumbColor="#FFFFFF"
+            thumbColor={colors.surface}
             onValueChange={onValueChange} 
             value={value} 
           />
@@ -758,7 +758,7 @@ const Settings = () => {
 
         {/* ── Cloud Sync & Account ── */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>CLOUD SYNC (OPTIONAL)</Text>
-        <Text style={{ fontSize: 13, color: colors.textSecondary, marginHorizontal: 20, marginBottom: 8, lineHeight: 18 }}>
+        <Text style={{ fontSize: 13, color: colors.textSecondary, marginHorizontal: 16, marginBottom: 8, lineHeight: 18 }}>
           Cloud sync is strictly optional. All movies, bookmarks, and features work 100% offline. Connect only if you want cross-device library sync.
         </Text>
         <View style={[styles.card, { backgroundColor: colors.surfaceContainer }]}>
@@ -773,7 +773,7 @@ const Settings = () => {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.rowTitle, { color: colors.text }]}>{cloudUser.name}</Text>
                   <Text style={[styles.rowSubtitle, { color: colors.textSecondary }]}>{cloudUser.email}</Text>
-                  <Text style={[styles.rowSubtitle, { color: colors.success || '#30D158', marginTop: 2, fontWeight: '600' }]}>
+                  <Text style={[styles.rowSubtitle, { color: colors.success, marginTop: 2, fontWeight: '600' }]}>
                     🟢 Connected to Watcher Cloud
                   </Text>
                 </View>
@@ -801,9 +801,9 @@ const Settings = () => {
                 style={[styles.googleSignInBtn, { backgroundColor: colors.primary }, (isSyncingCloud || (Platform.OS !== 'android' && !request)) && { opacity: 0.6 }]}
               >
                 {isSyncingCloud ? (
-                  <LoadingIndicator size="small" color="#fff" />
+                  <LoadingIndicator size="small" color={colors.onPrimary} />
                 ) : (
-                  <Ionicons name="logo-google" size={18} color="#fff" />
+                  <Ionicons name="logo-google" size={18} color={colors.onPrimary} />
                 )}
                 <Text style={styles.googleSignInText}>
                   {isSyncingCloud ? 'Signing in...' : 'Sign in with Google'}
@@ -1014,7 +1014,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontFamily: 'GoogleSansFlex-Bold',
     color: '#FFFFFF',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 20,
   },
@@ -1023,7 +1023,7 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex-Medium',
     color: '#666',
     letterSpacing: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     marginTop: 24,
     marginBottom: 8,
   },
@@ -1056,9 +1056,6 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     lineHeight: 16,
   },
-  destructiveText: {
-    color: '#E50914',
-  },
   separator: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: '#38383A',
@@ -1081,120 +1078,8 @@ const styles = StyleSheet.create({
   badgeNewText: {
     color: '#FFF',
     fontSize: 10,
-    fontWeight: '800',
+    fontFamily: 'GoogleSansFlex-Bold',
     letterSpacing: 0.5,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 360,
-    backgroundColor: '#1C1C1E',
-    borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  modalIconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(229, 9, 20, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontFamily: 'GoogleSansFlex-Bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  modalVersionTag: {
-    fontSize: 13,
-    color: '#E50914',
-    fontFamily: 'GoogleSansFlex-Medium',
-    marginBottom: 12,
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    color: '#A0A0A0',
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 20,
-  },
-  modalNotesScroll: {
-    maxHeight: 120,
-    width: '100%',
-    backgroundColor: '#121212',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 16,
-  },
-  modalNotesText: {
-    fontSize: 12,
-    color: '#CCCCCC',
-    lineHeight: 18,
-    fontFamily: 'GoogleSansFlex-Regular',
-  },
-  progressContainer: {
-    width: '100%',
-    marginBottom: 16,
-  },
-  progressBarBg: {
-    width: '100%',
-    height: 8,
-    backgroundColor: '#333333',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 6,
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#E50914',
-    borderRadius: 4,
-  },
-  progressText: {
-    fontSize: 12,
-    color: '#8E8E93',
-    textAlign: 'center',
-  },
-  modalBtnRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-    marginTop: 8,
-  },
-  modalCancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#2C2C2E',
-    alignItems: 'center',
-  },
-  modalCancelText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontFamily: 'GoogleSansFlex-Medium',
-  },
-  modalConfirmBtn: {
-    flex: 2,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#E50914',
-    alignItems: 'center',
-  },
-  modalConfirmText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontFamily: 'GoogleSansFlex-Bold',
   },
   cloudUserRow: {
     flexDirection: 'row',
@@ -1214,7 +1099,7 @@ const styles = StyleSheet.create({
   cloudAvatarText: {
     color: '#FFFFFF',
     fontSize: 18,
-    fontWeight: '800',
+    fontFamily: 'GoogleSansFlex-Bold',
   },
   googleSignInBtn: {
     flexDirection: 'row',
@@ -1230,7 +1115,7 @@ const styles = StyleSheet.create({
   googleSignInText: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '700',
+    fontFamily: 'GoogleSansFlex-Bold',
     letterSpacing: 0.2,
   },
 });

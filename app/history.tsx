@@ -14,6 +14,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
 import { ThemedDialog } from "../src/components/shared/ThemedDialog";
 import { useAppTheme } from "../src/theme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface HistoryItem {
   query: string;
@@ -38,6 +39,7 @@ const formatDate = (dateStr: string) => {
 
 const HistoryPage = () => {
   const { colors, isDark } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const router = useRouter();
   const [currentlyOpenSwipeable, setCurrentlyOpenSwipeable] = useState<number | null>(null);
@@ -144,7 +146,7 @@ const HistoryPage = () => {
             <Text style={[styles.dateText, { color: colors.textSecondary }]}>{formatDate(item.date)}</Text>
           </TouchableOpacity>
         </Animated.View>
-        <TouchableOpacity activeOpacity={0.95} style={styles.deleteButton} onPress={() => deleteHistoryItem(itemIndex)}>
+        <TouchableOpacity activeOpacity={0.95} style={[styles.deleteButton, { backgroundColor: colors.error }]} onPress={() => deleteHistoryItem(itemIndex)}>
           <Text style={styles.deleteButtonText}>Delete</Text>
         </TouchableOpacity>
       </View>
@@ -152,7 +154,7 @@ const HistoryPage = () => {
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
+    <ScrollView style={[styles.container, { paddingTop: insets.top + 10, backgroundColor: colors.background }]}>
       {/* --- Themed Clear History Dialog --- */}
       <ThemedDialog
         visible={isAlertVisible}
@@ -211,7 +213,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#121212", 
     paddingHorizontal: 16,
-    paddingTop: 50,
     paddingBottom: 120,
   },
   header: {

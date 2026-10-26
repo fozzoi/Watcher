@@ -3,24 +3,30 @@ import { View, StyleSheet, ScrollView, StatusBar, useWindowDimensions } from 're
 import { LinearGradient } from 'expo-linear-gradient';
 import { ShimmerBlock } from '../shared/Shimmer';
 import { useAppTheme } from '../../theme';
+import { AMBIENT_PENDING_BG } from '../../utils/colorExtractor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
 export const MovieDetailSkeleton: React.FC = () => {
-  const { colors, isDark } = useAppTheme();
+  const { colors, isDark, ambientTheming } = useAppTheme();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const HEADER_HEIGHT = isLandscape ? height * 0.55 : height * 0.50;
 
+  // Ambient mode always lands on a dark page, so render the skeleton dark too —
+  // this stops the skeleton → content handoff flashing from light to ambient dark.
+  const dark = isDark || ambientTheming;
+  const bg = ambientTheming ? AMBIENT_PENDING_BG : colors.background;
+
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
+    <View style={[styles.root, { backgroundColor: bg }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={dark ? "light-content" : "dark-content"} />
 
       {/* Static Hero Backdrop Skeleton — Matches app/movie/[id].tsx identically */}
-      <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: colors.background }]} pointerEvents="none">
+      <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: bg }]} pointerEvents="none">
         <ShimmerBlock width="100%" height={HEADER_HEIGHT} borderRadius={0} style={styles.heroShimmer} />
         <LinearGradient
-          colors={isDark ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E'] : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']}
+          colors={dark ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E'] : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']}
           locations={[0, 0.45, 1]}
           style={StyleSheet.absoluteFill}
         />
@@ -28,8 +34,8 @@ export const MovieDetailSkeleton: React.FC = () => {
 
       {/* Top Floating Glass Buttons */}
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-        <View style={[styles.glassCircle, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }]} />
-        <View style={[styles.glassCircle, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }]} />
+        <View style={[styles.glassCircle, { backgroundColor: dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }]} />
+        <View style={[styles.glassCircle, { backgroundColor: dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }]} />
       </View>
 
       {/* Single Scroll Container with identical spacer */}
@@ -38,7 +44,7 @@ export const MovieDetailSkeleton: React.FC = () => {
         <View style={{ height: HEADER_HEIGHT - 30 }} />
 
         {/* Card Body */}
-        <View style={[styles.cardTop, { backgroundColor: colors.background }]}>
+        <View style={[styles.cardTop, { backgroundColor: bg }]}>
           {/* Eyebrow */}
           <ShimmerBlock width={100} height={12} style={{ marginBottom: 10 }} />
 

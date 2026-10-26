@@ -6,11 +6,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import MovieCard from './MovieCard';
 import { EXPLORE_CARD_WIDTH, GAP_SIZE, HORIZONTAL_MARGIN } from '../explore/ExploreConstants';
 import { useAppTheme } from '../../theme';
-
-const C = {
-  white: '#FAFAFA',
-  mutedSoft: '#9B9BA3',
-};
+import { warmPaletteForMedia } from '../../utils/colorExtractor';
 
 const SNAP_INTERVAL = EXPLORE_CARD_WIDTH + GAP_SIZE;
 
@@ -40,6 +36,7 @@ const MediaCarousel = memo(
 
     const handleCardPress = useCallback(
       (item: any) => {
+        warmPaletteForMedia(item);
         const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
         router.push(`/movie/${item.id}?media_type=${mediaType}`);
       },
@@ -65,8 +62,16 @@ const MediaCarousel = memo(
       <View style={styles.sectionContainer}>
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
-          <TouchableOpacity activeOpacity={0.8} onPress={handleViewAll}>
-            <MaterialIcons name="chevron-right" size={24} color={colors.textSecondary} />
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={handleViewAll}
+            style={styles.viewAllBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 10, right: 6 }}
+            accessibilityRole="button"
+            accessibilityLabel={`View all ${title}`}
+          >
+            <Text style={[styles.viewAllText, { color: colors.textSecondary }]}>View all</Text>
+            <MaterialIcons name="chevron-right" size={18} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
@@ -98,7 +103,7 @@ export default MediaCarousel;
 
 const styles = StyleSheet.create({
   sectionContainer: {
-    marginBottom: 10,
+    marginBottom: 14,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -108,10 +113,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: HORIZONTAL_MARGIN,
   },
   sectionTitle: {
-    color: C.white,
     fontSize: 20,
     fontWeight: '800',
-    letterSpacing: -0.4,
+    letterSpacing: -0.3,
+  },
+  viewAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  viewAllText: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.1,
+    marginRight: 2,
   },
   listContent: {
     paddingHorizontal: HORIZONTAL_MARGIN,

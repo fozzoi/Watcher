@@ -6,6 +6,7 @@ import MovieCard from '../shared/MovieCard';
 import { HORIZONTAL_MARGIN } from '../explore/ExploreConstants';
 import { logTasteEvent, TASTE_WEIGHTS } from '../../services/tasteProfile';
 import { useAppTheme } from '../../theme';
+import { warmPaletteForMedia } from '../../utils/colorExtractor';
 
 interface SearchResultsListProps {
   peopleResults: any[];
@@ -55,6 +56,7 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
                       entity_name: item.name,
                       weight: TASTE_WEIGHTS.SEARCH_CLICK,
                     });
+                    warmPaletteForMedia(item);
                     router.push(`/cast/${item.id}`);
                   }}
                 >
@@ -113,6 +115,7 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
                       genres: result.genre_ids,
                       weight: TASTE_WEIGHTS.SEARCH_CLICK,
                     });
+                    warmPaletteForMedia(result);
                     router.push(`/movie/${result.id}?media_type=${mType}`);
                   }}
                 />

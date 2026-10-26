@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useAppTheme, shadows } from '../../theme';
 
 export interface DialogButton {
   text: string;
@@ -33,50 +34,52 @@ export const ThemedDialog: React.FC<ThemedDialogProps> = ({
   onClose,
   iconName,
 }) => {
+  const { colors } = useAppTheme();
+
   if (!visible) return null;
 
   const getIcon = () => {
     if (iconName) {
-      return <Ionicons name={iconName as any} size={30} color="#E50914" />;
+      return <Ionicons name={iconName as any} size={30} color={colors.primary} />;
     }
     switch (type) {
       case 'success':
-        return <Ionicons name="checkmark-circle-outline" size={34} color="#30D158" />;
+        return <Ionicons name="checkmark-circle-outline" size={34} color={colors.success} />;
       case 'warning':
-        return <Ionicons name="alert-circle-outline" size={34} color="#FF9F0A" />;
+        return <Ionicons name="alert-circle-outline" size={34} color={colors.warning} />;
       case 'danger':
-        return <Ionicons name="trash-outline" size={32} color="#FF453A" />;
+        return <Ionicons name="trash-outline" size={32} color={colors.error} />;
       case 'info':
       default:
-        return <MaterialCommunityIcons name="filmstrip" size={32} color="#E50914" />;
+        return <MaterialCommunityIcons name="filmstrip" size={32} color={colors.primary} />;
     }
   };
 
   const getIconBg = () => {
     switch (type) {
       case 'success':
-        return 'rgba(48, 209, 88, 0.12)';
+        return `${colors.success}1F`;
       case 'warning':
-        return 'rgba(255, 159, 10, 0.12)';
+        return `${colors.warning}1F`;
       case 'danger':
-        return 'rgba(255, 69, 58, 0.12)';
+        return `${colors.error}1F`;
       case 'info':
       default:
-        return 'rgba(229, 9, 20, 0.12)';
+        return `${colors.primary}1F`;
     }
   };
 
   const getIconBorder = () => {
     switch (type) {
       case 'success':
-        return 'rgba(48, 209, 88, 0.3)';
+        return `${colors.success}4D`;
       case 'warning':
-        return 'rgba(255, 159, 10, 0.3)';
+        return `${colors.warning}4D`;
       case 'danger':
-        return 'rgba(255, 69, 58, 0.3)';
+        return `${colors.error}4D`;
       case 'info':
       default:
-        return 'rgba(229, 9, 20, 0.3)';
+        return `${colors.primary}4D`;
     }
   };
 
@@ -89,14 +92,14 @@ export const ThemedDialog: React.FC<ThemedDialogProps> = ({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
-        <View style={styles.card}>
+      <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
           <View style={[styles.iconContainer, { backgroundColor: getIconBg(), borderColor: getIconBorder() }]}>
             {getIcon()}
           </View>
 
-          <Text style={styles.title}>{title}</Text>
-          {message ? <Text style={styles.message}>{message}</Text> : null}
+          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+          {message ? <Text style={[styles.message, { color: colors.textSecondary }]}>{message}</Text> : null}
 
           <View style={isVerticalStack ? styles.buttonStack : styles.buttonRow}>
             {buttons.map((btn, idx) => {
@@ -114,19 +117,21 @@ export const ThemedDialog: React.FC<ThemedDialogProps> = ({
                   }}
                   style={[
                     styles.buttonBase,
+                    { backgroundColor: colors.surfaceContainerHigh },
                     !isVerticalStack && styles.buttonInRow,
                     isVerticalStack && styles.buttonInStack,
-                    isCancel && styles.buttonCancel,
-                    isDestructive && styles.buttonDestructive,
-                    isPrimary && !isDestructive && styles.buttonPrimary,
+                    isCancel && [styles.buttonCancel, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.border }],
+                    isDestructive && [styles.buttonDestructive, { backgroundColor: `${colors.error}26`, borderColor: `${colors.error}66` }],
+                    isPrimary && !isDestructive && [styles.buttonPrimary, { backgroundColor: colors.primary }],
                   ]}
                 >
                   <Text
                     style={[
                       styles.buttonText,
-                      isCancel && styles.buttonTextCancel,
-                      isDestructive && styles.buttonTextDestructive,
-                      isPrimary && !isDestructive && styles.buttonTextPrimary,
+                      { color: colors.text },
+                      isCancel && [styles.buttonTextCancel, { color: colors.textSecondary }],
+                      isDestructive && [styles.buttonTextDestructive, { color: colors.error }],
+                      isPrimary && !isDestructive && [styles.buttonTextPrimary, { color: colors.onPrimary }],
                     ]}
                   >
                     {btn.text}
@@ -144,7 +149,6 @@ export const ThemedDialog: React.FC<ThemedDialogProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -152,18 +156,12 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: Math.min(width - 40, 360),
-    backgroundColor: '#121212', // Sleek dark solid color
     borderRadius: 28, // Rounder for modern minimal look
     paddingVertical: 26,
     paddingHorizontal: 22,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)', // Subtle edge
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.6,
-    shadowRadius: 24,
-    elevation: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    ...shadows.xl,
   },
   iconContainer: {
     width: 64,
@@ -177,14 +175,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontFamily: 'GoogleSansFlex-Bold',
-    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 8,
   },
   message: {
     fontSize: 14,
     fontFamily: 'GoogleSansFlex-Regular',
-    color: '#A0A0A0',
     textAlign: 'center',
     lineHeight: 21,
     marginBottom: 22,
@@ -207,7 +203,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 14,
-    backgroundColor: '#2C2C2E',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -218,32 +213,24 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   buttonCancel: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  buttonPrimary: {
-    backgroundColor: '#E50914',
-  },
+  buttonPrimary: {},
   buttonDestructive: {
-    backgroundColor: 'rgba(255, 69, 58, 0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 69, 58, 0.4)',
   },
   buttonText: {
     fontSize: 15,
     fontFamily: 'GoogleSansFlex-Bold',
-    color: '#FFFFFF',
     textAlign: 'center',
   },
   buttonTextCancel: {
-    color: '#8E8E93',
     fontFamily: 'GoogleSansFlex-Medium',
   },
   buttonTextPrimary: {
-    color: '#FFFFFF',
     fontFamily: 'GoogleSansFlex-Bold',
   },
   buttonTextDestructive: {
-    color: '#FF453A',
     fontFamily: 'GoogleSansFlex-Bold',
   },
 });

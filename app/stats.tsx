@@ -15,9 +15,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { getSavedItems } from '../src/database';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { useAppTheme } from '../src/theme';
+import { useAppTheme, ACCENT_COLOR, palette } from '../src/theme';
 
-const ACCENT = '#E50914';
+const ACCENT = ACCENT_COLOR;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const GENRE_MAP: Record<number, string> = {
@@ -228,10 +228,10 @@ export default function StatsPage() {
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Header Bar */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: colors.divider }]}>
         <TouchableOpacity 
           onPress={() => router.back()} 
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}
           accessibilityLabel="Go back"
         >
           <Ionicons name="arrow-back" size={22} color={colors.text} />
@@ -244,7 +244,7 @@ export default function StatsPage() {
 
         <TouchableOpacity 
           onPress={loadStats} 
-          style={styles.reloadBtn}
+          style={[styles.reloadBtn, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}
           accessibilityLabel="Refresh stats"
         >
           <Ionicons name="reload-outline" size={20} color={colors.textSecondary} />
@@ -265,9 +265,9 @@ export default function StatsPage() {
           />
           <View style={styles.milestoneContent}>
             <View style={styles.milestoneLeft}>
-              <View style={styles.milestoneBadgeRow}>
-                <Ionicons name="sparkles" size={12} color="#FFD700" />
-                <Text style={styles.milestoneBadgeText}>MILESTONE RANK</Text>
+              <View style={[styles.milestoneBadgeRow, { backgroundColor: isDark ? 'rgba(255,214,10,0.12)' : 'rgba(217,119,6,0.12)' }]}>
+                <Ionicons name="sparkles" size={12} color={colors.warning} />
+                <Text style={[styles.milestoneBadgeText, { color: colors.warning }]}>MILESTONE RANK</Text>
               </View>
               <Text style={[styles.milestoneTitle, { color: colors.text }]}>{stats.milestoneTitle}</Text>
               <Text style={[styles.milestoneDesc, { color: colors.textSecondary }]}>{stats.milestoneDesc}</Text>
@@ -279,7 +279,7 @@ export default function StatsPage() {
           </View>
 
           {/* Mini Milestone Stats Pill Row */}
-          <View style={styles.milestoneFooterRow}>
+          <View style={[styles.milestoneFooterRow, { borderTopColor: colors.divider }]}>
             <View style={styles.milestoneFooterPill}>
               <Text style={[styles.milestoneFooterNum, { color: colors.text }]}>{stats.totalWatched}</Text>
               <Text style={[styles.milestoneFooterLabel, { color: colors.textSecondary }]}>Watched</Text>
@@ -311,7 +311,7 @@ export default function StatsPage() {
           {/* TV Series Watched */}
           <Animated.View entering={FadeInDown.delay(150)} style={[styles.metricCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
             <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(48,209,88,0.15)' }]}>
-              <Ionicons name="tv" size={20} color="#30D158" />
+              <Ionicons name="tv" size={20} color={palette.green} />
             </View>
             <Text style={[styles.metricValue, { color: colors.text }]}>{stats.totalTv}</Text>
             <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>TV Shows Watched</Text>
@@ -320,7 +320,7 @@ export default function StatsPage() {
           {/* Total Watch Time */}
           <Animated.View entering={FadeInDown.delay(200)} style={[styles.metricCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
             <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(255,214,10,0.15)' }]}>
-              <Ionicons name="time" size={20} color="#FFD60A" />
+              <Ionicons name="time" size={20} color={palette.yellow} />
             </View>
             <Text style={[styles.metricValue, { color: colors.text }]}>{stats.totalRuntimeHours}h</Text>
             <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>~{stats.totalRuntimeDays} Total Days</Text>
@@ -329,7 +329,7 @@ export default function StatsPage() {
           {/* Watchlist & Completion */}
           <Animated.View entering={FadeInDown.delay(250)} style={[styles.metricCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
             <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(191,90,242,0.15)' }]}>
-              <Ionicons name="bookmark" size={20} color="#BF5AF2" />
+              <Ionicons name="bookmark" size={20} color={palette.purple} />
             </View>
             <Text style={[styles.metricValue, { color: colors.text }]}>{stats.watchlistSize}</Text>
             <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>In Watchlist ({stats.completionRate}% Done)</Text>
@@ -358,7 +358,7 @@ export default function StatsPage() {
               </View>
 
               <View style={styles.ratioLegendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#30D158' }]} />
+                <View style={[styles.legendDot, { backgroundColor: palette.green }]} />
                 <Text style={[styles.ratioLegendText, { color: colors.textSecondary }]}>
                   TV Shows: <Text style={[styles.boldText, { color: colors.text }]}>{stats.totalTv}</Text> ({stats.tvRatio}%)
                 </Text>
@@ -408,7 +408,7 @@ export default function StatsPage() {
         {/* Most Watched Stars / Favorite Actors */}
         <Animated.View entering={FadeInDown.delay(400)} style={[styles.sectionCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
           <View style={styles.sectionTitleRow}>
-            <Ionicons name="star" size={18} color="#FFD60A" />
+            <Ionicons name="star" size={18} color={palette.yellow} />
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Stars & Actors</Text>
           </View>
 
@@ -676,7 +676,7 @@ const styles = StyleSheet.create({
   },
   ratioBarFillTv: {
     height: '100%',
-    backgroundColor: '#30D158',
+    backgroundColor: palette.green,
     borderTopRightRadius: 5,
     borderBottomRightRadius: 5,
   },

@@ -24,6 +24,7 @@ import {
 } from '../../src/tmdb';
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
 import { useAppTheme } from '../../src/theme';
+import { warmPaletteForMedia } from '../../src/utils/colorExtractor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
@@ -141,6 +142,7 @@ const CollectionDetails = () => {
     : [];
 
   const handleMoviePress = (movie: TMDBResult) => {
+    warmPaletteForMedia(movie);
     router.push(`/movie/${movie.id}`);
   };
 

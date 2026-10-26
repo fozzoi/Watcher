@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getImageUrl, getMovieCollectionInfo } from '../../tmdb';
 import { HORIZONTAL_MARGIN } from './ExploreConstants';
 import { useAppTheme, shadows } from '../../theme';
+import { warmPaletteForMedia } from '../../utils/colorExtractor';
 
 const SPOTLIGHT_WIDTH = 280;
 const SPOTLIGHT_HEIGHT = 158;
@@ -107,6 +108,7 @@ const SpotlightCarousel = memo(
           const titleToPass = collectionName || item.title || item.name || '';
           router.push(`/collection/${collectionId}?name=${encodeURIComponent(titleToPass)}&title=${encodeURIComponent(titleToPass)}`);
         } else if (item.id) {
+          warmPaletteForMedia(item);
           router.push(`/movie/${item.id}`);
         }
       },

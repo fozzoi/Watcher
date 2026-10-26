@@ -44,7 +44,7 @@ import {
 } from '../../src/tmdb';
 import { CastDetailSkeleton } from '../../src/components/cast/CastDetailSkeleton';
 import { useAppTheme, shadows, getActiveGlowShadow } from '../../src/theme';
-import { useImagePalette } from '../../src/utils/colorExtractor';
+import { useImagePalette, warmPaletteForMedia, AMBIENT_PENDING_BG } from '../../src/utils/colorExtractor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
@@ -110,24 +110,24 @@ const CreditCard = React.memo(
         <View
           style={[
             styles.creditImageShadow,
-            { width: cardWidth, height: cardWidth * 1.5, backgroundColor: colors.surfaceContainer },
+            { width: cardWidth, height: cardWidth * 1.5, backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
             isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
           ]}
         >
           <Image
             source={{ uri: getImageUrl(imagePath || null, 'w342') }}
-            style={[styles.creditImage, { width: cardWidth, height: cardWidth * 1.5, backgroundColor: colors.surfaceContainer }]}
+            style={[styles.creditImage, { width: cardWidth, height: cardWidth * 1.5, backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer }]}
             contentFit="cover"
             cachePolicy="disk"
             transition={150}
             recyclingKey={imagePath || String(item.id)}
           />
         </View>
-        <Text style={[styles.creditTitle, { color: colors.text }]} numberOfLines={2}>
+        <Text style={[styles.creditTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]} numberOfLines={2}>
           {item.title || item.name}
         </Text>
         {item.character ? (
-          <Text style={[styles.creditCharacter, { color: colors.textSecondary }]} numberOfLines={1}>
+          <Text style={[styles.creditCharacter, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]} numberOfLines={1}>
             {item.character}
           </Text>
         ) : null}
@@ -346,36 +346,44 @@ export default function CastDetails() {
 
   const handleCreditPress = useCallback(
     (item: TMDBResult) => {
+      warmPaletteForMedia(item);
       const mType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
       router.push(`/movie/${item.id}?media_type=${mType}`);
     },
     [router]
   );
 
+  // NOTE: useImagePalette must stay above the loading early-return — hooks may
+  // never be conditionally skipped between renders.
+  const heroImagePath = person?.profile_path || (personImages.length > 0 ? personImages[0].file_path : null);
+  const heroThumbUrl = heroImagePath ? getImageUrl(heroImagePath, 'w185') : null;
+  const { palette, failed: paletteFailed } = useImagePalette(heroThumbUrl);
 
+  // Extraction still running: enter ambient mode early with the neutral backdrop
+  // so the screen never paints the default theme first and switches afterwards.
+  const palettePending = Boolean(ambientTheming && heroThumbUrl && !palette && !paletteFailed);
+  const isAmbientActive = Boolean(ambientTheming && (palette?.pastelDark || palettePending));
+
+  // In ambient mode, no light mode or dark mode distinction: always use the pastel dark color
+  const detailsBg = palette?.pastelDark
+    ? palette.pastelDark
+    : isAmbientActive
+    ? AMBIENT_PENDING_BG
+    : colors.background;
+
+  const heroGradientColors: readonly [string, string, ...string[]] = isAmbientActive
+    ? palette?.gradient ?? ['transparent', 'rgba(255,255,255,0.06)', AMBIENT_PENDING_BG]
+    : (isDark
+        ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E']
+        : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']);
 
   if (loading || !person) {
     return <CastDetailSkeleton />;
   }
 
-  const heroImagePath = person.profile_path || (personImages.length > 0 ? personImages[0].file_path : null);
-  const heroThumbUrl = heroImagePath ? getImageUrl(heroImagePath, 'w92') : null;
-  const { palette } = useImagePalette(heroThumbUrl);
-
-  const isAmbientActive = Boolean(ambientTheming && palette?.pastelDark);
-
-  // In ambient mode, no light mode or dark mode distinction: always use the pastel dark color
-  const detailsBg = isAmbientActive ? palette!.pastelDark : colors.background;
-
-  const heroGradientColors: readonly [string, string, ...string[]] = isAmbientActive
-    ? palette!.gradient
-    : (isDark
-        ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E']
-        : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']);
-
   return (
     <View style={[styles.root, { backgroundColor: detailsBg }]}>
-      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
+      <StatusBar translucent backgroundColor="transparent" barStyle={isAmbientActive || isDark ? "light-content" : "dark-content"} />
 
       {/* Lightweight Static Hero Backdrop (Matched with Movie DetailPage) */}
       <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: detailsBg }]} pointerEvents="none">
@@ -408,35 +416,35 @@ export default function CastDetails() {
 
         <View style={[styles.cardTop, { backgroundColor: detailsBg }]}>
           {person.known_for_department ? (
-            <Text style={[styles.heroEyebrow, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.65)' : colors.textSecondary }]}>
+            <Text style={[styles.heroEyebrow, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]}>
               {person.known_for_department.toUpperCase()}
             </Text>
           ) : null}
 
           <View style={styles.titleRow}>
-            <Text style={[styles.title, { color: colors.text }]} numberOfLines={2}>
+            <Text style={[styles.title, { color: isAmbientActive ? '#FFFFFF' : colors.text }]} numberOfLines={2}>
               {person.name}
             </Text>
             <TouchableOpacity activeOpacity={0.8} onPress={copyName} style={styles.copyBtn}>
-              <Feather name="copy" size={16} color={colors.textSecondary} />
+              <Feather name="copy" size={16} color={isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           <View style={styles.metaRow}>
-            {person.birthday ? <Text style={[styles.metaText, { color: colors.textSecondary }]}>Born {person.birthday.split('-')[0]}</Text> : null}
+            {person.birthday ? <Text style={[styles.metaText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]}>Born {person.birthday.split('-')[0]}</Text> : null}
             {person.popularity ? (
               <>
-                <Text style={[styles.metaDot, { color: colors.textSecondary }]}>·</Text>
+                <Text style={[styles.metaDot, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.45)' : colors.textSecondary }]}>·</Text>
                 <Ionicons name="flame" size={11} color={C.gold} />
-                <Text style={[styles.metaText, { color: colors.textSecondary, marginLeft: 4 }]}>{Math.round(person.popularity)} popularity</Text>
+                <Text style={[styles.metaText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary, marginLeft: 4 }]}>{Math.round(person.popularity)} popularity</Text>
               </>
             ) : null}
           </View>
 
           {person.place_of_birth ? (
             <View style={styles.birthplaceRow}>
-              <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
-              <Text style={[styles.birthplaceText, { color: colors.textSecondary }]} numberOfLines={1}>
+              <Ionicons name="location-outline" size={13} color={isAmbientActive ? 'rgba(255, 255, 255, 0.60)' : colors.textSecondary} />
+              <Text style={[styles.birthplaceText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]} numberOfLines={1}>
                 {person.place_of_birth}
               </Text>
             </View>
@@ -497,35 +505,41 @@ export default function CastDetails() {
               activeOpacity={0.8}
               style={[
                 styles.actionBtn,
-                { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+                {
+                  backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
+                  borderColor: isAmbientActive ? 'transparent' : colors.border,
+                },
                 isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
               ]}
               onPress={handlePageShare}
             >
-              <Feather name="share-2" size={17} color={colors.textSecondary} />
-              <Text style={[styles.actionBtnText, { color: colors.text }]}>Share</Text>
+              <Feather name="share-2" size={17} color={isAmbientActive ? 'rgba(255, 255, 255, 0.75)' : colors.textSecondary} />
+              <Text style={[styles.actionBtnText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>Share</Text>
             </TouchableOpacity>
             {personImages.length > 0 && (
               <TouchableOpacity
                 activeOpacity={0.8}
                 style={[
                   styles.actionBtn,
-                  { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+                  {
+                    backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
+                    borderColor: isAmbientActive ? 'transparent' : colors.border,
+                  },
                   isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
                 ]}
                 onPress={() => {
                   setGalleryVisible(true);
                 }}
               >
-                <Ionicons name="images-outline" size={18} color={colors.textSecondary} />
-                <Text style={[styles.actionBtnText, { color: colors.text }]}>Gallery</Text>
+                <Ionicons name="images-outline" size={18} color={isAmbientActive ? 'rgba(255, 255, 255, 0.75)' : colors.textSecondary} />
+                <Text style={[styles.actionBtnText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>Gallery</Text>
               </TouchableOpacity>
             )}
           </View>
 
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Biography</Text>
-            <Text style={[styles.overviewText, { color: colors.text }]} numberOfLines={isBioExpanded ? undefined : 5}>
+            <Text style={[styles.sectionTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>Biography</Text>
+            <Text style={[styles.overviewText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.88)' : colors.text }]} numberOfLines={isBioExpanded ? undefined : 5}>
               {person.biography || 'No biography available for this person.'}
             </Text>
             {person.biography && person.biography.length > 220 && (
@@ -538,9 +552,9 @@ export default function CastDetails() {
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[styles.sectionHeaderTitle, { color: colors.text }]}>Filmography</Text>
+                <Text style={[styles.sectionHeaderTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>Filmography</Text>
                 <View style={[styles.countBadge, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.12)' : colors.surfaceContainerHigh }]}>
-                  <Text style={[styles.countBadgeText, { color: colors.text }]}>{credits.length}</Text>
+                  <Text style={[styles.countBadgeText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>{credits.length}</Text>
                 </View>
               </View>
 
@@ -553,12 +567,15 @@ export default function CastDetails() {
                   }}
                   style={[
                     styles.sortPill,
-                    { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+                    {
+                      backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
+                      borderColor: isAmbientActive ? 'transparent' : colors.border,
+                    },
                     sortBy === 'popular' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
                     isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
                   ]}
                 >
-                  <Text style={[styles.sortPillText, { color: colors.textSecondary }, sortBy === 'popular' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
+                  <Text style={[styles.sortPillText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, sortBy === 'popular' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
                     Popular
                   </Text>
                 </TouchableOpacity>
@@ -571,12 +588,15 @@ export default function CastDetails() {
                   }}
                   style={[
                     styles.sortPill,
-                    { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+                    {
+                      backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
+                      borderColor: isAmbientActive ? 'transparent' : colors.border,
+                    },
                     sortBy === 'rating' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
                     isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
                   ]}
                 >
-                  <Text style={[styles.sortPillText, { color: colors.textSecondary }, sortBy === 'rating' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
+                  <Text style={[styles.sortPillText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, sortBy === 'rating' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
                     Rating
                   </Text>
                 </TouchableOpacity>
@@ -589,12 +609,15 @@ export default function CastDetails() {
                   }}
                   style={[
                     styles.sortPill,
-                    { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
+                    {
+                      backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
+                      borderColor: isAmbientActive ? 'transparent' : colors.border,
+                    },
                     sortBy === 'latest' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
                     isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
                   ]}
                 >
-                  <Text style={[styles.sortPillText, { color: colors.textSecondary }, sortBy === 'latest' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
+                  <Text style={[styles.sortPillText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, sortBy === 'latest' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
                     Latest
                   </Text>
                 </TouchableOpacity>

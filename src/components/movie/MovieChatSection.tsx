@@ -19,6 +19,7 @@ interface MovieChatSectionProps {
   releaseYear?: string | number;
   directors: any[];
   genres: any[];
+  isAmbientActive?: boolean;
 }
 
 const C = {
@@ -38,6 +39,7 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
   releaseYear,
   directors,
   genres,
+  isAmbientActive,
 }) => {
   const { colors } = useAppTheme();
   const [messages, setMessages] = useState<{ id: string; role: 'user' | 'assistant'; text: string }[]>([]);
@@ -110,11 +112,11 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
     <View style={styles.container}>
       {messages.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <MaterialCommunityIcons name="robot-happy-outline" size={26} color={colors.primary} />
-          <Text style={[styles.greetingText, { color: colors.textSecondary }]}>
-            Ask anything about <Text style={{ color: colors.text, fontWeight: '700' }}>{movie.title || movie.name}</Text>
+          <MaterialCommunityIcons name="robot-happy-outline" size={26} color={isAmbientActive ? '#FFFFFF' : colors.primary} />
+          <Text style={[styles.greetingText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]}>
+            Ask anything about <Text style={{ color: isAmbientActive ? '#FFFFFF' : colors.text, fontWeight: '700' }}>{movie.title || movie.name}</Text>
           </Text>
-          <Text style={[styles.subGreetingText, { color: colors.textSecondary }]}>
+          <Text style={[styles.subGreetingText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.50)' : colors.textSecondary }]}>
             Plot insights, director analysis, character motives, themes, and trivia.
           </Text>
           <View style={styles.chipsContainer}>
@@ -127,10 +129,16 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
               <TouchableOpacity
                 key={chip}
                 activeOpacity={0.75}
-                style={[styles.chip, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainerHigh,
+                    borderColor: isAmbientActive ? 'transparent' : colors.border,
+                  },
+                ]}
                 onPress={() => sendMessage(chip.replace(/^[^\s]+\s/, ''))}
               >
-                <Text style={[styles.chipText, { color: colors.text }]}>{chip}</Text>
+                <Text style={[styles.chipText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>{chip}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -150,37 +158,61 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
               style={[
                 styles.bubble,
                 msg.role === 'user'
-                  ? [styles.userBubble, { backgroundColor: colors.primary }]
-                  : [styles.botBubble, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }],
+                  ? [styles.userBubble, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary }]
+                  : [
+                      styles.botBubble,
+                      {
+                        backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainerHigh,
+                        borderColor: isAmbientActive ? 'transparent' : colors.border,
+                      },
+                    ],
               ]}
             >
               {msg.role === 'assistant' ? (
                 <FormattedMarkdownText
                   text={msg.text}
-                  baseColor={colors.text}
-                  boldColor={colors.text}
+                  baseColor={isAmbientActive ? '#FFFFFF' : colors.text}
+                  boldColor={isAmbientActive ? '#FFFFFF' : colors.text}
                   style={styles.botText}
                 />
               ) : (
-                <Text style={[styles.userText, { color: colors.onPrimary }]}>{msg.text}</Text>
+                <Text style={[styles.userText, { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary }]}>{msg.text}</Text>
               )}
             </View>
           ))}
           {loading && (
-            <View style={[styles.bubble, styles.botBubble, styles.loadingRow, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
-              <LoadingIndicator size="small" color={colors.primary} />
-              <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Analyzing title...</Text>
+            <View
+              style={[
+                styles.bubble,
+                styles.botBubble,
+                styles.loadingRow,
+                {
+                  backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainerHigh,
+                  borderColor: isAmbientActive ? 'transparent' : colors.border,
+                },
+              ]}
+            >
+              <LoadingIndicator size="small" color={isAmbientActive ? '#FFFFFF' : colors.primary} />
+              <Text style={[styles.loadingText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]}>Analyzing title...</Text>
             </View>
           )}
         </ScrollView>
       )}
 
       {/* Input bar */}
-      <View style={[styles.inputContainer, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
+      <View
+        style={[
+          styles.inputContainer,
+          {
+            backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainerHigh,
+            borderColor: isAmbientActive ? 'transparent' : colors.border,
+          },
+        ]}
+      >
         <TextInput
-          style={[styles.input, { color: colors.text }]}
+          style={[styles.input, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}
           placeholder={`Ask about ${movie.title || movie.name}...`}
-          placeholderTextColor={colors.textSecondary}
+          placeholderTextColor={isAmbientActive ? 'rgba(255, 255, 255, 0.45)' : colors.textSecondary}
           value={input}
           onChangeText={setInput}
           onSubmitEditing={() => sendMessage()}
@@ -189,11 +221,15 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
         />
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.sendButton, { backgroundColor: colors.primary }, !input.trim() && { opacity: 0.4 }]}
+          style={[
+            styles.sendButton,
+            { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
+            !input.trim() && { opacity: 0.4 },
+          ]}
           onPress={() => sendMessage()}
           disabled={!input.trim() || loading}
         >
-          <Ionicons name="arrow-up" size={17} color={colors.onPrimary} />
+          <Ionicons name="arrow-up" size={17} color={isAmbientActive ? '#FFFFFF' : colors.onPrimary} />
         </TouchableOpacity>
       </View>
     </View>

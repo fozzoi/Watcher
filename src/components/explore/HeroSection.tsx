@@ -11,6 +11,7 @@ import { HERO_HEIGHT, HORIZONTAL_MARGIN } from './ExploreConstants';
 import { observable } from '@legendapp/state';
 import { useSelector } from '@legendapp/state/react';
 import { useAppTheme } from '../../theme';
+import { warmPaletteForMedia } from '../../utils/colorExtractor';
 
 export const heroScroll$ = observable({ isScrolledOut: false });
 
@@ -211,6 +212,7 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
   }), [move]);
 
   const open = useCallback((item: TMDBResult) => {
+    warmPaletteForMedia(item);
     const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
     router.push(`/movie/${item.id}?media_type=${mediaType}`);
   }, [router]);

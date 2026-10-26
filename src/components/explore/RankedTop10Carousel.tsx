@@ -9,6 +9,7 @@ import { getImageUrl } from '../../tmdb';
 import QuickAddButton from '../shared/QuickAddButton';
 import { HORIZONTAL_MARGIN } from './ExploreConstants';
 import { useAppTheme, shadows } from '../../theme';
+import { warmPaletteForMedia } from '../../utils/colorExtractor';
 
 const CARD_WIDTH = 135;
 const CARD_HEIGHT = CARD_WIDTH * 1.5;
@@ -58,7 +59,7 @@ const RankedCard = memo(
     onPress: () => void;
     toggleWatchlist: (item: any) => void;
   }) => {
-    const { colors } = useAppTheme();
+    const { colors, isDark } = useAppTheme();
     const imagePath = item.poster_path || item.backdrop_path;
     const imageUrl = imagePath ? getImageUrl(imagePath, 'w342') : null;
     const year = (item.release_date || item.first_air_date || '').slice(0, 4);
@@ -82,20 +83,29 @@ const RankedCard = memo(
               </View>
             )}
 
-            {/* Quick-Add Heart: granular reactivity without parent re-render */}
+            {/* Quick-Add Heart: bare, top-right, granular reactivity without parent re-render */}
             <View style={styles.heartOverlay}>
               <QuickAddButton
                 item={item}
                 itemId={item.id}
+                plain
                 onPress={() => toggleWatchlist(item)}
               />
             </View>
 
-            {/* Rating Badge */}
+            {/* Rating — bottom-right (the rank numeral owns the bottom-left) */}
             {rating && (
-              <View style={styles.ratingBadge}>
-                <Ionicons name="star" size={10} color="#FFD60A" />
-                <Text style={styles.ratingText}>{rating}</Text>
+              <View
+                style={[
+                  styles.ratingChip,
+                  {
+                    backgroundColor: isDark ? 'rgba(10, 10, 12, 0.72)' : 'rgba(255, 255, 255, 0.92)',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.07)',
+                  },
+                ]}
+              >
+                <Ionicons name="star" size={11} color={isDark ? '#FFD60A' : '#E6A700'} />
+                <Text style={[styles.ratingText, { color: colors.text }]}>{rating}</Text>
               </View>
             )}
 
@@ -133,6 +143,7 @@ const RankedTop10Carousel = memo(
 
     const handlePress = useCallback(
       (item: any) => {
+        warmPaletteForMedia(item);
         const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
         router.push(`/movie/${item.id}?media_type=${mediaType}`);
       },
@@ -249,26 +260,29 @@ const styles = StyleSheet.create({
   heartOverlay: {
     position: 'absolute',
     top: 6,
-    left: 6,
+    right: 6,
     zIndex: 10,
   },
-  ratingBadge: {
+  ratingChip: {
     position: 'absolute',
-    top: 6,
-    right: 6,
+    right: 8,
+    bottom: 8,
     zIndex: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+    filter: [
+      { dropShadow: { offsetX: 0, offsetY: 1, standardDeviation: 3, color: 'rgba(0, 0, 0, 0.35)' } },
+    ],
   },
   ratingText: {
-    color: '#FAFAFA',
-    fontSize: 10.5,
-    fontWeight: '700',
+    fontSize: 11.5,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   numeralContainer: {
     position: 'absolute',

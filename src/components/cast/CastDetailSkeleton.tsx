@@ -3,16 +3,22 @@ import { View, StyleSheet, Dimensions, ScrollView, StatusBar } from 'react-nativ
 import { LinearGradient } from 'expo-linear-gradient';
 import { ShimmerBlock } from '../shared/Shimmer';
 import { useAppTheme } from '../../theme';
+import { AMBIENT_PENDING_BG } from '../../utils/colorExtractor';
 
 const { width } = Dimensions.get('window');
 const HEADER_HEIGHT = 440;
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
 export const CastDetailSkeleton: React.FC = () => {
-  const { colors, isDark } = useAppTheme();
+  const { colors, isDark, ambientTheming } = useAppTheme();
+
+  // Ambient mode always lands on a dark page, so render the skeleton dark too.
+  const dark = isDark || ambientTheming;
+  const bg = ambientTheming ? AMBIENT_PENDING_BG : colors.background;
+
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
+    <View style={[styles.root, { backgroundColor: bg }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={dark ? "light-content" : "dark-content"} />
 
       {/* Top Floating Glass Buttons */}
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
@@ -25,7 +31,7 @@ export const CastDetailSkeleton: React.FC = () => {
         <View style={styles.headerBackdrop}>
           <ShimmerBlock width="100%" height={HEADER_HEIGHT} borderRadius={0} style={styles.heroShimmer} />
           <LinearGradient
-            colors={isDark ? ['rgba(10,10,11,0.2)', 'transparent', 'rgba(10,10,11,0.6)', '#0B0B0E'] : ['rgba(255,255,255,0.2)', 'transparent', 'rgba(248,249,250,0.6)', '#F8F9FA']}
+            colors={dark ? ['rgba(10,10,11,0.2)', 'transparent', 'rgba(10,10,11,0.6)', '#0B0B0E'] : ['rgba(255,255,255,0.2)', 'transparent', 'rgba(248,249,250,0.6)', '#F8F9FA']}
             locations={[0, 0.35, 0.75, 1]}
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
@@ -33,7 +39,7 @@ export const CastDetailSkeleton: React.FC = () => {
         </View>
 
         {/* Card Body */}
-        <View style={[styles.cardTop, { backgroundColor: colors.background }]}>
+        <View style={[styles.cardTop, { backgroundColor: bg }]}>
           {/* Department Eyebrow */}
           <ShimmerBlock width="25%" height={11} style={{ marginBottom: 12 }} />
 

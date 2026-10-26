@@ -17,6 +17,7 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { ShimmerBlock } from '../src/components/shared/Shimmer';
 import { useAppTheme } from '../src/theme';
+import { warmPaletteForMedia } from '../src/utils/colorExtractor';
 
 const ViewAllPage = () => {
   const router = useRouter();
@@ -129,6 +130,7 @@ const ViewAllPage = () => {
     <TouchableOpacity activeOpacity={0.95}
       style={styles.cardContainer}
       onPress={() => {
+        warmPaletteForMedia(item);
         const mType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
         router.push(`/movie/${item.id}?media_type=${mType}`);
       }}

@@ -13,6 +13,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { getSimilarMedia, getImageUrl, TMDBResult } from '../src/tmdb';
 import { useAppTheme } from '../src/theme';
+import { warmPaletteForMedia } from '../src/utils/colorExtractor';
 
 const { width, height } = Dimensions.get('window');
 
@@ -78,6 +79,7 @@ const SimilarMoviesPage = () => {
     <TouchableOpacity activeOpacity={0.95}
       style={styles.movieItem}
       onPress={() => {
+        warmPaletteForMedia(item);
         const mType = item.media_type || mediaType || (item.first_air_date ? 'tv' : 'movie');
         router.push(`/movie/${item.id}?media_type=${mType}`);
       }}

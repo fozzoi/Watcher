@@ -46,6 +46,7 @@ interface MovieMediaGalleryProps {
   fallbackBackdrop?: string | null;
   fallbackPoster?: string | null;
   title?: string;
+  isAmbientActive?: boolean;
 }
 
 const GALLERY_CARD_HEIGHT = 180;
@@ -67,6 +68,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
   fallbackBackdrop,
   fallbackPoster,
   title,
+  isAmbientActive,
 }) => {
   const { colors, isDark } = useAppTheme();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -255,38 +257,82 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Photos & Scenes</Text>
+        <Text style={[styles.sectionTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>Photos & Scenes</Text>
 
         {/* Tab Switcher */}
-        <View style={[styles.tabsContainer, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
+        <View
+          style={[
+            styles.tabsContainer,
+            {
+              backgroundColor: isAmbientActive ? 'rgba(0, 0, 0, 0.25)' : colors.surfaceContainer,
+              borderColor: isAmbientActive ? 'transparent' : colors.border,
+            },
+          ]}
+        >
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.tabBtn, activeTab === 'scenes' && { backgroundColor: colors.surfaceContainerHigh }]}
+            style={[
+              styles.tabBtn,
+              activeTab === 'scenes' && {
+                backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.18)' : colors.surfaceContainerHigh,
+              },
+            ]}
             onPress={() => setActiveTab('scenes')}
           >
             <Ionicons
               name="images-outline"
               size={13}
-              color={activeTab === 'scenes' ? colors.primary : colors.textSecondary}
+              color={
+                activeTab === 'scenes'
+                  ? (isAmbientActive ? '#FFFFFF' : colors.primary)
+                  : (isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary)
+              }
               style={{ marginRight: 5 }}
             />
-            <Text style={[styles.tabBtnText, { color: colors.textSecondary }, activeTab === 'scenes' && { color: colors.primary, fontWeight: '700' }]}>
+            <Text
+              style={[
+                styles.tabBtnText,
+                { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
+                activeTab === 'scenes' && {
+                  color: isAmbientActive ? '#FFFFFF' : colors.primary,
+                  fontWeight: '700',
+                },
+              ]}
+            >
               Scenes ({sceneList.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.tabBtn, activeTab === 'posters' && { backgroundColor: colors.surfaceContainerHigh }]}
+            style={[
+              styles.tabBtn,
+              activeTab === 'posters' && {
+                backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.18)' : colors.surfaceContainerHigh,
+              },
+            ]}
             onPress={() => setActiveTab('posters')}
           >
             <Ionicons
               name="film-outline"
               size={13}
-              color={activeTab === 'posters' ? colors.primary : colors.textSecondary}
+              color={
+                activeTab === 'posters'
+                  ? (isAmbientActive ? '#FFFFFF' : colors.primary)
+                  : (isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary)
+              }
               style={{ marginRight: 5 }}
             />
-            <Text style={[styles.tabBtnText, { color: colors.textSecondary }, activeTab === 'posters' && { color: colors.primary, fontWeight: '700' }]}>
+            <Text
+              style={[
+                styles.tabBtnText,
+                { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
+                activeTab === 'posters' && {
+                  color: isAmbientActive ? '#FFFFFF' : colors.primary,
+                  fontWeight: '700',
+                },
+              ]}
+            >
               Posters ({posterList.length})
             </Text>
           </TouchableOpacity>
@@ -300,7 +346,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
         style={styles.carouselWrapper}
       >
         {Platform.OS === 'android' ? (
-          <Host colorScheme={isDark ? 'dark' : 'light'} style={{ width: '100%', height: GALLERY_CARD_HEIGHT }}>
+          <Host colorScheme={isAmbientActive || isDark ? 'dark' : 'light'} style={{ width: '100%', height: GALLERY_CARD_HEIGHT }}>
             <HorizontalCenteredHeroCarousel 
               preferredItemWidth={activeTab === 'scenes' ? 320 : 120} 
               itemSpacing={activeTab === 'scenes' ? 12 : 8}
@@ -318,7 +364,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
                       fillMaxSize(),
                       height(cardHeight),
                       maskClip(Shapes.RoundedCorner(isScene ? 18 : 14)),
-                      background(isDark ? '#161618' : '#E8E8ED'),
+                      background(isAmbientActive || isDark ? '#161618' : '#E8E8ED'),
                       clickable(() => handleOpenPreview(index)),
                     ]}
                   >
@@ -352,7 +398,15 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
               return (
                 <TouchableOpacity
                   activeOpacity={0.88}
-                  style={[styles.imageCard, { width: cardWidth, height: GALLERY_CARD_HEIGHT, backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}
+                  style={[
+                    styles.imageCard,
+                    {
+                      width: cardWidth,
+                      height: GALLERY_CARD_HEIGHT,
+                      backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
+                      borderColor: isAmbientActive ? 'transparent' : colors.border,
+                    },
+                  ]}
                   onPress={() => handleOpenPreview(index)}
                 >
                   <Image

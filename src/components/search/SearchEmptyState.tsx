@@ -18,6 +18,7 @@ import { getForYouShelvesSync } from '../../services/tasteProfile';
 import { getGenreIcon, HORIZONTAL_MARGIN } from '../explore/ExploreConstants';
 import MovieCard from '../shared/MovieCard';
 import { getTrendingToday } from '../../tmdb';
+import { warmPaletteForMedia } from '../../utils/colorExtractor';
 
 interface SearchEmptyStateProps {
   recentSearches: string[];
@@ -154,6 +155,7 @@ const SearchEmptyState = memo(
 
     const handleCardPress = useCallback(
       (item: any) => {
+        warmPaletteForMedia(item);
         const mType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
         router.push(`/movie/${item.id}?media_type=${mType}`);
       },

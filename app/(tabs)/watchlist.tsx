@@ -39,7 +39,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons, Feather } from '@expo/vector-icons';
 import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useAppTheme, shadows } from '../../src/theme';
+import { useAppTheme, shadows, palette } from '../../src/theme';
+import { warmPaletteForMedia } from '../../src/utils/colorExtractor';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -73,6 +74,7 @@ const WatchlistCard = React.memo(({
   onPress: (item: any) => void;
 }) => {
   const isArtist = activeTab === 1;
+  const { colors } = useAppTheme();
   const imageUrl = !isArtist
     ? getImageUrl(item.poster_path, 'w342')
     : getImageUrl(item.profile_path, 'w342');
@@ -85,11 +87,11 @@ const WatchlistCard = React.memo(({
     <View style={styles.cardWrapper}>
       <Pressable
         onPress={() => onPress(item)}
-        style={({ pressed }) => [styles.cardContainer, pressed && { opacity: 0.85 }]}
+        style={({ pressed }) => [styles.cardContainer, { backgroundColor: colors.surfaceContainer }, pressed && { opacity: 0.85 }]}
       >
         <Image
           source={{ uri: imageUrl }}
-          style={styles.cardImage}
+          style={[styles.cardImage, { backgroundColor: colors.surfaceContainerHigh }]}
           contentFit="cover"
           recyclingKey={imageUrl}
           cachePolicy="disk"
@@ -909,10 +911,12 @@ const WatchListPage = () => {
 
   const handleCardPress = useCallback((item: any) => {
     if (activeTab === 1 || item.profile_path !== undefined || item.known_for_department) {
+      warmPaletteForMedia(item);
       router.push(`/cast/${item.id}`);
     } else if (item.media_type === 'collection') {
       router.push(`/collection/${item.id}?name=${encodeURIComponent(item.name)}`);
     } else if (item.media_type === 'movie' || item.media_type === 'tv' || item.title || item.name) {
+      warmPaletteForMedia(item);
       const mType = item.media_type || (item.first_air_date || item.number_of_seasons ? 'tv' : 'movie');
       router.push(`/movie/${item.id}?media_type=${mType}`);
     }
@@ -994,16 +998,16 @@ const WatchListPage = () => {
             </View>
           ) : !syncing && filteredCurrentList.length === 0 ? (
             <View style={[styles.emptyContainer, { paddingTop: insets.top + 130 }]}>
-              <View style={styles.emptyIconCircle}>
+              <View style={[styles.emptyIconCircle, { backgroundColor: colors.primaryContainer }]}>
                 {activeTab === 0 ? (
-                  <MaterialIcons name="movie-filter" size={38} color="#E50914" />
+                  <MaterialIcons name="movie-filter" size={38} color={colors.primary} />
                 ) : activeTab === 1 ? (
-                  <Ionicons name="people" size={38} color="#E50914" />
+                  <Ionicons name="people" size={38} color={colors.primary} />
                 ) : (
-                  <Feather name="check-circle" size={38} color="#E50914" />
+                  <Feather name="check-circle" size={38} color={colors.primary} />
                 )}
               </View>
-              <Text style={styles.emptyText}>
+              <Text style={[styles.emptyText, { color: colors.text }]}>
                 {searchQuery || selectedGenreIds.length > 0 || selectedMediaType !== 'all'
                   ? "No matching items found"
                   : activeTab === 0
@@ -1013,7 +1017,7 @@ const WatchListPage = () => {
                       : "Nothing Watched Yet"
                 }
               </Text>
-              <Text style={styles.emptySubtext}>
+              <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
                 {searchQuery || selectedGenreIds.length > 0 || selectedMediaType !== 'all'
                   ? "Try adjusting your search or clearing active filters."
                   : activeTab === 0
@@ -1029,7 +1033,7 @@ const WatchListPage = () => {
                   style={styles.emptyActionButton}
                   onPress={() => setIsImportModalOpen(true)}
                 >
-                  <Feather name="download-cloud" size={16} color="#FFF" />
+                  <Feather name="download-cloud" size={16} color={colors.onPrimary} />
                   <Text style={styles.emptyActionText}>Import Existing Watchlist</Text>
                 </TouchableOpacity>
               )}
@@ -1199,7 +1203,7 @@ const WatchListPage = () => {
 
       {Platform.OS !== 'android' && (
         <Modal visible={isOptionsMenuOpen} transparent={true} animationType="fade" onRequestClose={() => setIsOptionsMenuOpen(false)}>
-          <View style={styles.modalOverlay}>
+          <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
             <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsOptionsMenuOpen(false)} />
             <View style={[styles.optionsSheetContainer, { backgroundColor: colors.surfaceContainer }]}>
               <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
@@ -1373,7 +1377,7 @@ const WatchListPage = () => {
 
       {Platform.OS !== 'android' && (
         <Modal visible={isSortModalOpen} transparent={true} animationType="fade" onRequestClose={() => setIsSortModalOpen(false)}>
-          <View style={styles.modalOverlay}>
+          <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
             <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsSortModalOpen(false)} />
             <View style={[styles.optionsSheetContainer, { backgroundColor: colors.surfaceContainer }]}>
               <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
@@ -1456,8 +1460,8 @@ const WatchListPage = () => {
                       handleAddLink();
                     }}
                   >
-                    <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(0,122,255,0.15)' }]}>
-                      <MaterialIcons name="link" size={20} color="#0A84FF" />
+                    <View style={[styles.sheetIconCircle, { backgroundColor: `${palette.blue}26` }]}>
+                      <MaterialIcons name="link" size={20} color={palette.blue} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Sync Google Watchlist Link</Text>
@@ -1510,7 +1514,7 @@ const WatchListPage = () => {
 
       {Platform.OS !== 'android' && (
         <Modal visible={isImportModalOpen} transparent={true} animationType="fade" onRequestClose={() => setIsImportModalOpen(false)}>
-          <View style={styles.modalOverlay}>
+          <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
             <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsImportModalOpen(false)} />
             <View style={[styles.optionsSheetContainer, { backgroundColor: colors.surfaceContainer }]}>
               <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
@@ -1524,8 +1528,8 @@ const WatchListPage = () => {
                   handleAddLink();
                 }}
               >
-                <View style={[styles.sheetIconCircle, { backgroundColor: 'rgba(0,122,255,0.15)' }]}>
-                  <MaterialIcons name="link" size={20} color="#0A84FF" />
+                <View style={[styles.sheetIconCircle, { backgroundColor: `${palette.blue}26` }]}>
+                  <MaterialIcons name="link" size={20} color={palette.blue} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.sheetItemTitle, { color: colors.text }]}>Sync Google Watchlist Link</Text>
@@ -1576,7 +1580,7 @@ const WatchListPage = () => {
 
       {/* URL Link Modal */}
       <Modal visible={isLinkModalVisible} transparent={true} animationType="fade" onRequestClose={() => setIsLinkModalVisible(false)}>
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
           <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={0.95} onPress={() => setIsLinkModalVisible(false)} />
           <View style={[styles.modalContentContainer, { backgroundColor: colors.surfaceContainer }]}>
             <View style={styles.modalContent}>
@@ -1608,17 +1612,17 @@ const WatchListPage = () => {
 
       {/* IMPORT RESULTS MODAL */}
       <Modal visible={importSummary.visible} transparent={true} animationType="fade">
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
           <View style={[styles.modalContentContainer, { backgroundColor: colors.surfaceContainer }]}>
             <View style={styles.modalContent}>
               <View style={styles.resultsHeaderRow}>
-                <Feather name="check-circle" size={24} color="#4CAF50" />
+                <Feather name="check-circle" size={24} color={colors.success} />
                 <Text style={[styles.modalTitle, { color: colors.text }]}>Import Complete</Text>
               </View>
 
               <View style={[styles.statsContainer, { backgroundColor: colors.surfaceContainerHigh }]}>
                 <Text style={[styles.statText, { color: colors.textSecondary }]}>Found: <Text style={{ color: colors.text }}>{importSummary.total}</Text></Text>
-                <Text style={[styles.statText, { color: colors.textSecondary }]}>Added: <Text style={{ color: '#4CAF50' }}>{importSummary.added}</Text></Text>
+                <Text style={[styles.statText, { color: colors.textSecondary }]}>Added: <Text style={{ color: colors.success }}>{importSummary.added}</Text></Text>
                 <Text style={[styles.statText, { color: colors.textSecondary }]}>Already Saved: <Text style={{ color: colors.textSecondary }}>{importSummary.existing}</Text></Text>
               </View>
 
@@ -1753,7 +1757,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 22,
   },
   filterChipActive: {
     backgroundColor: '#E50914',
@@ -1791,17 +1795,16 @@ const styles = StyleSheet.create({
   listContent: { paddingHorizontal: 16, paddingBottom: 110 },
   cardWrapper: { width: CARD_WIDTH, marginBottom: 16, marginHorizontal: 5 },
   cardContainer: {
-    borderRadius: 12,
-    backgroundColor: '#1C1C1E',
+    borderRadius: 14,
     overflow: 'hidden',
     height: CARD_WIDTH * 1.5,
     position: 'relative',
   },
-  cardImage: { width: '100%', height: '100%', backgroundColor: '#222' },
+  cardImage: { width: '100%', height: '100%' },
   cardGradient: { position: 'absolute', left: 0, right: 0, bottom: -5, height: '30%', zIndex: 1 },
   cardContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 8, zIndex: 2 },
-  cardTitle: { color: '#FFF', fontSize: 11.5, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 2 },
-  cardSubtitle: { color: '#FFD700', fontSize: 10, fontFamily: 'GoogleSansFlex-Medium' },
+  cardTitle: { color: '#FFF', fontSize: 12, fontFamily: 'GoogleSansFlex-Bold', marginBottom: 2 },
+  cardSubtitle: { color: '#FFD60A', fontSize: 10, fontFamily: 'GoogleSansFlex-Medium' },
   unsaveButton: { position: 'absolute', top: 6, right: 6, zIndex: 10, borderRadius: 15 },
   unsaveCircle: {
     width: 26,
@@ -1833,12 +1836,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#E50914',
     paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 22,
   },
   emptyActionText: { color: '#FFF', fontSize: 13, fontFamily: 'GoogleSansFlex-Bold' },
 
   // Bottom Sheets & Modals (Borderless)
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 0, 0, 0.75)' },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalOverlayDismiss: { ...StyleSheet.absoluteFill },
   optionsSheetContainer: {
     borderTopLeftRadius: 28,
