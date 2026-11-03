@@ -67,7 +67,7 @@ import SpotlightCarousel from '../../src/components/explore/SpotlightCarousel';
 import WorldCinemaHub from '../../src/components/explore/WorldCinemaHub';
 import SearchResultsList from '../../src/components/search/SearchResultsList';
 import SearchEmptyState from '../../src/components/search/SearchEmptyState';
-import { HORIZONTAL_MARGIN, GENRE_DATA } from '../../src/components/explore/ExploreConstants';
+import { HORIZONTAL_MARGIN, GENRE_DATA, POPULAR_FRANCHISE_COLLECTIONS } from '../../src/components/explore/ExploreConstants';
 import { useAppTheme, shadows } from '../../src/theme';
 
 /* =========================================================================
@@ -765,34 +765,45 @@ const ExplorePage = () => {
     if (!rawContent) return null;
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // 2. Personalized Franchise Spotlight (16:9 Landscape Rail)
+    // 2. Franchise Spotlight (16:9 Landscape Rail - COLLECTIONS ONLY)
     if (selectedGenre === 0 && forYouShelves.length > 0) {
       const topShelf = forYouShelves[0];
-      const validItems = (topShelf.items || []).filter((item: any) => isMediaReleased(item, todayStr)).slice(0, 10);
+      const validItems = (topShelf.items || []).filter((item: any) => {
+        const isCol = Boolean(
+          item.media_type === 'collection' ||
+          item.collection_id ||
+          item._colId ||
+          item.belongs_to_collection?.id ||
+          (item.parts && Array.isArray(item.parts)) ||
+          item.parts_count
+        );
+        return isCol && isMediaReleased(item, todayStr);
+      }).slice(0, 15);
+
       if (validItems.length > 0) {
         return {
           key: `spotlight-${topShelf.shelfId}`,
-          title: topShelf.title,
+          title: topShelf.title || 'Franchise Spotlight',
           type: 'spotlight',
           layout: 'spotlight',
-          eyebrow: 'CONTINUE THE SAGA',
+          eyebrow: 'COLLECTION SPOTLIGHT',
           data: validItems,
         };
       }
-      // Original behaviour: with a personalized shelf present but nothing
-      // released yet, show no spotlight (no featured fallback).
-      return null;
     }
-    if (rawContent.heroMovies?.length) {
+
+    // Default curated iconic franchise collections fallback (Collections ONLY, never random movies!)
+    if (selectedGenre === 0 && POPULAR_FRANCHISE_COLLECTIONS.length > 0) {
       return {
-        key: 'spotlight-featured',
-        title: 'Featured Spotlight',
+        key: 'spotlight-franchises',
+        title: 'Franchise Spotlight',
         type: 'spotlight',
         layout: 'spotlight',
-        eyebrow: 'MUST WATCH',
-        data: rawContent.heroMovies.slice(0, 10),
+        eyebrow: 'COLLECTION SPOTLIGHT',
+        data: POPULAR_FRANCHISE_COLLECTIONS,
       };
     }
+
     return null;
   }, [rawContent, forYouShelves, selectedGenre]);
 

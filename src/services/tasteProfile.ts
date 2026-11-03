@@ -16,6 +16,7 @@ import {
   getMovieCollectionId,
   TMDBResult,
 } from '../tmdb';
+import { POPULAR_FRANCHISE_COLLECTIONS } from '../components/explore/ExploreConstants';
 
 // ==========================================
 // 1. EVENT WEIGHTS (14-Day Exponential Half-Life)
@@ -422,47 +423,43 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
         movie._score = (genreAffinity * 2.0) + ratingWeight + startedBonus + popularityBoost;
       }
 
-      // Mix and interleave franchises:
-      // Soft penalty per already-picked title from the same franchise so top sequels across multiple sagas interleave smoothly
-      const selectedSagaMovies: any[] = [];
-      const franchisePickedCount = new Map<number, number>();
-      const sortedCandidates = [...candidateSagaMovies].sort((a, b) => b._score - a._score);
+      // Build master Franchise Collections list (Collections ONLY):
+      const selectedCollections: any[] = [];
+      const seenColIds = new Set<number>();
 
-      while (sortedCandidates.length > 0 && selectedSagaMovies.length < 20) {
-        let bestIndex = 0;
-        let bestEffectiveScore = -Infinity;
-
-        for (let i = 0; i < sortedCandidates.length; i++) {
-          const cand = sortedCandidates[i];
-          const previousCount = franchisePickedCount.get(cand._colId) || 0;
-          const effectiveScore = cand._score - (previousCount * 2.5);
-          if (effectiveScore > bestEffectiveScore) {
-            bestEffectiveScore = effectiveScore;
-            bestIndex = i;
-          }
-        }
-
-        const [picked] = sortedCandidates.splice(bestIndex, 1);
-        franchisePickedCount.set(picked._colId, (franchisePickedCount.get(picked._colId) || 0) + 1);
-        const { _score, _isStarted, ...movieDetails } = picked;
-        selectedSagaMovies.push({
-          ...movieDetails,
-          collection_id: picked._colId,
-          collection_name: picked._colName,
-          belongs_to_collection: {
-            id: picked._colId,
-            name: picked._colName,
-          },
+      // 1. Add user's started collections first
+      for (const col of startedCollectionDetails) {
+        if (!col || seenColIds.has(Number(col.id))) continue;
+        seenColIds.add(Number(col.id));
+        selectedCollections.push({
+          id: Number(col.id),
+          collection_id: Number(col.id),
+          name: col.name,
+          title: col.name,
+          backdrop_path: col.backdrop_path,
+          poster_path: col.poster_path,
+          media_type: 'collection',
+          parts: col.parts,
+          parts_count: col.parts?.length || 2,
+          _isStarted: true,
         });
       }
 
-      // 1. Single Unified Master "Continue The Saga" shelf
-      if (selectedSagaMovies.length > 0) {
+      // 2. Add iconic popular franchises
+      for (const col of POPULAR_FRANCHISE_COLLECTIONS) {
+        if (!seenColIds.has(col.id)) {
+          seenColIds.add(col.id);
+          selectedCollections.push(col);
+        }
+      }
+
+      // 1. Single Unified Master "Franchise Spotlight" shelf (Collections ONLY)
+      if (selectedCollections.length > 0) {
         shelves.push({
           shelf_id: 'saga-all',
-          title: 'Continue The Saga',
-          subtitle: 'Next chapters tailored to your taste and ratings',
-          items: selectedSagaMovies,
+          title: 'Franchise Spotlight',
+          subtitle: 'Curated sagas & cinematic universes',
+          items: selectedCollections.slice(0, 15),
           sort_order: sortOrder++,
         });
       }

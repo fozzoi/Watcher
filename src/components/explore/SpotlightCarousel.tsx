@@ -58,11 +58,10 @@ const SpotlightCard = memo(
               {eyebrow || 'COLLECTION SPOTLIGHT'}
             </Text>
             <Text style={styles.cardTitle} numberOfLines={1}>
-              {item.collection_name || item.belongs_to_collection?.name || item.title || item.name}
+              {item.collection_name || item.belongs_to_collection?.name || item.name || item.title || 'Collection'}
             </Text>
             <Text style={styles.cardSubtitle} numberOfLines={1}>
-              {item.collection_name && item.title ? `${item.title} • ` : (year ? `${year} • ` : '')}
-              {item.vote_average ? `★ ${item.vote_average.toFixed(1)} Rating` : 'Curated Collection'}
+              {item.parts?.length ? `${item.parts.length} Films • Saga` : (item.parts_count ? `${item.parts_count} Films • Saga` : (year ? `${year} • Franchise` : 'Curated Collection'))}
             </Text>
           </View>
         </TouchableOpacity>
@@ -70,26 +69,49 @@ const SpotlightCard = memo(
     );
   },
   (prev, next) =>
-    prev.item.id === next.item.id &&
+    (prev.item.id || prev.item.collection_id) === (next.item.id || next.item.collection_id) &&
     prev.eyebrow === next.eyebrow
 );
 
 const SpotlightCarousel = memo(
-  ({ title = 'Franchise Spotlight', eyebrow, data }: SpotlightCarouselProps) => {
+  ({ title = 'Franchise Spotlight', eyebrow = 'COLLECTION SPOTLIGHT', data }: SpotlightCarouselProps) => {
     const router = useRouter();
     const { colors } = useAppTheme();
 
     const validData = useMemo(() => {
       if (!Array.isArray(data)) return [];
-      const filtered = data.filter((item) => Boolean(item && (item.backdrop_path || item.poster_path)));
-      return filtered.slice(0, 10);
+      // STRICT FILTER: Only genuine collections are allowed in this spotlight rail
+      const filtered = data.filter((item) => {
+        if (!item || (!item.backdrop_path && !item.poster_path)) return false;
+        const isCol = Boolean(
+          item.media_type === 'collection' ||
+          item.collection_id ||
+          item._colId ||
+          item.belongs_to_collection?.id ||
+          (item.parts && Array.isArray(item.parts)) ||
+          item.parts_count
+        );
+        return isCol;
+      });
+      return filtered.slice(0, 15);
     }, [data]);
 
-    // Navigate to collection details page (or movie details if not in a collection)
+    // Navigate STRICTLY to collection details page
     const handlePress = useCallback(
       async (item: any) => {
-        let collectionId = item.collection_id || item.belongs_to_collection?.id || item._colId;
-        let collectionName = item.collection_name || item.belongs_to_collection?.name || item._colName;
+        let collectionId =
+          item.collection_id ||
+          item.belongs_to_collection?.id ||
+          item._colId ||
+          (item.media_type === 'collection' ? item.id : null) ||
+          item.id;
+        let collectionName =
+          item.collection_name ||
+          item.belongs_to_collection?.name ||
+          item._colName ||
+          item.name ||
+          item.title ||
+          '';
 
         // Resilient fallback: fetch collection info if collection id wasn't attached
         if (!collectionId && item.id) {
@@ -105,11 +127,7 @@ const SpotlightCarousel = memo(
         }
 
         if (collectionId) {
-          const titleToPass = collectionName || item.title || item.name || '';
-          router.push(`/collection/${collectionId}?name=${encodeURIComponent(titleToPass)}&title=${encodeURIComponent(titleToPass)}`);
-        } else if (item.id) {
-          warmPaletteForMedia(item);
-          router.push(`/movie/${item.id}`);
+          router.push(`/collection/${collectionId}?name=${encodeURIComponent(collectionName)}&title=${encodeURIComponent(collectionName)}`);
         }
       },
       [router]
