@@ -56,26 +56,54 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
     };
 
     if (activeCode === 'all') {
-      const combined: any[] = [];
-      Object.entries(langData).forEach(([code, data]) => {
-        const m = (data.movies || []).slice(0, 2).map((item) => ({ ...item, _langCode: code }));
-        const t = (data.tv || []).slice(0, 2).map((item) => ({ ...item, _langCode: code }));
-        combined.push(...interleave(m, t));
+      const langEntries = Object.entries(langData).filter(([_, data]) => 
+        (data.movies && data.movies.length > 0) || (data.tv && data.tv.length > 0)
+      );
+      if (langEntries.length === 0) return [];
+
+      const perLangLists = langEntries.map(([code, data]) => {
+        const m = (data.movies || []).map((item) => ({ ...item, _langCode: code, _mediaType: 'movie' }));
+        const t = (data.tv || []).map((item) => ({ ...item, _langCode: code, _mediaType: 'tv' }));
+        return interleave(m, t);
       });
-      return combined.slice(0, 16);
+
+      // Round-robin across all available languages so EVERY language checked by the user
+      // has its movies/shows displayed in the "All" carousel
+      const combined: any[] = [];
+      const seenIds = new Set<number>();
+      const maxItems = Math.max(24, langEntries.length * 3);
+      const maxDepth = Math.max(...perLangLists.map((l) => l.length), 0);
+
+      for (let depth = 0; depth < maxDepth && combined.length < maxItems; depth++) {
+        for (const list of perLangLists) {
+          if (combined.length >= maxItems) break;
+          const item = list[depth];
+          if (item && item.id && !seenIds.has(item.id)) {
+            seenIds.add(item.id);
+            combined.push(item);
+          }
+        }
+      }
+
+      return combined;
     }
 
     const current = langData[activeCode];
     if (!current) return [];
 
-    const m = (current.movies || []).map((item) => ({ ...item, _langCode: activeCode }));
-    const t = (current.tv || []).map((item) => ({ ...item, _langCode: activeCode }));
-    return interleave(m, t).slice(0, 16);
+    const m = (current.movies || []).map((item) => ({ ...item, _langCode: activeCode, _mediaType: 'movie' }));
+    const t = (current.tv || []).map((item) => ({ ...item, _langCode: activeCode, _mediaType: 'tv' }));
+    return interleave(m, t).slice(0, 24);
   }, [langData, activeCode]);
 
   const handleViewAll = useCallback(() => {
-    router.push(`/viewall?title=${encodeURIComponent('World Cinema')}&type=lang&lang=${activeCode}`);
-  }, [router, activeCode]);
+    if (activeCode && activeCode !== 'all') {
+      const langLabel = availableLangs.find((l) => l.code === activeCode)?.label || activeCode.toUpperCase();
+      router.push(`/viewall?title=${encodeURIComponent(`${langLabel} Cinema`)}&type=lang-movies-${activeCode}&lang=${activeCode}`);
+    } else {
+      router.push(`/viewall?title=${encodeURIComponent('World Cinema')}&type=world-cinema&lang=all`);
+    }
+  }, [router, activeCode, availableLangs]);
 
   const handlePress = useCallback(
     (item: any) => {

@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DeviceEventEmitter } from 'react-native';
 import { logTasteEvent, TASTE_WEIGHTS } from '../services/tasteProfile';
 
-const PROGRESS_KEY = '@watch_progress';
+export const PROGRESS_KEY = '@watch_progress';
+const LEGACY_PROGRESS_KEY = 'watch_progress_v1';
 
 const getProgressKey = (
   tmdbId: number,
@@ -33,14 +35,30 @@ export interface WatchProgress {
   position: number; 
   duration: number; 
   progress?: number;
+  percentage?: number;
+  completed?: boolean;
   updatedAt: number;
 }
+
+export const isEpisodeCompleted = (progress: any): boolean => {
+  if (!progress) return false;
+  if (progress.completed === true) return true;
+  const dur = Number(progress.duration) || 0;
+  const pos = Number(progress.position ?? progress.progress) || 0;
+  if (dur > 0) {
+    if (pos / dur >= 0.9) return true;
+    if (dur - pos <= 60 && pos >= 30) return true;
+  }
+  const pct = Number(progress.percentage) || 0;
+  if (pct >= 90) return true;
+  return false;
+};
 
 // Save progress
 export const saveProgress = async (progress: WatchProgress & { sourceKey?: string }) => {
   const operation = writeQueue.then(async () => {
     try {
-      const stored = await AsyncStorage.getItem(PROGRESS_KEY);
+      const stored = (await AsyncStorage.getItem(PROGRESS_KEY)) || (await AsyncStorage.getItem(LEGACY_PROGRESS_KEY));
       const history = stored ? JSON.parse(stored) : {};
       const key = getProgressKey(
         progress.tmdbId,
@@ -49,17 +67,62 @@ export const saveProgress = async (progress: WatchProgress & { sourceKey?: strin
         progress.lastEpisode,
         progress.sourceKey,
       );
-      const previous = history[key] || history[getProgressKey(
+      const identity = getIdentityPrefix(
         progress.tmdbId,
         progress.mediaType,
         progress.lastSeason,
         progress.lastEpisode,
-      )];
-      const nextProgress = progress.duration > 0
-        ? Math.max(0, Math.min(1, progress.position / progress.duration))
-        : previous?.progress ?? 0;
-      history[key] = { ...previous, ...progress, progress: nextProgress };
-      await AsyncStorage.setItem(PROGRESS_KEY, JSON.stringify(history));
+      );
+      const previous = history[key] || history[identity];
+
+      const dur = Number(progress.duration) || 0;
+      const pos = Number(progress.position) || 0;
+      const pct = dur > 0 ? Math.min(100, Math.max(0, (pos / dur) * 100)) : (progress.percentage || 0);
+      const isCompleted = progress.completed === true || pct >= 90 || (dur > 0 && dur - pos <= 60 && pos >= 30);
+      const nextProgress = dur > 0 ? Math.max(0, Math.min(1, pos / dur)) : (previous?.progress ?? 0);
+
+      const updatedItem: WatchProgress = {
+        ...previous,
+        ...progress,
+        position: pos,
+        duration: dur,
+        progress: nextProgress,
+        percentage: Math.round(pct * 10) / 10,
+        completed: isCompleted,
+        updatedAt: progress.updatedAt || Date.now(),
+      };
+
+      history[key] = updatedItem;
+      history[identity] = updatedItem;
+      history[String(progress.tmdbId)] = updatedItem;
+
+      const serialized = JSON.stringify(history);
+      await AsyncStorage.setItem(PROGRESS_KEY, serialized);
+      await AsyncStorage.setItem(LEGACY_PROGRESS_KEY, serialized);
+
+      DeviceEventEmitter.emit('watcher_watch_progress_changed', history);
+
+      // Push progress mutation to cloud sync in background
+      import('../cloudSync').then(({ queueCloudValue }) => {
+        queueCloudValue('watchProgress', {
+          [String(progress.tmdbId)]: {
+            progress: pos,
+            position: pos,
+            duration: dur,
+            percentage: Math.round(pct * 10) / 10,
+            completed: isCompleted,
+            season: progress.lastSeason,
+            episode: progress.lastEpisode,
+            lastSeason: progress.lastSeason,
+            lastEpisode: progress.lastEpisode,
+            tmdbId: progress.tmdbId,
+            mediaType: progress.mediaType,
+            title: progress.title,
+            poster: progress.poster,
+            updatedAt: updatedItem.updatedAt,
+          },
+        });
+      }).catch(() => {});
 
       // Silent taste event logging based on completion / drop thresholds
       if (nextProgress >= 0.75) {
@@ -94,7 +157,7 @@ export const getProgress = async (
   sourceKey?: string,
 ): Promise<WatchProgress | null> => {
   try {
-    const stored = await AsyncStorage.getItem(PROGRESS_KEY);
+    const stored = (await AsyncStorage.getItem(PROGRESS_KEY)) || (await AsyncStorage.getItem(LEGACY_PROGRESS_KEY));
     const history = stored ? JSON.parse(stored) : {};
     const identity = mediaType && season && episode
       ? getIdentityPrefix(tmdbId, mediaType, season, episode)
@@ -104,19 +167,31 @@ export const getProgress = async (
         Object.values(history)
           .filter((item: any) => item?.tmdbId === tmdbId &&
             item?.mediaType === mediaType &&
-            item?.lastSeason === season &&
-            item?.lastEpisode === episode)
-          .sort((a: any, b: any) => b.updatedAt - a.updatedAt)[0] ||
+            (item?.lastSeason === season || item?.season === season) &&
+            (item?.lastEpisode === episode || item?.episode === episode))
+          .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))[0] ||
         history[getProgressKey(tmdbId, mediaType!, season, episode)]
       : Object.values(history)
         .filter((item: any) => item?.tmdbId === tmdbId)
-        .sort((a: any, b: any) => b.updatedAt - a.updatedAt)[0] || history[tmdbId];
-    return progress ? {
+        .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))[0] || history[String(tmdbId)] || history[tmdbId];
+
+    if (!progress) return null;
+
+    const completed = isEpisodeCompleted(progress);
+    const dur = Number(progress.duration) || 0;
+    const pos = Number(progress.position ?? progress.progress) || 0;
+
+    return {
       ...progress,
+      lastSeason: typeof progress.lastSeason === 'number' ? progress.lastSeason : (typeof progress.season === 'number' ? progress.season : 1),
+      lastEpisode: typeof progress.lastEpisode === 'number' ? progress.lastEpisode : (typeof progress.episode === 'number' ? progress.episode : 1),
+      position: pos,
+      duration: dur,
       progress: typeof progress.progress === 'number'
         ? progress.progress
-        : progress.duration > 0 ? progress.position / progress.duration : 0,
-    } : null;
+        : dur > 0 ? pos / dur : 0,
+      completed,
+    };
   } catch (e) {
     return null;
   }
@@ -125,9 +200,22 @@ export const getProgress = async (
 // Get all history as an array, sorted by most recent
 export const getAllProgress = async (): Promise<WatchProgress[]> => {
   try {
-    const stored = await AsyncStorage.getItem(PROGRESS_KEY);
+    const stored = (await AsyncStorage.getItem(PROGRESS_KEY)) || (await AsyncStorage.getItem(LEGACY_PROGRESS_KEY));
     const history = stored ? JSON.parse(stored) : {};
-    return Object.values(history).sort((a: any, b: any) => b.updatedAt - a.updatedAt) as WatchProgress[];
+
+    const map = new Map<number, WatchProgress>();
+    for (const item of Object.values(history) as WatchProgress[]) {
+      if (!item || !item.tmdbId) continue;
+      const existing = map.get(item.tmdbId);
+      if (!existing || (item.updatedAt || 0) > (existing.updatedAt || 0)) {
+        map.set(item.tmdbId, {
+          ...item,
+          completed: isEpisodeCompleted(item),
+        });
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   } catch (e) {
     return [];
   }
@@ -136,15 +224,21 @@ export const getAllProgress = async (): Promise<WatchProgress[]> => {
 // Remove a specific item from history
 export const removeProgress = async (tmdbId: number) => {
   try {
-    const stored = await AsyncStorage.getItem(PROGRESS_KEY);
+    const stored = (await AsyncStorage.getItem(PROGRESS_KEY)) || (await AsyncStorage.getItem(LEGACY_PROGRESS_KEY));
     if (!stored) return;
     
     const history = JSON.parse(stored);
     Object.keys(history).forEach((key) => {
-      if (history[key]?.tmdbId === tmdbId || key === String(tmdbId)) delete history[key];
+      if (history[key]?.tmdbId === tmdbId || key === String(tmdbId) || key.startsWith(`movie:${tmdbId}`) || key.startsWith(`tv:${tmdbId}`)) {
+        delete history[key];
+      }
     });
     
-    await AsyncStorage.setItem(PROGRESS_KEY, JSON.stringify(history));
+    const serialized = JSON.stringify(history);
+    await AsyncStorage.setItem(PROGRESS_KEY, serialized);
+    await AsyncStorage.setItem(LEGACY_PROGRESS_KEY, serialized);
+
+    DeviceEventEmitter.emit('watcher_watch_progress_changed', history);
   } catch (e) {
     console.error("Failed to remove progress", e);
   }

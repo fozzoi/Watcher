@@ -18,14 +18,17 @@ import { BlurView } from 'expo-blur';
 import { ShimmerBlock } from '../src/components/shared/Shimmer';
 import { useAppTheme } from '../src/theme';
 import { warmPaletteForMedia } from '../src/utils/colorExtractor';
+import { LANGUAGE_OPTIONS } from '../src/userPreferences';
 
 const ViewAllPage = () => {
   const router = useRouter();
   const { colors, isDark } = useAppTheme();
-  const { title: paramTitle, type: paramType, data: paramData, genreId: paramGenreId } = useLocalSearchParams();
+  const { title: paramTitle, type: paramType, data: paramData, genreId: paramGenreId, lang: paramLang } = useLocalSearchParams();
   
   const title = paramTitle as string;
-  const type = (paramType as string) || 'trendingmovies';
+  const rawType = (paramType as string) || 'trendingmovies';
+  const lang = paramLang as string | undefined;
+  const type = rawType === 'lang' ? (lang && lang !== 'all' ? `lang-movies-${lang}` : 'world-cinema') : rawType;
   const data = paramData ? JSON.parse(paramData as string) : [];
   const genreId = paramGenreId ? parseInt(paramGenreId as string) : undefined;
 
@@ -40,21 +43,12 @@ const ViewAllPage = () => {
   const [filters, setFilters] = useState({
     genreId: genreId || null,
     year: '',
-    language: '',
+    language: lang && lang !== 'all' ? lang : '',
     rating: 0,
   });
 
   const years = ['2026', '2025', '2024', '2023', '2022', '2021', '2020', '2019', '2015', '2010'];
-  const languages = [
-    { code: 'en', name: 'Hollywood' },
-    { code: 'ml', name: 'Malayalam' },
-    { code: 'hi', name: 'Hindi' },
-    { code: 'ta', name: 'Tamil' },
-    { code: 'te', name: 'Telugu' },
-    { code: 'ko', name: 'Korean' },
-    { code: 'ja', name: 'Japanese' },
-    { code: 'tr', name: 'Turkish' },
-  ];
+  const languages = LANGUAGE_OPTIONS.map((l) => ({ code: l.code, name: l.label }));
   const ratings = [9, 8, 7, 6, 5];
 
   // --- FETCHING LOGIC ---

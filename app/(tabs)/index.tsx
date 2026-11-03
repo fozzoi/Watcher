@@ -53,6 +53,7 @@ import {
   searchPeople,
   searchCollections,
   getTrendingToday,
+  parseQueryYear,
 } from '../../src/tmdb';
 import { getUserPreferences } from '../../src/userPreferences';
 
@@ -221,7 +222,6 @@ interface ExploreSearchControllerProps {
   inSearchModeShared: SharedValue<boolean>;
   trendingItems?: any[];
   personalizedItems?: any[];
-  isScrolledPastHero?: boolean;
 }
 
 const ExploreSearchController = memo(
@@ -237,7 +237,6 @@ const ExploreSearchController = memo(
     inSearchModeShared,
     trendingItems,
     personalizedItems,
-    isScrolledPastHero,
   }: ExploreSearchControllerProps) => {
     const router = useRouter();
     const { colors, isDark } = useAppTheme();
@@ -299,10 +298,13 @@ const ExploreSearchController = memo(
       setSearchLoading(true);
 
       try {
+        const { cleanTitle, year } = parseQueryYear(trimmed);
+        const searchCollectionQuery = year && cleanTitle ? cleanTitle : trimmed;
+
         const [movies, people, collections] = await Promise.all([
           searchTMDB(trimmed),
-          searchPeople(trimmed),
-          searchCollections(trimmed),
+          searchPeople(cleanTitle || trimmed),
+          searchCollections(searchCollectionQuery),
         ]);
 
         const validMovies = movies.filter((item: any) => item.poster_path);
@@ -458,7 +460,6 @@ const ExploreSearchController = memo(
   },
   (prev, next) =>
     prev.isExpanded === next.isExpanded &&
-    prev.isScrolledPastHero === next.isScrolledPastHero &&
     prev.trendingItems === next.trendingItems &&
     prev.personalizedItems === next.personalizedItems
 );
@@ -499,21 +500,31 @@ const ExplorePage = () => {
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
   const [forYouShelves, setForYouShelves] = useState<ForYouShelf[]>(() => getForYouShelvesSync());
 
-  // Progressive Staging: Tier 0 (Immediate Launch) -> Tier 1 (Post-transition)
-  // -> Tier 2 lead (On Scroll) -> Tier 2 rest (one beat later, keeps the
-  // fold-scroll smooth instead of mounting ~10 horizontal lists at once)
-  const [renderStage, setRenderStage] = useState<0 | 1 | 2>(0);
-  const [hasScrolledPastFold, setHasScrolledPastFold] = useState(false);
+  // Progressive Idle Staging: Tier 0 (Immediate Launch) -> Tier 1 (200ms)
+  // -> Tier 2 lead (500ms) -> Tier 2 rest (850ms).
+  // Mounting sections quietly in the background while idle completely eliminates
+  // the initial scroll micro-stutter that occurred when mounting shelves during the drag gesture.
+  const [renderStage, setRenderStage] = useState<0 | 1 | 2 | 3>(0);
   const hasScrolledShared = useSharedValue(false);
+  const stageCancelRef = useRef<null | (() => void)>(null);
 
   useEffect(() => {
-    // Stage 1: Mount Tier 1 once transition lands
-    const cancel = runAfterTransition(() => {
+    // Progressive background cascade during idle
+    stageCancelRef.current = runAfterTransition(() => {
       setRenderStage(1);
-    }, 250);
-    return () => cancel();
-  }, []);
+      stageCancelRef.current = runAfterTransition(() => {
+        setRenderStage(2);
+        stageCancelRef.current = runAfterTransition(() => {
+          setRenderStage(3);
+          stageCancelRef.current = null;
+        }, 350);
+      }, 300);
+    }, 200);
 
+    return () => {
+      stageCancelRef.current?.();
+    };
+  }, []);
 
   const feedOpacityAnim = useSharedValue(1);
 
@@ -533,7 +544,6 @@ const ExplorePage = () => {
 
   const contentRequestRef = useRef(0);
   const lastPrefsRef = useRef<string>('');
-  const stageCancelRef = useRef<null | (() => void)>(null);
 
   const bgOpacity = useSharedValue(0);
   const searchWidthAnim = useSharedValue(0);
@@ -541,16 +551,16 @@ const ExplorePage = () => {
   const isBarHidden = useSharedValue(false);
   const isHeroOutShared = useSharedValue(false);
   const isPastHeroShared = useSharedValue(false);
-  const [isScrolledPastHero, setIsScrolledPastHero] = useState(false);
+  const isTabBarShrunkShared = useSharedValue(false);
   const lastScrollY = useSharedValue(0);
   const isSearchFocusedShared = useSharedValue(false);
   const inSearchModeShared = useSharedValue(false);
-  const lastEmittedScrollY = useSharedValue(0);
 
   useEffect(() => {
     if (isExpanded) {
       searchBarTranslateY.value = withTiming(0, { duration: 150 });
       DeviceEventEmitter.emit('exploreScroll', 0);
+      isTabBarShrunkShared.value = false;
       isBarHidden.value = false;
     }
   }, [isExpanded]);
@@ -627,19 +637,31 @@ const ExplorePage = () => {
     [feedOpacityAnim]
   );
 
+  const advanceStagesOnScroll = useCallback(() => {
+    setRenderStage((prev) => (prev < 2 ? 2 : prev));
+    runAfterTransition(() => {
+      setRenderStage(3);
+    }, 200);
+  }, []);
+
   const handleSelectGenre = useCallback(
     (genreId: number) => {
       if (genreId === selectedGenre) return;
       setSelectedGenre(genreId);
       hasScrolledShared.value = false;
-      setHasScrolledPastFold(false);
       setRenderStage(0);
 
-      // Cancel any pending stage timer from a previous rapid genre switch
+      // Cancel any pending stage timer and restart cascade for new genre
       stageCancelRef.current?.();
       stageCancelRef.current = runAfterTransition(() => {
-        stageCancelRef.current = null;
         setRenderStage(1);
+        stageCancelRef.current = runAfterTransition(() => {
+          setRenderStage(2);
+          stageCancelRef.current = runAfterTransition(() => {
+            setRenderStage(3);
+            stageCancelRef.current = null;
+          }, 350);
+        }, 300);
       }, 200);
 
       const cached = getExploreContentCacheSync(genreId);
@@ -659,21 +681,32 @@ const ExplorePage = () => {
   // Cancel the pending stage timer on unmount
   useEffect(() => () => stageCancelRef.current?.(), []);
 
+  // Listen for preference updates from onboarding / settings to immediately refresh explore content
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('preferencesChanged', () => {
+      fetchContent(selectedGenre, true);
+    });
+    return () => sub.remove();
+  }, [fetchContent, selectedGenre]);
+
   useFocusEffect(
     useCallback(() => {
       DeviceEventEmitter.emit('exploreScroll', 0);
+      isTabBarShrunkShared.value = false;
       searchBarTranslateY.value = withTiming(0, { duration: 150 });
       isBarHidden.value = false;
       syncSavedStore();
       getUserPreferences().then((prefs) => {
         const actorsKey = (prefs.favoriteActors || []).map((a: any) => a.id).join(',');
         const currentHash = `${(prefs.languages || []).join(',')}-${(prefs.genreIds || []).join(',')}-${actorsKey}`;
-        if (lastPrefsRef.current && lastPrefsRef.current !== currentHash) {
+        const cachedLangs = rawContent?.langData ? Object.keys(rawContent.langData) : [];
+        const isMissingUserLang = (prefs.languages || []).some((l: string) => !cachedLangs.includes(l));
+        if (isMissingUserLang || (lastPrefsRef.current !== '' && lastPrefsRef.current !== currentHash)) {
           fetchContent(selectedGenre, true);
         }
         lastPrefsRef.current = currentHash;
       });
-    }, [fetchContent, selectedGenre])
+    }, [fetchContent, selectedGenre, rawContent])
   );
 
   const handleToggleWatchlist = useCallback((item: any) => {
@@ -687,7 +720,6 @@ const ExplorePage = () => {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     hasScrolledShared.value = false;
-    setHasScrolledPastFold(false);
     setRenderStage(0);
     try {
       await Promise.all([
@@ -695,8 +727,16 @@ const ExplorePage = () => {
         refreshForYouShelvesIfNeeded(true),
         getTrendingToday('all', 1).then((res) => res && setTrendingToday(res.slice(0, 10))).catch(() => null),
       ]);
-      runAfterTransition(() => {
+      stageCancelRef.current?.();
+      stageCancelRef.current = runAfterTransition(() => {
         setRenderStage(1);
+        stageCancelRef.current = runAfterTransition(() => {
+          setRenderStage(2);
+          stageCancelRef.current = runAfterTransition(() => {
+            setRenderStage(3);
+            stageCancelRef.current = null;
+          }, 350);
+        }, 300);
       }, 200);
     } finally {
       setRefreshing(false);
@@ -927,20 +967,12 @@ const ExplorePage = () => {
     [topSection, spotlightSection, midSections, bywSection, secondaryShelfSection, tailSections]
   );
 
-  // Tier slicing (matching Detail Page progressive mount pattern)
+  // Tier slicing (matching Progressive Staging pattern)
   const tier0Sections = useMemo(() => exploreSections.slice(0, 1), [exploreSections]);
   const tier1Sections = useMemo(() => exploreSections.slice(1, 4), [exploreSections]);
   const tier2Sections = useMemo(() => exploreSections.slice(4), [exploreSections]);
   const tier2LeadSections = useMemo(() => tier2Sections.slice(0, 4), [tier2Sections]);
   const tier2LateSections = useMemo(() => tier2Sections.slice(4), [tier2Sections]);
-
-  // Mount the remainder of tier 2 one beat after the fold-scroll so crossing
-  // the threshold never compiles every remaining shelf in a single frame.
-  useEffect(() => {
-    if (renderStage >= 2 || !hasScrolledPastFold) return;
-    const cancel = runAfterTransition(() => setRenderStage(2), 300);
-    return cancel;
-  }, [hasScrolledPastFold, renderStage]);
 
   const handleExploreAll = useCallback((item: ExploreSection) => {
     router.push({
@@ -974,12 +1006,13 @@ const ExplorePage = () => {
       const diff = currentY - lastScrollY.value;
       lastScrollY.value = currentY;
 
-      // Tab bar shrink sync — throttled: only bridge to JS when the offset
-      // moved >= 12px or crossed the 50px shrink threshold, instead of every frame.
-      const crossedShrinkThreshold =
-        currentY <= 50 !== lastEmittedScrollY.value <= 50;
-      if (Math.abs(currentY - lastEmittedScrollY.value) >= 12 || crossedShrinkThreshold) {
-        lastEmittedScrollY.value = currentY;
+      // Tab bar shrink sync — ONLY bridge to JS when the shrink state actually changes!
+      // This eliminates the 12px bridge spam that caused initial scroll micro-stutter.
+      if (currentY > 50 && diff > 8 && !isTabBarShrunkShared.value) {
+        isTabBarShrunkShared.value = true;
+        runOnJS(emitExploreScroll)(currentY);
+      } else if ((currentY <= 50 || diff < -8) && isTabBarShrunkShared.value) {
+        isTabBarShrunkShared.value = false;
         runOnJS(emitExploreScroll)(currentY);
       }
 
@@ -990,17 +1023,10 @@ const ExplorePage = () => {
         runOnJS(updateHeroScrollOut)(isHeroOut);
       }
 
-      // Toggle past-hero threshold for dynamic status bar & header styling
-      const isPastHero = currentY > 180;
-      if (isPastHero !== isPastHeroShared.value) {
-        isPastHeroShared.value = isPastHero;
-        runOnJS(setIsScrolledPastHero)(isPastHero);
-      }
-
-      // Unlock Tier 2 shelves once scrolled past hero/fold
-      if (currentY > 120 && !hasScrolledShared.value) {
+      // Unlock remaining stages if user begins scrolling early
+      if (currentY > 80 && !hasScrolledShared.value) {
         hasScrolledShared.value = true;
-        runOnJS(setHasScrolledPastFold)(true);
+        runOnJS(advanceStagesOnScroll)();
       }
 
       // 1. Always reveal search bar at the top
@@ -1078,8 +1104,8 @@ const ExplorePage = () => {
               />
             ))}
 
-            {/* TIER 1: Post-Transition Mount (250ms via runAfterTransition) */}
-            {(renderStage >= 1 || hasScrolledPastFold) &&
+            {/* TIER 1: Post-Transition Mount (~200ms) */}
+            {renderStage >= 1 &&
               tier1Sections.map((item) => (
                 <ExploreSectionItem
                   key={item.key}
@@ -1089,8 +1115,8 @@ const ExplorePage = () => {
                 />
               ))}
 
-            {/* TIER 2: Anchored to Scroll Past Fold — lead shelves first, the rest one beat later */}
-            {hasScrolledPastFold &&
+            {/* TIER 2: Lead shelves (~500ms or on early scroll) */}
+            {renderStage >= 2 &&
               tier2LeadSections.map((item) => (
                 <ExploreSectionItem
                   key={item.key}
@@ -1099,8 +1125,9 @@ const ExplorePage = () => {
                   onExploreAll={handleExploreAll}
                 />
               ))}
-            {hasScrolledPastFold &&
-              renderStage >= 2 &&
+
+            {/* TIER 3: Late shelves (~850ms or on early scroll) */}
+            {renderStage >= 3 &&
               tier2LateSections.map((item) => (
                 <ExploreSectionItem
                   key={item.key}
@@ -1137,7 +1164,6 @@ const ExplorePage = () => {
         inSearchModeShared={inSearchModeShared}
         trendingItems={searchTrendingItems}
         personalizedItems={searchPersonalizedItems}
-        isScrolledPastHero={isScrolledPastHero}
       />
     </View>
   );

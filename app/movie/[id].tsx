@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import dayjs from 'dayjs';
 import {
   View,
@@ -14,6 +14,7 @@ import {
   Linking,
   BackHandler,
   DimensionValue,
+  DeviceEventEmitter,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -34,7 +35,7 @@ import {
   GLOBAL_CONFIG,
   getCollectionDetails,
 } from '../../src/tmdb';
-import { getProgress } from '../../src/utils/progress';
+import { getProgress, isEpisodeCompleted } from '../../src/utils/progress';
 import {
   getSavedItems,
   addSavedItem,
@@ -446,20 +447,44 @@ interface PlayCTAButtonProps {
   lastWatched: any;
   mediaType?: string;
   isAmbientMode?: boolean;
+  targetSeason?: number;
+  targetEpisode?: number;
+  isCompleted?: boolean;
+  isNext?: boolean;
   onPlay: () => void;
 }
 
-const PlayCTAButton = React.memo(({ sourceStatus, lastWatched, mediaType, isAmbientMode, onPlay }: PlayCTAButtonProps) => {
+const PlayCTAButton = React.memo(({
+  sourceStatus,
+  lastWatched,
+  mediaType,
+  isAmbientMode,
+  targetSeason,
+  targetEpisode,
+  isCompleted,
+  isNext,
+  onPlay,
+}: PlayCTAButtonProps) => {
   const { colors, isDark, useMaterialYou } = useAppTheme();
   const isUnavailable = sourceStatus === 'unavailable';
   const isChecking = sourceStatus === 'checking';
+  const isCompletedShow = isCompleted ?? isEpisodeCompleted(lastWatched);
+  const sNum = targetSeason || lastWatched?.lastSeason || 1;
+  const eNum = targetEpisode || lastWatched?.lastEpisode || 1;
+
   const label = isChecking
     ? 'Finding stream'
     : isUnavailable
     ? 'Unavailable'
     : lastWatched
     ? mediaType === 'tv'
-      ? `Resume S${lastWatched.lastSeason} · E${lastWatched.lastEpisode}`
+      ? isCompletedShow
+        ? isNext !== false
+          ? `Play S${sNum} · E${eNum}`
+          : `Watch Again`
+        : `Resume S${sNum} · E${eNum}`
+      : isCompletedShow
+      ? 'Watch Again'
       : 'Resume'
     : 'Play';
 
@@ -725,6 +750,9 @@ interface MovieEpisodesSectionProps {
   episodesLimit: number;
   onShowMore: () => void;
   lastWatched: any;
+  targetSeason?: number;
+  targetEpisode?: number;
+  isCompleted?: boolean;
   episodeThumbWidth: number;
   isAmbientActive?: boolean;
   onPlay: (ep: TMDBEpisode) => void;
@@ -739,6 +767,9 @@ const MovieEpisodesSection = React.memo(({
   episodesLimit,
   onShowMore,
   lastWatched,
+  targetSeason,
+  targetEpisode,
+  isCompleted,
   episodeThumbWidth,
   isAmbientActive,
   onPlay,
@@ -791,9 +822,9 @@ const MovieEpisodesSection = React.memo(({
       ) : (
         <View>
           {visibleEpisodes.map((ep) => {
-            const isActive =
-              lastWatched?.lastSeason === ep.season_number &&
-              lastWatched?.lastEpisode === ep.episode_number;
+            const isActive = isCompleted
+              ? (targetSeason === ep.season_number && targetEpisode === ep.episode_number)
+              : (lastWatched?.lastSeason === ep.season_number && lastWatched?.lastEpisode === ep.episode_number);
             return (
               <MemoizedEpisodeRow
                 key={ep.id}
@@ -844,24 +875,34 @@ export default function DetailPage() {
   const [movie, setMovie] = useState<any>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
 
-  // Progressive Staging: Tier 1 (Cast/Directors) lands at 250ms; Tier 2 (Gallery/AI/Similar) anchors strictly to scroll
+  // Progressive Staging: Tier 1 (Cast/Directors) lands at 200ms; Tier 2 (Gallery/AI/Similar) pre-mounts at 450ms in the background
+  // while idle (or on early scroll), completely eliminating the initial scroll micro-stutter.
   const [renderStage, setRenderStage] = useState<0 | 1>(0);
   const [hasScrolledPastFold, setHasScrolledPastFold] = useState(false);
   const hasScrolledRef = useRef(false);
 
   useEffect(() => {
-    // Stage 1: Mount just Cast & Directors once the transition lands
-    const timer = setTimeout(() => {
+    // Stage 1: Mount Cast & Directors once the transition lands
+    const timer1 = setTimeout(() => {
       setRenderStage(1);
-    }, 250);
+    }, 200);
 
-    return () => clearTimeout(timer);
+    // Stage 2: Pre-mount remaining sections (AI, Gallery, Similar) quietly in background while user views overview
+    const timer2 = setTimeout(() => {
+      hasScrolledRef.current = true;
+      setHasScrolledPastFold(true);
+    }, 450);
+
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
   }, []);
 
   const handleScroll = useCallback((e: any) => {
     if (hasScrolledRef.current) return;
     const y = e.nativeEvent?.contentOffset?.y ?? 0;
-    if (y > 150) {
+    if (y > 80) {
       hasScrolledRef.current = true;
       setHasScrolledPastFold(true);
     }
@@ -885,7 +926,7 @@ export default function DetailPage() {
   });
 
   const [lastWatched, setLastWatched] = useState<any>(null);
-  const [sourceStatus, setSourceStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
+  const [sourceStatus, setSourceStatus] = useState<'checking' | 'available' | 'unavailable'>('available');
   const [torrentModalVisible, setTorrentModalVisible] = useState(false);
 
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
@@ -1062,17 +1103,8 @@ export default function DetailPage() {
       seasonToTry = 1,
       episodeToTry = 1
     ) => {
-      setSourceStatus('checking');
-      try {
-        const baseUrl = 'https://watcher-api-rho.vercel.app';
-        const encodedTitle = encodeURIComponent(title || '');
-        const endpoint = `${baseUrl}/api/get_stream?tmdb_id=${tmdbId}&media_type=${mediaType}&title=${encodedTitle}&season=${seasonToTry}&episode=${episodeToTry}`;
-        const response = await fetch(endpoint);
-        const data = await response.json();
-        setSourceStatus(data.status === 'success' && data.stream_url ? 'available' : 'unavailable');
-      } catch {
-        setSourceStatus('unavailable');
-      }
+      // Direct stream sources (Vidy, VidLink) are ready immediately; Watcher Engine is removed
+      setSourceStatus('available');
     },
     []
   );
@@ -1118,22 +1150,64 @@ export default function DetailPage() {
     }
   }, [selectedSeason, movie?.media_type, fetchEpisodes]);
 
-  const handlePlay = useCallback((episode?: TMDBEpisode) => {
-    if (sourceStatus === 'unavailable') {
-      Alert.alert('Unavailable', 'No streaming source found for this title.');
-      return;
+  // Keep progress in sync when updated in background or cloud sync
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('watcher_watch_progress_changed', () => {
+      if (movie?.id) {
+        getProgress(movie.id).then((progress) => {
+          setLastWatched(progress);
+        });
+      }
+    });
+    return () => sub.remove();
+  }, [movie?.id]);
+
+  // Completion & Next Episode calculation
+  const isCompleted = useMemo(() => isEpisodeCompleted(lastWatched), [lastWatched]);
+  const { targetPlaySeason, targetPlayEpisode, isNext } = useMemo(() => {
+    if (movie?.media_type !== 'tv') {
+      return { targetPlaySeason: 1, targetPlayEpisode: 1, isNext: false };
     }
+    if (lastWatched) {
+      const lastS = lastWatched.lastSeason || 1;
+      const lastE = lastWatched.lastEpisode || 1;
+      if (!isCompleted) {
+        return { targetPlaySeason: lastS, targetPlayEpisode: lastE, isNext: false };
+      }
+      // Completed: calculate next episode
+      const currentSeasonMeta = movie.seasons?.find((s: any) => s.season_number === lastS);
+      const epCount = currentSeasonMeta?.episode_count || (episodes.length > 0 && selectedSeason === lastS ? episodes.length : 999);
+      if (lastE < epCount) {
+        return { targetPlaySeason: lastS, targetPlayEpisode: lastE + 1, isNext: true };
+      } else {
+        const nextSeasonMeta = movie.seasons?.find((s: any) => s.season_number > lastS && s.episode_count > 0);
+        if (nextSeasonMeta) {
+          return { targetPlaySeason: nextSeasonMeta.season_number, targetPlayEpisode: 1, isNext: true };
+        } else {
+          // Whole series finished
+          return { targetPlaySeason: lastS, targetPlayEpisode: lastE, isNext: false };
+        }
+      }
+    }
+    if (episodes.length > 0) {
+      return {
+        targetPlaySeason: episodes[0].season_number || 1,
+        targetPlayEpisode: episodes[0].episode_number || 1,
+        isNext: false,
+      };
+    }
+    return { targetPlaySeason: selectedSeason || 1, targetPlayEpisode: 1, isNext: false };
+  }, [movie, lastWatched, isCompleted, episodes, selectedSeason]);
+
+  const handlePlay = useCallback((episode?: TMDBEpisode) => {
     let targetSeason = 1;
     let targetEpisode = 1;
     if (episode) {
       targetSeason = episode.season_number;
       targetEpisode = episode.episode_number;
-    } else if (lastWatched && movie.media_type === 'tv') {
-      targetSeason = lastWatched.lastSeason;
-      targetEpisode = lastWatched.lastEpisode;
-    } else if (movie.media_type === 'tv' && episodes.length > 0) {
-      targetSeason = episodes[0].season_number;
-      targetEpisode = episodes[0].episode_number;
+    } else if (movie.media_type === 'tv') {
+      targetSeason = (isCompleted && !isNext) ? 1 : targetPlaySeason;
+      targetEpisode = (isCompleted && !isNext) ? 1 : targetPlayEpisode;
     }
 
     let nextSeason: number | undefined;
@@ -1158,7 +1232,7 @@ export default function DetailPage() {
         movie.poster_path || ''
       )}&episodeName=${encodeURIComponent(episode ? episode.name : `Episode ${targetEpisode}`)}${nextParams}`
     );
-  }, [sourceStatus, movie, lastWatched, episodes, router]);
+  }, [sourceStatus, movie, isCompleted, isNext, targetPlaySeason, targetPlayEpisode, episodes, router]);
 
   const copyTitle = useCallback(async () => {
     if (!movie) return;
@@ -1332,6 +1406,10 @@ export default function DetailPage() {
             lastWatched={lastWatched}
             mediaType={movie.media_type}
             isAmbientMode={isAmbientActive}
+            targetSeason={targetPlaySeason}
+            targetEpisode={targetPlayEpisode}
+            isCompleted={isCompleted}
+            isNext={isNext}
             onPlay={() => handlePlay()}
           />
 
@@ -1446,6 +1524,9 @@ export default function DetailPage() {
                   episodesLimit={episodesLimit}
                   onShowMore={() => setEpisodesLimit((prev) => prev + 15)}
                   lastWatched={lastWatched}
+                  targetSeason={targetPlaySeason}
+                  targetEpisode={targetPlayEpisode}
+                  isCompleted={isCompleted}
                   episodeThumbWidth={episodeThumbWidth}
                   isAmbientActive={isAmbientActive}
                   onPlay={handlePlay}

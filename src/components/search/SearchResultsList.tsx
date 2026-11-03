@@ -20,6 +20,16 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
   const { colors } = useAppTheme();
   const collections = (tmdbResults || []).filter(r => r.media_type === 'collection');
   const movies = (tmdbResults || []).filter(r => r.media_type !== 'collection');
+  const isShrunkRef = React.useRef(false);
+
+  const handleScroll = (e: any) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const isShrunk = y > 50;
+    if (isShrunk !== isShrunkRef.current) {
+      isShrunkRef.current = isShrunk;
+      DeviceEventEmitter.emit('exploreScroll', y);
+    }
+  };
 
   return (
     <View style={styles.absoluteContainer}>
@@ -29,8 +39,8 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
         keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
-        scrollEventThrottle={16}
-        onScroll={(e) => DeviceEventEmitter.emit('exploreScroll', e.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={32}
+        onScroll={handleScroll}
       >
         {peopleResults.length > 0 && (
           <View style={{ marginBottom: 24 }}>

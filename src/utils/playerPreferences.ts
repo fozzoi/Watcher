@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const PLAYER_PREFERENCES_KEY = '@player_preferences';
 
 export type PlayerQuality = 'auto' | '1080p' | '720p' | '480p';
+export type VideoFitMode = 'cover' | 'contain' | 'fill';
 
 export interface PlayerPreferences {
   volume: number;
@@ -10,6 +11,7 @@ export interface PlayerPreferences {
   audioTrack: string | null;
   subtitleTrack: string | null;
   quality: PlayerQuality;
+  fitMode: VideoFitMode;
 }
 
 interface StoredPlayerPreferences {
@@ -23,12 +25,16 @@ export const DEFAULT_PLAYER_PREFERENCES: PlayerPreferences = {
   audioTrack: null,
   subtitleTrack: null,
   quality: 'auto',
+  fitMode: 'cover',
 };
 
 const normalize = (prefs: Partial<PlayerPreferences>): Partial<PlayerPreferences> => ({
   ...prefs,
   ...(typeof prefs.volume === 'number'
     ? { volume: Math.max(0, Math.min(1, prefs.volume)) }
+    : {}),
+  ...(prefs.fitMode && ['cover', 'contain', 'fill'].includes(prefs.fitMode)
+    ? { fitMode: prefs.fitMode }
     : {}),
 });
 

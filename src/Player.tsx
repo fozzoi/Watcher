@@ -46,7 +46,7 @@ export default function Player() {
 
   const [streamData, setStreamData] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeProvider, setActiveProvider] = useState("Watcher Engine");
+  const [activeProvider, setActiveProvider] = useState("Vidy");
   const appState = useRef(AppState.currentState);
   const transitionRef = useRef(0);
 
@@ -70,39 +70,13 @@ export default function Player() {
     const fetchStream = async () => {
       setLoading(true);
       try {
-        const baseUrl = "https://watcher-api-rho.vercel.app";
-        const encodedTitle = encodeURIComponent(title);
-        const endpoint = `${baseUrl}/api/get_stream?tmdb_id=${tmdbId}&media_type=${mediaType.toLowerCase()}&title=${encodedTitle}&season=${season || 1}&episode=${episode || 1}`;     
-        
-        const response = await fetch(endpoint);
-        const data = await response.json();
-
-        if (isMounted && data.status === "success") {
-            if (data.is_m3u8) {
-                setActiveProvider("Direct Link (Ad-Free)");
-                setStreamData(generateHlsHtml(data.stream_url));
-            } else {
-                setActiveProvider(
-                  data.provider ||
-                  (data.stream_url?.includes('vidy.st') ? 'Vidy' : data.stream_url?.includes('atlantic.st') ? 'Atlantic' : data.stream_url?.includes('movy.sx') ? 'Movy' : 'Web Player')
-                );
-                // 🎯 Pass the raw URL directly instead of building an iframe
-                setStreamData(data.stream_url); 
-            }
-        } else {
-            const defaultVidyUrl = mediaType === 'tv'
-              ? `https://www.vidy.st/tv/${tmdbId}/${season || 1}/${episode || 1}?color=E50914&nextEpisode=true&episodeSelector=true&autoplayNextEpisode=true`
-              : `https://www.vidy.st/movie/${tmdbId}?color=E50914`;
-            setActiveProvider("Vidy");
-            setStreamData(defaultVidyUrl);
-        }
+        const defaultVidyUrl = mediaType === 'tv'
+          ? `https://www.vidy.st/tv/${tmdbId}/${season || 1}/${episode || 1}?color=E50914&nextEpisode=true&episodeSelector=true&autoplayNextEpisode=true&autoplay=true&autoplay=1&autoPlay=true`
+          : `https://www.vidy.st/movie/${tmdbId}?color=E50914&autoplay=true&autoplay=1&autoPlay=true`;
+        setActiveProvider("Vidy");
+        if (isMounted) setStreamData(defaultVidyUrl);
       } catch (error) {
         console.error("❌ Connection Error:", error);
-        const defaultVidyUrl = mediaType === 'tv'
-          ? `https://www.vidy.st/tv/${tmdbId}/${season || 1}/${episode || 1}?color=E50914&nextEpisode=true&episodeSelector=true&autoplayNextEpisode=true`
-          : `https://www.vidy.st/movie/${tmdbId}?color=E50914`;
-        setActiveProvider("Vidy");
-        setStreamData(defaultVidyUrl);
       } finally {
         if (isMounted) setLoading(false);
       }

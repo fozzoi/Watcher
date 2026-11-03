@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DeviceEventEmitter } from 'react-native';
 import { clearExploreCache } from './database';
 
 const PREFS_KEY = 'user_preferences';
@@ -56,6 +57,7 @@ export const setUserPreferences = async (prefs: Partial<UserPreferences>, notify
   memoryUserPreferences = updated;
   clearExploreCache();
   await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(updated));
+  DeviceEventEmitter.emit('preferencesChanged');
   if (notify) onPreferencesChanged?.(updated);
 };
 
@@ -64,6 +66,7 @@ export const completeOnboarding = async (prefs: Omit<UserPreferences, 'onboardin
   memoryUserPreferences = updated;
   clearExploreCache();
   await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(updated));
+  DeviceEventEmitter.emit('preferencesChanged');
   onPreferencesChanged?.({ ...prefs, onboardingComplete: true });
 };
 
@@ -76,6 +79,7 @@ export const resetOnboarding = async (): Promise<void> => {
   memoryUserPreferences = DEFAULT_PREFERENCES;
   clearExploreCache();
   await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(DEFAULT_PREFERENCES));
+  DeviceEventEmitter.emit('preferencesChanged');
   onPreferencesChanged?.(DEFAULT_PREFERENCES);
 };
 

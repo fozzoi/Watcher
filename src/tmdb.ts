@@ -1,6 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getForYouCachedShelves, getExploreContentCacheSync, saveExploreContentCacheSync } from './database';
+import { getUserPreferences } from './userPreferences';
 
 // ==========================================
 // 1. GLOBAL CONFIGURATION & SETUP
@@ -905,10 +906,125 @@ export const getCollectionDetails = async (collectionId: number): Promise<TMDBCo
   } catch (error) { return null; }
 };
 
+export const parseQueryYear = (rawQuery: string): { cleanTitle: string; year?: string } => {
+  const trimmed = rawQuery.trim();
+  if (!trimmed) return { cleanTitle: '' };
+
+  // 1. Year in parentheses or brackets: e.g. "Avatar (2009)", "Dune [2021]"
+  const parenMatch = trimmed.match(/[\(\[]\s*(\b(?:18|19|20)\d{2}\b)\s*[\)\]]/);
+  if (parenMatch) {
+    const candidateTitle = trimmed.replace(/[\(\[]\s*\b(?:18|19|20)\d{2}\b\s*[\)\]]/, '').trim();
+    if (candidateTitle.length > 0) {
+      return { cleanTitle: candidateTitle, year: parenMatch[1] };
+    }
+  }
+
+  // 2. Trailing 4-digit year: e.g. "Avatar 2009", "The Batman 2022"
+  const trailMatch = trimmed.match(/\b((?:18|19|20)\d{2})\b\s*$/);
+  if (trailMatch) {
+    const candidateTitle = trimmed.replace(/\b(?:18|19|20)\d{2}\b\s*$/, '').trim();
+    if (candidateTitle.length > 0) {
+      return { cleanTitle: candidateTitle, year: trailMatch[1] };
+    }
+  }
+
+  // 3. Leading 4-digit year followed by title: e.g. "2009 Avatar"
+  const leadMatch = trimmed.match(/^\s*\b((?:18|19|20)\d{2})\b\s+/);
+  if (leadMatch) {
+    const candidateTitle = trimmed.replace(/^\s*\b(?:18|19|20)\d{2}\b\s+/, '').trim();
+    if (candidateTitle.length > 0) {
+      return { cleanTitle: candidateTitle, year: leadMatch[1] };
+    }
+  }
+
+  return { cleanTitle: trimmed };
+};
+
 export const searchTMDB = async (query: string, page: number = 1): Promise<TMDBResult[]> => {
   try {
-    const data = await fetchWithCache("/search/multi", { query, page });
-    return data.results.map((item: any) => formatBasicItemData(item));
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+
+    const { cleanTitle, year } = parseQueryYear(trimmed);
+
+    // If no year was detected or the query is just a single token/year (e.g. "2012", "1917"),
+    // perform standard multi-search.
+    if (!year || !cleanTitle) {
+      const data = await fetchWithCache("/search/multi", { query: trimmed, page });
+      return (data.results || []).map((item: any) => formatBasicItemData(item));
+    }
+
+    // When a year is detected alongside a title (e.g. "Avatar 2009", "The Batman (2022)"):
+    // Query raw multi, targeted movie search with year, and targeted tv search with year concurrently.
+    const searchPromises: Promise<any>[] = [
+      fetchWithCache("/search/multi", { query: trimmed, page }).catch(() => ({ results: [] })),
+      fetchWithCache("/search/movie", { query: cleanTitle, primary_release_year: year, page })
+        .then((res: any) => ({
+          results: (res.results || []).map((m: any) => ({ ...m, media_type: "movie" })),
+        }))
+        .catch(() => ({ results: [] })),
+      fetchWithCache("/search/tv", { query: cleanTitle, first_air_date_year: year, page })
+        .then((res: any) => ({
+          results: (res.results || []).map((m: any) => ({ ...m, media_type: "tv" })),
+        }))
+        .catch(() => ({ results: [] })),
+      fetchWithCache("/search/multi", { query: cleanTitle, page }).catch(() => ({ results: [] })),
+    ];
+
+    const [rawMulti, movieYear, tvYear, cleanMulti] = await Promise.all(searchPromises);
+
+    const rawList = rawMulti?.results || [];
+    const movieYearList = movieYear?.results || [];
+    const tvYearList = tvYear?.results || [];
+    const cleanList = cleanMulti?.results || [];
+
+    const yearMatched = [...movieYearList, ...tvYearList];
+    const cleanTitleLower = cleanTitle.toLowerCase();
+
+    // Sort year-matched items: exact title matches first, then by popularity
+    yearMatched.sort((a: any, b: any) => {
+      const aTitle = (a.title || a.name || "").toLowerCase();
+      const bTitle = (b.title || b.name || "").toLowerCase();
+      const aExact = aTitle === cleanTitleLower;
+      const bExact = bTitle === cleanTitleLower;
+      if (aExact && !bExact) return -1;
+      if (!aExact && bExact) return 1;
+      return (b.popularity || 0) - (a.popularity || 0);
+    });
+
+    const seenIds = new Set<number>();
+    const finalResults: TMDBResult[] = [];
+
+    const addItem = (rawItem: any) => {
+      if (!rawItem || !rawItem.id || seenIds.has(rawItem.id)) return;
+      seenIds.add(rawItem.id);
+      finalResults.push(formatBasicItemData(rawItem));
+    };
+
+    // 1. Highest priority: targeted movie/tv search matching the year
+    for (const item of yearMatched) {
+      addItem(item);
+    }
+
+    // 2. High priority: raw multi results that matched the full query string (e.g. "Blade Runner 2049")
+    for (const item of rawList) {
+      addItem(item);
+    }
+
+    // 3. Medium priority: clean multi items whose release_date or first_air_date matches the target year
+    for (const item of cleanList) {
+      const itemYear = (item.release_date || item.first_air_date || "").slice(0, 4);
+      if (itemYear === year) {
+        addItem(item);
+      }
+    }
+
+    // 4. Fallback: remaining clean multi items
+    for (const item of cleanList) {
+      addItem(item);
+    }
+
+    return finalResults;
   } catch (error) { return []; }
 };
 
@@ -1002,7 +1118,8 @@ const fetchFreshPersonalisedContent = async (
   try {
     const defaultWorldLangs = ['hi', 'ko', 'ja', 'fr', 'es'];
     const userLangs = (languages && languages.length > 0) ? languages : ['en'];
-    const langSlice = Array.from(new Set([...userLangs, ...defaultWorldLangs])).slice(0, 6);
+    // Include all user-selected languages from onboarding, and pad with default world languages if under 6
+    const langSlice = Array.from(new Set([...userLangs, ...defaultWorldLangs.slice(0, Math.max(0, 6 - userLangs.length))]));
     const actorSlice = (favoriteActors || []).slice(0, 4);
     const genreSlice = (genreIds && genreIds.length > 0) ? genreIds.slice(0, 4) : [28, 35, 878];
 
@@ -1129,6 +1246,25 @@ export const fetchMoreContentByType = async (type: string, page: number = 1): Pr
   if (type.startsWith('similar/')) { const [mediaType, id] = type.split('/').slice(1); return await getSimilarMedia(parseInt(id), mediaType as "movie" | "tv", page); }
   if (type.startsWith('lang-movies-')) { return await getLanguageMovies(type.replace('lang-movies-', ''), page); }
   if (type.startsWith('lang-tv-')) { return await getLanguageTV(type.replace('lang-tv-', ''), page); }
+  if (type === 'world-cinema' || type === 'lang' || type === 'lang-all') {
+    const prefs = await getUserPreferences();
+    const userLangs = (prefs.languages && prefs.languages.length > 0) ? prefs.languages : ['en', 'hi', 'ko'];
+    const langPromises = userLangs.map((lang: string) => getLanguageMovies(lang, page));
+    const results = await Promise.all(langPromises);
+    const combined: TMDBResult[] = [];
+    const maxLen = Math.max(...results.map((r: TMDBResult[]) => r.length), 0);
+    for (let i = 0; i < maxLen; i++) {
+      for (const list of results) {
+        if (list[i]) combined.push(list[i]);
+      }
+    }
+    const seen = new Set<number>();
+    return combined.filter((item) => {
+      if (!item || !item.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }
   if (type.startsWith('actor-')) {
     const actorId = parseInt(type.replace('actor-', ''));
     try {

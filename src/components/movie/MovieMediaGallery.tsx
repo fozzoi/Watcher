@@ -24,21 +24,6 @@ import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TMDBImage, getImageUrl } from '../../tmdb';
 import { useAppTheme } from '../../theme';
-import {
-  Host,
-  HorizontalCenteredHeroCarousel,
-  Box,
-  Image as ComposeImage,
-} from '@expo/ui/jetpack-compose';
-import {
-  size,
-  height,
-  background,
-  maskClip,
-  Shapes,
-  clickable,
-  fillMaxSize,
-} from '@expo/ui/jetpack-compose/modifiers';
 
 interface MovieMediaGalleryProps {
   backdrops?: TMDBImage[];
@@ -345,86 +330,49 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
         entering={FadeIn.duration(260)}
         style={styles.carouselWrapper}
       >
-        {Platform.OS === 'android' ? (
-          <Host colorScheme={isAmbientActive || isDark ? 'dark' : 'light'} style={{ width: '100%', height: GALLERY_CARD_HEIGHT }}>
-            <HorizontalCenteredHeroCarousel 
-              preferredItemWidth={activeTab === 'scenes' ? 320 : 120} 
-              itemSpacing={activeTab === 'scenes' ? 12 : 8}
-            >
-              {currentList.map((item, index) => {
-                const isScene = activeTab === 'scenes';
-                const cardHeight = GALLERY_CARD_HEIGHT;
-                const imageUrl = getImageUrl(item.file_path, isScene ? 'w780' : 'w500');
+        <LegendList
+          horizontal
+          data={currentList}
+          recycleItems={false}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          keyExtractor={(item, index) => `${activeTab}-${item.file_path}-${index}`}
+          estimatedItemSize={activeTab === 'scenes' ? 332 : 132}
+          decelerationRate="normal"
+          drawDistance={100}
+          renderItem={({ item, index }) => {
+            const isScene = activeTab === 'scenes';
+            const cardWidth = isScene ? 320 : 120;
 
-                return (
-                  <Box
-                    key={`compose-${activeTab}-${item.file_path}-${index}`}
-                    contentAlignment="center"
-                    modifiers={[
-                      fillMaxSize(),
-                      height(cardHeight),
-                      maskClip(Shapes.RoundedCorner(isScene ? 18 : 14)),
-                      background(isAmbientActive || isDark ? '#161618' : '#E8E8ED'),
-                      clickable(() => handleOpenPreview(index)),
-                    ]}
-                  >
-                    {imageUrl && (
-                      <ComposeImage
-                        source={{ uri: imageUrl }}
-                        contentScale="crop"
-                        modifiers={[fillMaxSize()]}
-                      />
-                    )}
-                  </Box>
-                );
-              })}
-            </HorizontalCenteredHeroCarousel>
-          </Host>
-        ) : (
-          <LegendList
-            horizontal
-            data={currentList}
-            recycleItems={false}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.listContent}
-            keyExtractor={(item, index) => `${activeTab}-${item.file_path}-${index}`}
-            estimatedItemSize={activeTab === 'scenes' ? 332 : 132}
-            decelerationRate="normal"
-            drawDistance={100}
-            renderItem={({ item, index }) => {
-              const isScene = activeTab === 'scenes';
-              const cardWidth = isScene ? 320 : 120;
-
-              return (
-                <TouchableOpacity
-                  activeOpacity={0.88}
-                  style={[
-                    styles.imageCard,
-                    {
-                      width: cardWidth,
-                      height: GALLERY_CARD_HEIGHT,
-                      backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
-                      borderColor: isAmbientActive ? 'transparent' : colors.border,
-                    },
-                  ]}
-                  onPress={() => handleOpenPreview(index)}
-                >
-                  <Image
-                    source={{ uri: getImageUrl(item.file_path, isScene ? 'w780' : 'w342') }}
-                    style={StyleSheet.absoluteFill}
-                    contentFit="cover"
-                    cachePolicy="disk"
-                    priority="low"
-                  />
-                  <View style={styles.cardGradient} />
-                  <View style={styles.zoomIconWrapper}>
-                    <Ionicons name="expand" size={13} color="#FFF" />
-                  </View>
-                </TouchableOpacity>
-              );
-            }}
-          />
-        )}
+            return (
+              <TouchableOpacity
+                activeOpacity={0.88}
+                style={[
+                  styles.imageCard,
+                  {
+                    width: cardWidth,
+                    height: GALLERY_CARD_HEIGHT,
+                    backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
+                    borderColor: isAmbientActive ? 'transparent' : colors.border,
+                  },
+                ]}
+                onPress={() => handleOpenPreview(index)}
+              >
+                <Image
+                  source={{ uri: getImageUrl(item.file_path, isScene ? 'w780' : 'w342') }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  cachePolicy="disk"
+                  priority="low"
+                />
+                <View style={styles.cardGradient} />
+                <View style={styles.zoomIconWrapper}>
+                  <Ionicons name="expand" size={13} color="#FFF" />
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+        />
       </Animated.View>
 
       {/* Fullscreen Preview Modal with Swipe Left / Right Paging */}

@@ -134,7 +134,27 @@ export const queueCloudValue = (type: 'preferences' | 'watchProgress', value: an
 async function applyCloudLibrary(library: any, revision: number) {
   setCloudOnlyMode(true, library);
   await applyNsfwPreference(library?.preferences?.nsfwFilterEnabled);
-  await AsyncStorage.setItem('watch_progress_v1', JSON.stringify(library?.watchProgress || {}));
+  if (library?.watchProgress && typeof library.watchProgress === 'object') {
+    const localRaw = (await AsyncStorage.getItem('@watch_progress')) || (await AsyncStorage.getItem('watch_progress_v1'));
+    const localProg = localRaw ? JSON.parse(localRaw) : {};
+    const remoteProg = library.watchProgress;
+    const mergedProg = { ...localProg };
+    for (const [k, v] of Object.entries(remoteProg)) {
+      if (!v) continue;
+      const localVal = mergedProg[k];
+      const rTime = (v as any).updatedAt || (v as any).timestamp || 0;
+      const lTime = localVal?.updatedAt || localVal?.timestamp || 0;
+      if (!localVal || rTime >= lTime) {
+        mergedProg[k] = v;
+      }
+    }
+    const progJson = JSON.stringify(mergedProg);
+    await AsyncStorage.setItem('@watch_progress', progJson);
+    await AsyncStorage.setItem('watch_progress_v1', progJson);
+    DeviceEventEmitter.emit('watcher_watch_progress_changed', mergedProg);
+  } else {
+    await AsyncStorage.setItem('watch_progress_v1', JSON.stringify({}));
+  }
   await AsyncStorage.setItem('savedCollections', JSON.stringify(Array.isArray(library?.savedCollections) ? library.savedCollections : []));
   const chat = library?.aiChatData;
   await AsyncStorage.setItem('watcher.chat.conversations.v1', JSON.stringify(Array.isArray(chat?.conversations) ? chat.conversations : []));
@@ -214,7 +234,15 @@ export async function pollCloudChanges(): Promise<void> {
         }
       } finally { applyingRemoteChanges = false; }
       for (const change of changes) {
-        if (change.action === 'set' && change.type === 'watchProgress' && change.value) await AsyncStorage.setItem('watch_progress_v1', JSON.stringify(change.value));
+        if (change.action === 'set' && change.type === 'watchProgress' && change.value) {
+          const localRaw = (await AsyncStorage.getItem('@watch_progress')) || (await AsyncStorage.getItem('watch_progress_v1'));
+          const localProg = localRaw ? JSON.parse(localRaw) : {};
+          const mergedProg = { ...localProg, ...change.value };
+          const progJson = JSON.stringify(mergedProg);
+          await AsyncStorage.setItem('@watch_progress', progJson);
+          await AsyncStorage.setItem('watch_progress_v1', progJson);
+          DeviceEventEmitter.emit('watcher_watch_progress_changed', mergedProg);
+        }
         if (change.action === 'set' && change.type === 'preferences') await applyNsfwPreference(change.value?.nsfwFilterEnabled);
       }
       await AsyncStorage.setItem('cloud_sync_revision', String(nextRevision));
@@ -361,10 +389,12 @@ export const cloudSync = {
           }
         }
       }
-      // 1. Gather local SQLite items
+      // 1. Gather local SQLite items and watch progress
       const localWatchlist = getSavedItems('watchlist') || [];
       const localHistory = getSavedItems('history') || [];
       const localArtists = getSavedItems('artist') || [];
+      const localProgressRaw = (await AsyncStorage.getItem('@watch_progress')) || (await AsyncStorage.getItem('watch_progress_v1'));
+      const localProgress = localProgressRaw ? JSON.parse(localProgressRaw) : {};
       
       const convStr = await AsyncStorage.getItem('watcher.chat.conversations.v1');
       const memStr = await AsyncStorage.getItem('watcher.chat.userMemory.v1');
@@ -376,6 +406,7 @@ export const cloudSync = {
         try {
           response = await axios.post(`${AUTH_API_BASE}/api/sync`, {
             watchlist: localWatchlist, history: localHistory, favoriteArtists: localArtists,
+            watchProgress: localProgress,
             aiChatData: { conversations: convStr ? JSON.parse(convStr) : [], userMemory: memStr || '', aiName: aiNameStr || 'Cine' },
             mode: 'merge',
           }, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, timeout: 15000 });
