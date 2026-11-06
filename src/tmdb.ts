@@ -52,7 +52,7 @@ export const loadGlobalConfig = async (): Promise<void> => {
 const tmdbApi = axios.create({
   baseURL: API_BASE_URL,
   params: { api_key: "" }, // Backend handles this
-  timeout: 15000, 
+  timeout: 12000, 
 });
 
 tmdbApi.interceptors.response.use(
@@ -259,6 +259,9 @@ const createCacheKey = (endpoint: string, params: Record<string, any> = {}) => {
   return `${endpoint}-${JSON.stringify(params)}`;
 };
 
+const inFlightRequests = new Map<string, Promise<any>>();
+const MAX_REQUEST_CACHE_ENTRIES = 120;
+
 const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}) => {
   params = { ...params };
   if (GLOBAL_CONFIG.nsfwFilterEnabled) {
@@ -284,22 +287,57 @@ const fetchWithCache = async (endpoint: string, params: Record<string, any> = {}
     if (!isExpired) {
       return cached.data;
     }
-    requestCache.delete(cacheKey);
   }
-   
-  const MAX_REQUEST_CACHE_ENTRIES = 120;
 
-  try {
-    const response = await tmdbApi.get(endpoint, { params });
-    // Enforce LRU cap so memory stays under ~2MB
-    if (requestCache.size >= MAX_REQUEST_CACHE_ENTRIES) {
-      const oldestKey = requestCache.keys().next().value;
-      if (oldestKey) requestCache.delete(oldestKey);
+  // Deduplicate concurrent identical in-flight requests
+  if (inFlightRequests.has(cacheKey)) {
+    return inFlightRequests.get(cacheKey)!;
+  }
+
+  const fetchPromise = (async () => {
+    const MAX_RETRIES = 2;
+    let lastError: any = null;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await tmdbApi.get(endpoint, { params });
+        // Enforce LRU cap so memory stays bounded
+        if (requestCache.size >= MAX_REQUEST_CACHE_ENTRIES) {
+          const oldestKey = requestCache.keys().next().value;
+          if (oldestKey) requestCache.delete(oldestKey);
+        }
+        requestCache.set(cacheKey, { data: response.data, timestamp: Date.now() });
+        return response.data;
+      } catch (error: any) {
+        lastError = error;
+        const statusCode = error.response?.status;
+        const isTimeout = error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'));
+        const isRetryable = isTimeout || !statusCode || statusCode === 408 || statusCode === 429 || (statusCode >= 500 && statusCode < 600);
+
+        if (attempt < MAX_RETRIES && isRetryable) {
+          const delay = Math.min(2500, 500 * Math.pow(2, attempt) + Math.floor(Math.random() * 250));
+          console.warn(`[TMDB] ${endpoint} attempt ${attempt + 1} timed out or failed (${error.message}). Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        break;
+      }
     }
-    requestCache.set(cacheKey, { data: response.data, timestamp: Date.now() });
-    return response.data;
-  } catch (error) {
-    throw error;
+
+    // Stale cache fallback: if all retries failed, return cached data if available
+    if (cached) {
+      console.warn(`[TMDB] Retries failed for ${endpoint}. Serving stale cached data fallback.`);
+      return cached.data;
+    }
+
+    throw lastError;
+  })();
+
+  inFlightRequests.set(cacheKey, fetchPromise);
+  try {
+    return await fetchPromise;
+  } finally {
+    inFlightRequests.delete(cacheKey);
   }
 };
 
@@ -729,12 +767,12 @@ export const getFullDetails = async (item: TMDBResult, preferredCountry = 'US'):
       certification = usRating?.rating || null;
     }
 
-    const cast = data.credits?.cast?.slice(0, 10).map((member: any) => ({
+    const cast = (data.credits?.cast || []).map((member: any) => ({
       id: member.id,
       name: member.name || "Unknown Actor",
       profile_path: member.profile_path || null,
       character: member.character || "Unknown Character"
-    })) || [];
+    }));
 
     let director: TMDBCrewMember | undefined = undefined;
     if (data.created_by && data.created_by.length > 0) {

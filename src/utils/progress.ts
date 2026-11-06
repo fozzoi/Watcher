@@ -104,7 +104,7 @@ export const saveProgress = async (progress: WatchProgress & { sourceKey?: strin
 
       // Push progress mutation to cloud sync in background
       import('../cloudSync').then(({ queueCloudValue }) => {
-        queueCloudValue('watchProgress', {
+        const payload: Record<string, any> = {
           [String(progress.tmdbId)]: {
             progress: pos,
             position: pos,
@@ -121,7 +121,13 @@ export const saveProgress = async (progress: WatchProgress & { sourceKey?: strin
             poster: progress.poster,
             updatedAt: updatedItem.updatedAt,
           },
-        });
+        };
+        if (progress.mediaType === 'tv') {
+          payload[identity] = {
+            ...updatedItem,
+          };
+        }
+        queueCloudValue('watchProgress', payload);
       }).catch(() => {});
 
       // Silent taste event logging based on completion / drop thresholds

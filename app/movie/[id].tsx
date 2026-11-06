@@ -211,7 +211,7 @@ const MemoizedCastCard = React.memo(({ item, cardWidth, isAmbientActive, onPress
   );
 });
 
-const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, isAmbientActive, onPlay }: any) => {
+const MemoizedEpisodeRow = React.memo(({ ep, isActive, isPlayed, episodeThumbWidth, isAmbientActive, onPlay }: any) => {
   const { colors } = useAppTheme();
   const stillUrl = ep.still_path
     ? getImageUrl(ep.still_path, 'w185')
@@ -246,13 +246,18 @@ const MemoizedEpisodeRow = React.memo(({ ep, isActive, episodeThumbWidth, isAmbi
       </View>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={[
-            styles.epNum,
-            { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
-            isActive && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '800' }
-          ]}>
-            EPISODE {ep.episode_number}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Text style={[
+              styles.epNum,
+              { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
+              isActive && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '800' }
+            ]}>
+              EPISODE {ep.episode_number}
+            </Text>
+            {isPlayed ? (
+              <Ionicons name="checkmark-circle" size={13} color="#30D158" />
+            ) : null}
+          </View>
           {ep.air_date ? (
             <Text style={{ fontSize: 11, color: isAmbientActive ? 'rgba(255, 255, 255, 0.60)' : colors.textSecondary }}>
               {dayjs(ep.air_date).format('MMM D, YYYY')}
@@ -825,11 +830,18 @@ const MovieEpisodesSection = React.memo(({
             const isActive = isCompleted
               ? (targetSeason === ep.season_number && targetEpisode === ep.episode_number)
               : (lastWatched?.lastSeason === ep.season_number && lastWatched?.lastEpisode === ep.episode_number);
+            const isPrior = Boolean(
+              lastWatched &&
+              (ep.season_number < (lastWatched.lastSeason || 1) ||
+               (ep.season_number === (lastWatched.lastSeason || 1) && ep.episode_number < (lastWatched.lastEpisode || 1)))
+            );
+            const isPlayed = isPrior || (isActive && isCompleted);
             return (
               <MemoizedEpisodeRow
                 key={ep.id}
                 ep={ep}
                 isActive={isActive}
+                isPlayed={isPlayed}
                 episodeThumbWidth={episodeThumbWidth}
                 isAmbientActive={isAmbientActive}
                 onPlay={onPlay}
@@ -930,6 +942,7 @@ export default function DetailPage() {
   const [torrentModalVisible, setTorrentModalVisible] = useState(false);
 
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+  const [castLimit, setCastLimit] = useState(15);
   const [episodes, setEpisodes] = useState<TMDBEpisode[]>([]);
   const [episodesLimit, setEpisodesLimit] = useState(INITIAL_EPISODES_LIMIT);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
@@ -986,44 +999,27 @@ export default function DetailPage() {
   }, [router]);
 
   // Phase 1: Fast initial metadata
-  useEffect(() => {
+  const fetchInitial = useCallback(async () => {
     if (!id) return;
-    let isActive = true;
-    let cancelSchedule: (() => void) | null = null;
+    try {
+      setDetailsError(null);
+      const data = await getMediaDetails(Number(id), (media_type as 'movie' | 'tv') || 'movie');
+      setMovie(data);
 
-    const fetchInitial = async () => {
-      try {
-        setDetailsError(null);
-        const data = await getMediaDetails(Number(id), (media_type as 'movie' | 'tv') || 'movie');
-
-        if (!isActive) return;
-
-        // Ensure state update doesn't interrupt native screen transitions
-        // Wait until the 350ms push animation finishes before mounting details
-          cancelSchedule = runAfterTransition(() => {
-            if (!isActive) return;
-            setMovie(data);
-
-          if (data.media_type === 'tv' && data.seasons && data.seasons.length > 0) {
-            const firstValidSeason = data.seasons.find((s: any) => s.season_number > 0);
-            if (firstValidSeason) {
-              setSelectedSeason(firstValidSeason.season_number);
-            }
-          }
-        }, 320); // Must be >= 300ms
-      } catch {
-        if (isActive) {
-          setDetailsError('Unable to load this title. Check your connection.');
+      if (data.media_type === 'tv' && data.seasons && data.seasons.length > 0) {
+        const firstValidSeason = data.seasons.find((s: any) => s.season_number > 0);
+        if (firstValidSeason) {
+          setSelectedSeason(firstValidSeason.season_number);
         }
       }
-    };
-
-    fetchInitial();
-    return () => {
-      isActive = false;
-      if (cancelSchedule) cancelSchedule();
-    };
+    } catch {
+      setDetailsError('Unable to load this title. Check your connection or retry.');
+    }
   }, [id, media_type]);
+
+  useEffect(() => {
+    fetchInitial();
+  }, [fetchInitial]);
 
   // Phase 2: Deferred crew, cast, collection, and recommendations (fires as soon as movie.id AND renderStage >= 1)
   useEffect(() => {
@@ -1116,6 +1112,9 @@ export default function DetailPage() {
       getProgress(movie.id).then((progress) => {
         if (!isActive) return;
         setLastWatched(progress);
+        if (movie.media_type === 'tv' && progress?.lastSeason) {
+          setSelectedSeason(progress.lastSeason);
+        }
         const s = movie.media_type === 'tv' ? (progress?.lastSeason || 1) : 1;
         const e = movie.media_type === 'tv' ? (progress?.lastEpisode || 1) : 1;
         prefetchSources(movie.id, movie.media_type, movie.title || movie.name || '', s, e);
@@ -1266,8 +1265,19 @@ export default function DetailPage() {
     return (
       <View style={[styles.root, styles.detailsLoading, { backgroundColor: colors.background }]}>
         <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
-        <LoadingIndicator color={colors.primary} size="large" />
+        <Ionicons name="alert-circle-outline" size={44} color={colors.textSecondary} />
         <Text style={[styles.detailsError, { color: colors.textSecondary }]}>{detailsError}</Text>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+          onPress={() => {
+            setDetailsError(null);
+            void fetchInitial();
+          }}
+        >
+          <Ionicons name="refresh" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+          <Text style={styles.retryBtnText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -1484,7 +1494,22 @@ export default function DetailPage() {
 
               {/* Cast with In-Page Skeleton Placeholder */}
               <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>Cast</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <Text style={[styles.sectionTitle, { marginBottom: 0, color: isAmbientActive ? '#FFFFFF' : colors.text }]}>
+                    Cast {cast && cast.length > 0 ? `(${cast.length})` : ''}
+                  </Text>
+                  {cast && cast.length > 15 ? (
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => setCastLimit((prev) => (prev >= cast.length ? 15 : cast.length))}
+                      style={{ paddingHorizontal: 8, paddingVertical: 4 }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: isAmbientActive ? '#FFFFFF' : colors.primary }}>
+                        {castLimit >= cast.length ? 'Show Less' : `Show All (${cast.length})`}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
                 {!cast || cast.length === 0 ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
                     {[1, 2, 3, 4].map((i) => (
@@ -1497,7 +1522,7 @@ export default function DetailPage() {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={{ gap: 12 }}
                   >
-                    {cast.slice(0, 15).map((castMember: any) => (
+                    {cast.slice(0, castLimit).map((castMember: any) => (
                       <MemoizedCastCard
                         key={castMember.id}
                         item={castMember}
@@ -1509,6 +1534,25 @@ export default function DetailPage() {
                         }}
                       />
                     ))}
+                    {cast.length > castLimit && (
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        style={[
+                          styles.castLoadMoreCard,
+                          {
+                            width: castCardWidth,
+                            height: castCardWidth * 1.35,
+                            backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
+                          }
+                        ]}
+                        onPress={() => setCastLimit((prev) => Math.min(prev + 15, cast.length))}
+                      >
+                        <Ionicons name="chevron-forward-circle" size={26} color={isAmbientActive ? '#FFFFFF' : colors.primary} />
+                        <Text style={[styles.castLoadMoreText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>
+                          +{Math.min(15, cast.length - castLimit)} More
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </ScrollView>
                 )}
               </View>
@@ -1932,6 +1976,18 @@ const styles = StyleSheet.create({
   castImg: { borderRadius: 12, backgroundColor: C.surface2, marginBottom: 6 },
   castName: { color: C.white, fontSize: 12, fontWeight: '600' },
   castCharacter: { color: C.muted, fontSize: 10.5, fontWeight: '400', marginTop: 1 },
+  castLoadMoreCard: {
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    padding: 8,
+  },
+  castLoadMoreText: {
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
   seasonPill: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -2004,4 +2060,31 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   ratingText: { color: C.white, fontSize: 10, fontWeight: '700' },
+  detailsLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    gap: 14,
+  },
+  detailsError: {
+    fontSize: 14,
+    textAlign: 'center',
+    maxWidth: 280,
+    lineHeight: 20,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 100,
+    marginTop: 8,
+  },
+  retryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 });
