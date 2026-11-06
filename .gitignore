@@ -84,3 +84,7 @@ android/
 
 # secrets.ts
 credentials.json
+
+
+.agents
+.claude
