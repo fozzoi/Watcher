@@ -1209,27 +1209,73 @@ export default function DetailPage() {
       targetEpisode = (isCompleted && !isNext) ? 1 : targetPlayEpisode;
     }
 
+    let previousSeason: number | undefined;
+    let previousEpisode: number | undefined;
     let nextSeason: number | undefined;
     let nextEpisode: number | undefined;
+    const seasonCounts = movie.media_type === 'tv'
+      ? (movie.seasons || [])
+        .filter((item: any) => item.season_number > 0 && item.episode_count > 0)
+        .map((item: any) => [item.season_number, item.episode_count])
+      : [];
+
     if (movie.media_type === 'tv') {
       const seasonEpisodes = episodes
         .filter((item) => item.season_number === targetSeason)
         .sort((a, b) => a.episode_number - b.episode_number);
       const currentIndex = seasonEpisodes.findIndex((item) => item.episode_number === targetEpisode);
-      const following = seasonEpisodes[currentIndex + 1];
+      const currentSeasonCount = seasonCounts.find(([seasonNumber]: number[]) => seasonNumber === targetSeason)?.[1];
+
+      if (currentIndex > 0) {
+        previousSeason = targetSeason;
+        previousEpisode = seasonEpisodes[currentIndex - 1].episode_number;
+      } else if (currentIndex < 0 && targetEpisode > 1) {
+        previousSeason = targetSeason;
+        previousEpisode = targetEpisode - 1;
+      } else {
+        const previousSeasonMeta = (movie.seasons || [])
+          .filter((item: any) => item.season_number > 0 && item.episode_count > 0 && item.season_number < targetSeason)
+          .sort((a: any, b: any) => b.season_number - a.season_number)[0];
+        if (previousSeasonMeta) {
+          previousSeason = previousSeasonMeta.season_number;
+          previousEpisode = previousSeasonMeta.episode_count;
+        }
+      }
+
+      const following = currentIndex >= 0
+        ? seasonEpisodes[currentIndex + 1]
+        : targetEpisode < (currentSeasonCount || 0)
+          ? { season_number: targetSeason, episode_number: targetEpisode + 1 }
+          : undefined;
       if (following) {
         nextSeason = following.season_number;
         nextEpisode = following.episode_number;
+      } else {
+        const nextSeasonMeta = (movie.seasons || [])
+          .filter((item: any) => item.season_number > targetSeason && item.episode_count > 0)
+          .sort((a: any, b: any) => a.season_number - b.season_number)[0];
+        if (nextSeasonMeta) {
+          nextSeason = nextSeasonMeta.season_number;
+          nextEpisode = 1;
+        }
       }
     }
 
-    const nextParams = nextSeason && nextEpisode ? `&nextSeason=${nextSeason}&nextEpisode=${nextEpisode}` : '';
+    const previousParams = previousSeason && previousEpisode
+      ? `&previousSeason=${previousSeason}&previousEpisode=${previousEpisode}`
+      : '';
+    const nextParams = nextSeason && nextEpisode
+      ? `&nextSeason=${nextSeason}&nextEpisode=${nextEpisode}`
+      : '';
+    const guideParams = seasonCounts.length > 0
+      ? `&seasonCounts=${encodeURIComponent(JSON.stringify(seasonCounts))}`
+      : '';
     router.push(
       `/player?id=${movie.id}&media_type=${movie.media_type}&title=${encodeURIComponent(
         movie.title || movie.name
       )}&season=${targetSeason}&episode=${targetEpisode}&poster=${encodeURIComponent(
         movie.poster_path || ''
-      )}&episodeName=${encodeURIComponent(episode ? episode.name : `Episode ${targetEpisode}`)}${nextParams}`
+      )}&episodeName=${encodeURIComponent(episode ? episode.name : `Episode ${targetEpisode}`)}${previousParams}${nextParams}${guideParams}`
     );
   }, [sourceStatus, movie, isCompleted, isNext, targetPlaySeason, targetPlayEpisode, episodes, router]);
 

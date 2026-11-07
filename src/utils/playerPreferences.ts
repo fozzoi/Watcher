@@ -4,6 +4,7 @@ const PLAYER_PREFERENCES_KEY = '@player_preferences';
 
 export type PlayerQuality = 'auto' | '1080p' | '720p' | '480p';
 export type VideoFitMode = 'cover' | 'contain' | 'fill';
+export type PlayerProvider = 'Vidy' | 'VidLink' | 'Atlantic' | 'Movy';
 
 export interface PlayerPreferences {
   volume: number;
@@ -12,6 +13,7 @@ export interface PlayerPreferences {
   subtitleTrack: string | null;
   quality: PlayerQuality;
   fitMode: VideoFitMode;
+  preferredProvider: PlayerProvider;
 }
 
 interface StoredPlayerPreferences {
@@ -26,17 +28,26 @@ export const DEFAULT_PLAYER_PREFERENCES: PlayerPreferences = {
   subtitleTrack: null,
   quality: 'auto',
   fitMode: 'cover',
+  preferredProvider: 'Vidy',
 };
 
-const normalize = (prefs: Partial<PlayerPreferences>): Partial<PlayerPreferences> => ({
-  ...prefs,
-  ...(typeof prefs.volume === 'number'
-    ? { volume: Math.max(0, Math.min(1, prefs.volume)) }
-    : {}),
-  ...(prefs.fitMode && ['cover', 'contain', 'fill'].includes(prefs.fitMode)
-    ? { fitMode: prefs.fitMode }
-    : {}),
-});
+const PROVIDERS: PlayerProvider[] = ['Vidy', 'VidLink', 'Atlantic', 'Movy'];
+
+const normalize = (prefs: Partial<PlayerPreferences>): Partial<PlayerPreferences> => {
+  const { preferredProvider, ...otherPreferences } = prefs;
+  return {
+    ...otherPreferences,
+    ...(typeof prefs.volume === 'number'
+      ? { volume: Math.max(0, Math.min(1, prefs.volume)) }
+      : {}),
+    ...(prefs.fitMode && ['cover', 'contain', 'fill'].includes(prefs.fitMode)
+      ? { fitMode: prefs.fitMode }
+      : {}),
+    ...(preferredProvider && PROVIDERS.includes(preferredProvider)
+      ? { preferredProvider }
+      : {}),
+  };
+};
 
 const readStored = async (): Promise<StoredPlayerPreferences> => {
   const raw = await AsyncStorage.getItem(PLAYER_PREFERENCES_KEY);

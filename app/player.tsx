@@ -19,12 +19,12 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { getProgress, saveProgress, WatchProgress } from '../src/utils/progress';
-import { getPlayerPreferences, PlayerPreferences, savePlayerPreferences, VideoFitMode } from '../src/utils/playerPreferences';
+import { getPlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
+import type { PlayerProvider, VideoFitMode } from '../src/utils/playerPreferences';
+import { findAdjacentEpisode, parseEpisodePosition, parseSeasonEpisodeCounts } from '../src/utils/playerEpisodes';
 import { useAppTheme } from '../src/theme';
 
-type ProviderKey = 'Vidy' | 'VidLink' | 'Atlantic' | 'Movy';
-
-const PROVIDERS: ProviderKey[] = ['Vidy', 'VidLink', 'Atlantic', 'Movy'];
+const PROVIDERS: PlayerProvider[] = ['Vidy', 'VidLink', 'Atlantic', 'Movy'];
 
 const injectedPreScript = `
   (function() {
@@ -402,7 +402,7 @@ const generateInjectedPostScript = (currentFitMode: VideoFitMode) => `
 `;
 
 const buildProviderUrl = (
-  provider: ProviderKey,
+  provider: PlayerProvider,
   tmdbId: number,
   mediaType: 'movie' | 'tv',
   season: number,
@@ -441,8 +441,11 @@ export default function Player() {
     season: paramSeason,
     episode: paramEpisode,
     poster: paramPoster,
+    previousSeason: paramPreviousSeason,
+    previousEpisode: paramPreviousEpisode,
     nextSeason: paramNextSeason,
-    nextEpisode: paramNextEpisode
+    nextEpisode: paramNextEpisode,
+    seasonCounts: paramSeasonCounts,
   } = useLocalSearchParams();
 
   const tmdbId = Number(paramId);
@@ -451,10 +454,14 @@ export default function Player() {
   const season = paramSeason ? Number(paramSeason) : 1;
   const episode = paramEpisode ? Number(paramEpisode) : 1;
   const poster = (paramPoster as string) || '';
-  const nextSeason = paramNextSeason ? Number(paramNextSeason) : undefined;
-  const nextEpisode = paramNextEpisode ? Number(paramNextEpisode) : undefined;
+  const seasonCounts = parseSeasonEpisodeCounts(paramSeasonCounts);
+  const previousPosition = parseEpisodePosition(paramPreviousSeason, paramPreviousEpisode)
+    || findAdjacentEpisode(season, episode, seasonCounts, -1);
+  const nextPosition = parseEpisodePosition(paramNextSeason, paramNextEpisode)
+    || findAdjacentEpisode(season, episode, seasonCounts, 1);
 
-  const [provider, setProvider] = useState<ProviderKey>('Vidy');
+  const [provider, setProvider] = useState<PlayerProvider>('Vidy');
+  const [providerInitialized, setProviderInitialized] = useState(false);
   const [streamData, setStreamData] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showNextEpisode, setShowNextEpisode] = useState(false);
@@ -470,6 +477,23 @@ export default function Player() {
   const sourceKey = `${mediaType}:${tmdbId}:${provider.toLowerCase()}`;
   const latestPositionRef = useRef({ position: 0, duration: 0 });
   const isLeavingRef = useRef(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadPreferredProvider = async () => {
+      try {
+        const preferences = await getPlayerPreferences();
+        if (isMounted) setProvider(preferences.preferredProvider);
+      } catch (error) {
+        console.error('Failed to load preferred player source:', error);
+      } finally {
+        if (isMounted) setProviderInitialized(true);
+      }
+    };
+
+    void loadPreferredProvider();
+    return () => { isMounted = false; };
+  }, []);
 
   // Auto-hide overlay after 3 seconds
   const resetControlsTimeout = useCallback(() => {
@@ -521,6 +545,9 @@ export default function Player() {
     const currentIndex = PROVIDERS.indexOf(provider);
     const nextProvider = PROVIDERS[(currentIndex + 1) % PROVIDERS.length];
     setProvider(nextProvider);
+    void savePlayerPreferences(undefined, { preferredProvider: nextProvider }).catch((error) => {
+      console.error('Failed to save preferred player source:', error);
+    });
     setLoading(true);
     const savedSecs = Math.floor(progressRef.current?.position || 0);
     const nextUrl = buildProviderUrl(nextProvider, tmdbId, mediaType, season, episode, savedSecs);
@@ -583,9 +610,15 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    if (!providerInitialized) return;
+
     let isMounted = true;
     const initStream = async () => {
       setLoading(true);
+      isLeavingRef.current = false;
+      latestPositionRef.current = { position: 0, duration: 0 };
+      setShowNextEpisode(false);
+      setStreamData(null);
       try {
         const saved = await getProgress(tmdbId, mediaType, season, episode, sourceKey);
         const preferences = await getPlayerPreferences(sourceKey);
@@ -612,7 +645,7 @@ export default function Player() {
 
     initStream();
     return () => { isMounted = false; };
-  }, [tmdbId, mediaType, season, episode, provider]);
+  }, [tmdbId, mediaType, season, episode, provider, providerInitialized]);
 
   const handleAppStateChange = (nextAppState: any) => {
     if (nextAppState.match(/inactive|background/)) {
@@ -650,14 +683,48 @@ export default function Player() {
     void flushProgress().then(() => exitFullScreen()).then(() => router.back());
   };
 
-  const goToNextEpisode = async () => {
-    if (!nextSeason || !nextEpisode || isLeavingRef.current) return;
-    const dur = latestPositionRef.current.duration || progressRef.current?.duration || 100;
-    await handleSaveProgress(dur, dur, true);
+  const navigateEpisode = async (
+    target: { season: number; episode: number } | undefined,
+    direction: -1 | 1,
+  ) => {
+    if (!target || isLeavingRef.current) return;
     isLeavingRef.current = true;
-    await exitFullScreen();
-    router.replace(`/player?id=${tmdbId}&media_type=${mediaType}&title=${encodeURIComponent(title)}&season=${nextSeason}&episode=${nextEpisode}&poster=${encodeURIComponent(poster)}&episodeName=Episode%20${nextEpisode}`);
+    try {
+      if (direction === 1) {
+        const dur = latestPositionRef.current.duration || progressRef.current?.duration || 100;
+        await handleSaveProgress(dur, dur, true);
+      } else {
+        await flushProgress();
+      }
+
+      const currentPosition = { season, episode };
+      const previous = direction === 1
+        ? currentPosition
+        : findAdjacentEpisode(target.season, target.episode, seasonCounts, -1);
+      const next = direction === -1
+        ? currentPosition
+        : findAdjacentEpisode(target.season, target.episode, seasonCounts, 1);
+      const episodeGuide = seasonCounts.length
+        ? `&seasonCounts=${encodeURIComponent(JSON.stringify(seasonCounts))}`
+        : '';
+      const previousParams = previous
+        ? `&previousSeason=${previous.season}&previousEpisode=${previous.episode}`
+        : '';
+      const nextParams = next
+        ? `&nextSeason=${next.season}&nextEpisode=${next.episode}`
+        : '';
+
+      router.replace(
+        `/player?id=${tmdbId}&media_type=${mediaType}&title=${encodeURIComponent(title)}&season=${target.season}&episode=${target.episode}&poster=${encodeURIComponent(poster)}&episodeName=Episode%20${target.episode}${previousParams}${nextParams}${episodeGuide}`,
+      );
+    } catch (error) {
+      isLeavingRef.current = false;
+      console.error('Failed to navigate between episodes:', error);
+    }
   };
+
+  const goToNextEpisode = () => navigateEpisode(nextPosition, 1);
+  const goToPreviousEpisode = () => navigateEpisode(previousPosition, -1);
 
   return (
     <View style={styles.container}>
@@ -698,11 +765,11 @@ export default function Player() {
                 return;
               }
 
-              if (progress.nearCredits && nextEpisode) setShowNextEpisode(true);
-              if (progress.event === 'ended' && nextEpisode) {
+              if (progress.event === 'ended' && nextPosition) {
                 void goToNextEpisode();
                 return;
               }
+              if (progress.nearCredits && nextPosition) setShowNextEpisode(true);
               if (progress.type === 'playerSettings') {
                 const { type, ...changes } = progress;
                 savePlayerPreferences(sourceKey, { ...changes, muted: false }).catch(() => {});
@@ -712,7 +779,7 @@ export default function Player() {
               const pos = Number.isFinite(progress.currentTime) ? progress.currentTime : progress.position;
               const dur = Number.isFinite(progress.duration) ? progress.duration : 0;
               if (Number.isFinite(pos) && pos > 0) {
-                if (dur > 0 && pos / dur >= 0.8 && dur - pos <= 90 && nextEpisode) {
+                if (dur > 0 && pos / dur >= 0.8 && dur - pos <= 90 && nextPosition) {
                   setShowNextEpisode(true);
                 }
                 progressRef.current = {
@@ -812,9 +879,27 @@ export default function Player() {
         </View>
       </View>
 
-      {showNextEpisode && nextEpisode && (
-        <TouchableOpacity style={[styles.nextEpisodeButton, { backgroundColor: colors.primary }]} onPress={goToNextEpisode}>
-          <Text style={styles.nextEpisodeText}>Next Episode</Text>
+      {previousPosition && (
+        <TouchableOpacity
+          style={[styles.episodeButton, styles.previousEpisodeButton]}
+          onPress={goToPreviousEpisode}
+          accessibilityRole="button"
+          accessibilityLabel={`Play previous episode, season ${previousPosition.season}, episode ${previousPosition.episode}`}
+        >
+          <Ionicons name="play-skip-back" size={16} color="#fff" />
+          <Text style={styles.episodeButtonText}>Previous</Text>
+        </TouchableOpacity>
+      )}
+
+      {showNextEpisode && nextPosition && (
+        <TouchableOpacity
+          style={[styles.episodeButton, styles.nextEpisodeButton, { backgroundColor: colors.primary }]}
+          onPress={goToNextEpisode}
+          accessibilityRole="button"
+          accessibilityLabel={`Play next episode, season ${nextPosition.season}, episode ${nextPosition.episode}`}
+        >
+          <Text style={styles.episodeButtonText}>Next Episode</Text>
+          <Ionicons name="play-skip-forward" size={16} color="#fff" />
         </TouchableOpacity>
       )}
 
@@ -885,12 +970,25 @@ const styles = StyleSheet.create({
     right: 20,
     bottom: 32,
     zIndex: 200,
-    backgroundColor: '#E50914',
+  },
+  previousEpisodeButton: {
+    position: 'absolute',
+    left: 20,
+    bottom: 32,
+    zIndex: 200,
+  },
+  episodeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(20, 20, 20, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderRadius: 24,
   },
-  nextEpisodeText: {
+  episodeButtonText: {
     color: '#fff',
     fontWeight: '700',
   },
