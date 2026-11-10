@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -46,6 +46,16 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<any>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   const sendMessage = useCallback(async (customText?: string) => {
     const text = (customText || input).trim();
@@ -70,41 +80,64 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
         movie.production_countries?.[0]?.name ||
         (movie.origin_country?.length > 0 ? movie.origin_country[0] : '');
 
-      const response = await fetch('https://watcher-api-rho.vercel.app/api/gemini', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'movie_chat',
-          message: text,
-          movieContext: {
-            title: movie.title || movie.name,
-            year: releaseYear,
-            mediaType: movie.media_type,
-            originalLanguage: origLangLabel,
-            country: countryLabel,
-            directors: directors.map((d: any) => d.name).join(', '),
-            cast: (movie.cast || []).slice(0, 6).map((c: any) => c.name).join(', '),
-            genres: genres.map((g: any) => g.name).join(', '),
-            rating: movie.vote_average ? movie.vote_average.toFixed(1) : undefined,
-            certification: movie.certification,
-            overview: movie.overview,
-          },
-          history: newHistory.slice(-8),
-        }),
-      });
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      let response: Response;
+      try {
+        response = await fetch('https://watcher-api-rho.vercel.app/api/gemini', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            action: 'movie_chat',
+            message: text,
+            movieContext: {
+              title: movie.title || movie.name,
+              year: releaseYear,
+              mediaType: movie.media_type,
+              originalLanguage: origLangLabel,
+              country: countryLabel,
+              directors: directors.map((d: any) => d.name).join(', '),
+              cast: (movie.cast || []).slice(0, 6).map((c: any) => c.name).join(', '),
+              genres: genres.map((g: any) => g.name).join(', '),
+              rating: movie.vote_average ? movie.vote_average.toFixed(1) : undefined,
+              certification: movie.certification,
+              overview: movie.overview,
+            },
+            history: newHistory.slice(-8),
+          }),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
       const data = await response.json();
+      if (!isMountedRef.current) return;
       const botText = data?.result?.text || data?.result || "Couldn't retrieve answer, please try again.";
       setMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', text: botText }]);
-    } catch {
+    } catch (err: any) {
+      if (!isMountedRef.current) return;
+      const errorMsg =
+        err?.name === 'AbortError'
+          ? 'Request timed out. Please try again.'
+          : 'Error connecting to AI. Please try again.';
       setMessages((prev) => [
         ...prev,
-        { id: (Date.now() + 1).toString(), role: 'assistant', text: 'Error connecting to AI. Please try again.' },
+        { id: (Date.now() + 1).toString(), role: 'assistant', text: errorMsg },
       ]);
     } finally {
-      setLoading(false);
-      requestAnimationFrame(() => {
-        scrollRef.current?.scrollToEnd({ animated: true });
-      });
+      if (isMountedRef.current) {
+        setLoading(false);
+        requestAnimationFrame(() => {
+          scrollRef.current?.scrollToEnd({ animated: true });
+        });
+      }
     }
   }, [input, loading, movie, messages, releaseYear, directors, genres]);
 

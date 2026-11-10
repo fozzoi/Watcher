@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import {
   View,
+  Text,
   StyleSheet,
   RefreshControl,
   StatusBar,
@@ -36,7 +37,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getSavedItems,
   getExploreContentCacheSync,
-  saveExploreContentCacheSync,
 } from '../../src/database';
 import {
   getForYouShelvesSync,
@@ -245,7 +245,9 @@ const ExploreSearchController = memo(
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
     const [tmdbResults, setTmdbResults] = useState<any[]>([]);
     const [peopleResults, setPeopleResults] = useState<any[]>([]);
+    const [searchError, setSearchError] = useState<string | null>(null);
     const searchTimeout = useRef<any>(null);
+    const searchReqIdRef = useRef(0);
 
     const loadSearchHistory = useCallback(async () => {
       try {
@@ -289,33 +291,64 @@ const ExploreSearchController = memo(
 
     const handleSearch = useCallback(async (searchText: string) => {
       const trimmed = searchText.trim();
+      const reqId = ++searchReqIdRef.current;
       if (!trimmed) {
         setTmdbResults([]);
         setPeopleResults([]);
+        setSearchError(null);
         setSearchLoading(false);
         return;
       }
       setSearchLoading(true);
+      setSearchError(null);
 
       try {
         const { cleanTitle, year } = parseQueryYear(trimmed);
         const searchCollectionQuery = year && cleanTitle ? cleanTitle : trimmed;
 
-        const [movies, people, collections] = await Promise.all([
-          searchTMDB(trimmed),
-          searchPeople(cleanTitle || trimmed),
-          searchCollections(searchCollectionQuery),
+        const [moviesRes, peopleRes, collectionsRes] = await Promise.allSettled([
+          searchTMDB(trimmed, 1, { priority: 'high', throwOnError: true }),
+          searchPeople(cleanTitle || trimmed, 1, { priority: 'high', throwOnError: true }),
+          searchCollections(searchCollectionQuery, 1, { priority: 'high', throwOnError: true }),
         ]);
+
+        if (reqId !== searchReqIdRef.current) return;
+
+        const movies = moviesRes.status === 'fulfilled' ? moviesRes.value : [];
+        const people = peopleRes.status === 'fulfilled' ? peopleRes.value : [];
+        const collections = collectionsRes.status === 'fulfilled' ? collectionsRes.value : [];
 
         const validMovies = movies.filter((item: any) => item.poster_path);
         const validCollections = collections.filter((item: any) => item.poster_path);
+        const validPeople = people.filter((item: any) => item.profile_path);
+
+        const allFailed =
+          moviesRes.status === 'rejected' &&
+          peopleRes.status === 'rejected' &&
+          collectionsRes.status === 'rejected';
+        const primaryFailedWithoutResults =
+          moviesRes.status === 'rejected' &&
+          validCollections.length === 0 &&
+          validPeople.length === 0;
+
+        if (allFailed || primaryFailedWithoutResults) {
+          setTmdbResults([]);
+          setPeopleResults([]);
+          setSearchError('Could not load search results. Check your connection and try again.');
+          return;
+        }
 
         setTmdbResults([...validCollections, ...validMovies]);
-        setPeopleResults(people.filter((item: any) => item.profile_path));
+        setPeopleResults(validPeople);
+        setSearchError(null);
       } catch (error) {
+        if (reqId !== searchReqIdRef.current) return;
         console.error('Search failed', error);
+        setSearchError('Could not load search results. Check your connection and try again.');
       } finally {
-        setSearchLoading(false);
+        if (reqId === searchReqIdRef.current) {
+          setSearchLoading(false);
+        }
       }
     }, []);
 
@@ -323,9 +356,11 @@ const ExploreSearchController = memo(
       const inSearch = query.trim() !== '';
       inSearchModeShared.value = inSearch;
       if (!query.trim()) {
+        searchReqIdRef.current += 1;
         if (searchTimeout.current) clearTimeout(searchTimeout.current);
         setTmdbResults((prev) => (prev.length > 0 ? [] : prev));
         setPeopleResults((prev) => (prev.length > 0 ? [] : prev));
+        setSearchError(null);
         setSearchLoading(false);
         return;
       }
@@ -392,6 +427,22 @@ const ExploreSearchController = memo(
                 personalizedItems={personalizedItems}
                 toggleWatchlist={toggleWatchlist}
               />
+            ) : searchError && tmdbResults.length === 0 && peopleResults.length === 0 && !searchLoading ? (
+              <View style={styles.stateErrorContainer}>
+                <Ionicons name="cloud-offline-outline" size={44} color={colors.textSecondary} />
+                <Text style={[styles.stateErrorTitle, { color: colors.text }]}>Search unavailable</Text>
+                <Text style={[styles.stateErrorMessage, { color: colors.textSecondary }]}>
+                  {searchError}
+                </Text>
+                <TouchableOpacity
+                  style={[styles.stateRetryButton, { backgroundColor: colors.primary }]}
+                  onPress={() => handleSearch(query)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="refresh" size={16} color={colors.onPrimary} />
+                  <Text style={[styles.stateRetryText, { color: colors.onPrimary }]}>Retry</Text>
+                </TouchableOpacity>
+              </View>
             ) : (
               <SearchResultsList
                 peopleResults={peopleResults}
@@ -476,15 +527,23 @@ const ExplorePage = () => {
 
   const [rawContent, setRawContent] = useState<any>(() => getExploreContentCacheSync(0));
   const [contentLoading, setContentLoading] = useState<boolean>(() => !getExploreContentCacheSync(0));
+  const [exploreError, setExploreError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [trendingToday, setTrendingToday] = useState<any[]>([]);
+  const rawContentRef = useRef<any>(rawContent);
+
+  useEffect(() => {
+    rawContentRef.current = rawContent;
+  }, [rawContent]);
 
   useEffect(() => {
     let isMounted = true;
     (async () => {
       try {
-        const today = await getTrendingToday('all', 1);
+        const today = await getTrendingToday('all', 1, {
+          priority: rawContentRef.current ? 'low' : 'high',
+        });
         if (isMounted && today && today.length > 0) {
           setTrendingToday(today.slice(0, 10));
         }
@@ -544,6 +603,8 @@ const ExplorePage = () => {
 
   const contentRequestRef = useRef(0);
   const lastPrefsRef = useRef<string>('');
+  const refreshingRef = useRef(false);
+  const pendingCacheRefreshRef = useRef(false);
 
   const bgOpacity = useSharedValue(0);
   const searchWidthAnim = useSharedValue(0);
@@ -590,22 +651,39 @@ const ExplorePage = () => {
     async (genreId: number = 0, forceRefresh: boolean = false) => {
       const requestId = ++contentRequestRef.current;
       const cached = getExploreContentCacheSync(genreId);
-      if (!cached || forceRefresh) {
+      setExploreError(false);
+      if (!cached || (forceRefresh && !refreshingRef.current)) {
         setContentLoading(true);
       }
       try {
         const prefs = await getUserPreferences();
+        const actorsKey = (prefs.favoriteActors || []).map((a: any) => a.id).join(',');
+        lastPrefsRef.current = `${(prefs.languages || []).join(',')}-${(prefs.genreIds || []).join(',')}-${actorsKey}`;
+
         const content = await fetchPersonalisedDiscoveryContent(
           prefs.languages,
           prefs.genreIds,
           genreId,
           forceRefresh,
-          prefs.favoriteActors
+          prefs.favoriteActors,
+          (freshContent) => {
+            if (requestId === contentRequestRef.current && freshContent) {
+              rawContentRef.current = freshContent;
+              setRawContent(freshContent);
+              setExploreError(false);
+              setContentLoading(false);
+            }
+          }
         );
         if (requestId !== contentRequestRef.current) return;
         if (content) {
+          rawContentRef.current = content;
           setRawContent(content);
-          saveExploreContentCacheSync(genreId, content);
+          setExploreError(false);
+        } else if (!cached) {
+          rawContentRef.current = null;
+          setRawContent(null);
+          setExploreError(true);
         }
         setContentLoading(false);
         feedOpacityAnim.value = withTiming(1, { duration: 250 });
@@ -628,6 +706,9 @@ const ExplorePage = () => {
       } catch (err) {
         if (requestId === contentRequestRef.current) {
           console.error(err);
+          if (!rawContentRef.current) {
+            setExploreError(true);
+          }
           feedOpacityAnim.value = withTiming(1, { duration: 200 });
         }
       } finally {
@@ -648,6 +729,7 @@ const ExplorePage = () => {
     (genreId: number) => {
       if (genreId === selectedGenre) return;
       setSelectedGenre(genreId);
+      setExploreError(false);
       hasScrolledShared.value = false;
       setRenderStage(0);
 
@@ -667,10 +749,13 @@ const ExplorePage = () => {
       const cached = getExploreContentCacheSync(genreId);
       if (cached) {
         feedOpacityAnim.value = 0.35;
+        rawContentRef.current = cached;
         setRawContent(cached);
         setContentLoading(false);
         feedOpacityAnim.value = withTiming(1, { duration: 220 });
       } else {
+        rawContentRef.current = null;
+        setRawContent(null);
         feedOpacityAnim.value = withTiming(0.25, { duration: 180 });
         setContentLoading(true);
       }
@@ -681,12 +766,23 @@ const ExplorePage = () => {
   // Cancel the pending stage timer on unmount
   useEffect(() => () => stageCancelRef.current?.(), []);
 
-  // Listen for preference updates from onboarding / settings to immediately refresh explore content
+  // Listen for preference updates / cache clears from onboarding / settings
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('preferencesChanged', () => {
       fetchContent(selectedGenre, true);
     });
-    return () => sub.remove();
+    const cacheSub = DeviceEventEmitter.addListener('watcher_cache_cleared', () => {
+      pendingCacheRefreshRef.current = true;
+      rawContentRef.current = null;
+      setRawContent(null);
+      setExploreError(false);
+      setTrendingToday([]);
+      setContentLoading(true);
+    });
+    return () => {
+      sub.remove();
+      cacheSub.remove();
+    };
   }, [fetchContent, selectedGenre]);
 
   useFocusEffect(
@@ -696,17 +792,29 @@ const ExplorePage = () => {
       searchBarTranslateY.value = withTiming(0, { duration: 150 });
       isBarHidden.value = false;
       syncSavedStore();
+      if (pendingCacheRefreshRef.current) {
+        pendingCacheRefreshRef.current = false;
+        fetchContent(selectedGenre, true);
+        getTrendingToday('all', 1, { priority: 'high', forceRefresh: true })
+          .then((res) => res && setTrendingToday(res.slice(0, 10)))
+          .catch(() => null);
+        return;
+      }
       getUserPreferences().then((prefs) => {
         const actorsKey = (prefs.favoriteActors || []).map((a: any) => a.id).join(',');
         const currentHash = `${(prefs.languages || []).join(',')}-${(prefs.genreIds || []).join(',')}-${actorsKey}`;
-        const cachedLangs = rawContent?.langData ? Object.keys(rawContent.langData) : [];
-        const isMissingUserLang = (prefs.languages || []).some((l: string) => !cachedLangs.includes(l));
+        const currentRaw = rawContentRef.current;
+        const cachedLangs = currentRaw?.langData ? Object.keys(currentRaw.langData) : [];
+        const isMissingUserLang =
+          Boolean(currentRaw) &&
+          selectedGenre === 0 &&
+          (prefs.languages || []).some((l: string) => !cachedLangs.includes(l));
         if (isMissingUserLang || (lastPrefsRef.current !== '' && lastPrefsRef.current !== currentHash)) {
           fetchContent(selectedGenre, true);
         }
         lastPrefsRef.current = currentHash;
       });
-    }, [fetchContent, selectedGenre, rawContent])
+    }, [fetchContent, selectedGenre])
   );
 
   const handleToggleWatchlist = useCallback((item: any) => {
@@ -718,6 +826,7 @@ const ExplorePage = () => {
   }, [selectedGenre, fetchContent]);
 
   const onRefresh = useCallback(async () => {
+    refreshingRef.current = true;
     setRefreshing(true);
     hasScrolledShared.value = false;
     setRenderStage(0);
@@ -725,7 +834,9 @@ const ExplorePage = () => {
       await Promise.all([
         fetchContent(selectedGenre, true),
         refreshForYouShelvesIfNeeded(true),
-        getTrendingToday('all', 1).then((res) => res && setTrendingToday(res.slice(0, 10))).catch(() => null),
+        getTrendingToday('all', 1, { priority: 'high', forceRefresh: true })
+          .then((res) => res && setTrendingToday(res.slice(0, 10)))
+          .catch(() => null),
       ]);
       stageCancelRef.current?.();
       stageCancelRef.current = runAfterTransition(() => {
@@ -739,6 +850,7 @@ const ExplorePage = () => {
         }, 300);
       }, 200);
     } finally {
+      refreshingRef.current = false;
       setRefreshing(false);
     }
   }, [selectedGenre, fetchContent]);
@@ -1103,7 +1215,32 @@ const ExplorePage = () => {
             toggleWatchlist={handleToggleWatchlist}
           />
 
-        {!(contentLoading && !rawContent) && (
+        {!contentLoading && !rawContent ? (
+          <View style={styles.stateErrorContainer}>
+            <Ionicons name="cloud-offline-outline" size={44} color={colors.textSecondary} />
+            <Text style={[styles.stateErrorTitle, { color: colors.text }]}>
+              {exploreError ? 'Could not load feed' : 'Nothing to show yet'}
+            </Text>
+            <Text style={[styles.stateErrorMessage, { color: colors.textSecondary }]}>
+              Check your internet connection or try refreshing.
+            </Text>
+            <TouchableOpacity
+              style={[styles.stateRetryButton, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                fetchContent(selectedGenre, true);
+                if (trendingToday.length === 0) {
+                  getTrendingToday('all', 1, { priority: 'high', forceRefresh: true })
+                    .then((res) => res && setTrendingToday(res.slice(0, 10)))
+                    .catch(() => null);
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="refresh" size={16} color={colors.onPrimary} />
+              <Text style={[styles.stateRetryText, { color: colors.onPrimary }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : !(contentLoading && !rawContent) && (
           <>
             {/* TIER 0: Immediate Mount (First shelf below hero) */}
             {tier0Sections.map((item) => (
@@ -1264,5 +1401,38 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     ...shadows.lg,
+  },
+  stateErrorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 56,
+    gap: 10,
+  },
+  stateErrorTitle: {
+    fontSize: 18,
+    fontFamily: 'GoogleSansFlex-Bold',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  stateErrorMessage: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex-Regular',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  stateRetryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 22,
+    paddingVertical: 11,
+    borderRadius: 24,
+  },
+  stateRetryText: {
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex-SemiBold',
   },
 });

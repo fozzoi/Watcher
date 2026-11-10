@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -80,6 +80,8 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<TorrentResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const searchReqIdRef = useRef(0);
   const [downloadingHash, setDownloadingHash] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -95,15 +97,22 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
   const runSearch = useCallback(async (queryToSearch: string) => {
     const q = queryToSearch.trim();
     if (!q) return;
+    const reqId = ++searchReqIdRef.current;
     setLoading(true);
+    setSearchError(null);
     try {
       const scraped = await searchTorrents(q);
+      if (reqId !== searchReqIdRef.current) return;
       const sorted = (scraped || []).sort((a, b) => (b.seeds || 0) - (a.seeds || 0));
       setResults(sorted);
     } catch {
+      if (reqId !== searchReqIdRef.current) return;
       setResults([]);
+      setSearchError('Could not reach torrent indexers. Check your connection and try again.');
     } finally {
-      setLoading(false);
+      if (reqId === searchReqIdRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -113,7 +122,9 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
       setSearchQuery(initialQuery);
       runSearch(initialQuery);
     } else if (!visible) {
+      searchReqIdRef.current += 1;
       setResults([]);
+      setSearchError(null);
       setLoading(false);
       setDownloadingHash(null);
     }
@@ -274,9 +285,17 @@ const MovieTorrentModal: React.FC<MovieTorrentModalProps> = ({
             </View>
           ) : results.length === 0 ? (
             <View style={styles.centerContainer}>
-              <MaterialCommunityIcons name="file-search-outline" size={48} color={colors.textSecondary} />
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>No torrents found</Text>
-              <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>Try adjusting your search query above</Text>
+              <MaterialCommunityIcons
+                name={searchError ? "cloud-off-outline" : "file-search-outline"}
+                size={48}
+                color={colors.textSecondary}
+              />
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                {searchError ? 'Search failed' : 'No torrents found'}
+              </Text>
+              <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+                {searchError || 'Try adjusting your search query above'}
+              </Text>
               <TouchableOpacity
                 activeOpacity={0.8}
                 style={[styles.retryBtn, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}

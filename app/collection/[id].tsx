@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -71,6 +71,8 @@ const CollectionDetails = () => {
   const watchedIds = useSelector(() => savedStore$.watchedIds.get());
   const [collection, setCollection] = useState<TMDBCollectionDetails | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const fetchReqIdRef = useRef(0);
   const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [isWatched, setIsWatched] = useState(false);
 
@@ -103,20 +105,46 @@ const CollectionDetails = () => {
     }
   }, []);
 
-  useEffect(() => {
+  const fetchCollection = useCallback(async () => {
+    const reqId = ++fetchReqIdRef.current;
     if (!collectionId || isNaN(collectionId)) {
+      setCollection(null);
+      setError('Invalid collection.');
       setLoading(false);
       return;
     }
-    const fetchCollection = async () => {
-      setLoading(true);
-      const data = await getCollectionDetails(collectionId);
+
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getCollectionDetails(collectionId, {
+        priority: 'high',
+        throwOnError: true,
+      });
+      if (reqId !== fetchReqIdRef.current) return;
       setCollection(data);
-      if (data) checkStatus(data);
-      setLoading(false);
-    };
-    fetchCollection();
+      if (data) {
+        checkStatus(data);
+      } else {
+        setError('Collection not found.');
+      }
+    } catch (err) {
+      if (reqId !== fetchReqIdRef.current) return;
+      console.error('Error fetching collection details:', err);
+      setError('Could not load collection details. Check your connection and try again.');
+    } finally {
+      if (reqId === fetchReqIdRef.current) {
+        setLoading(false);
+      }
+    }
   }, [collectionId, checkStatus]);
+
+  useEffect(() => {
+    fetchCollection();
+    return () => {
+      fetchReqIdRef.current += 1;
+    };
+  }, [fetchCollection]);
 
   useEffect(() => {
     const unsub = subscribeToSavedItemsChanges(() => {
@@ -143,7 +171,7 @@ const CollectionDetails = () => {
 
   const handleMoviePress = (movie: TMDBResult) => {
     warmPaletteForMedia(movie);
-    router.push(`/movie/${movie.id}`);
+    router.push(`/movie/${movie.id}?media_type=${movie.media_type || 'movie'}`);
   };
 
   const toggleWatchlist = () => {
@@ -316,6 +344,27 @@ const CollectionDetails = () => {
 
   const renderEmpty = () => {
     if (loading) return null;
+    if (error) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="cloud-offline-outline" size={40} color={colors.textSecondary} />
+          <Text style={[styles.emptyText, { color: colors.text, fontWeight: '700', marginTop: 10 }]}>
+            Collection unavailable
+          </Text>
+          <Text style={[styles.emptyText, { color: colors.textSecondary, marginTop: 4 }]}>
+            {error}
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={fetchCollection}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="refresh" size={16} color={colors.onPrimary} />
+            <Text style={[styles.retryButtonText, { color: colors.onPrimary }]}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
     return (
       <View style={styles.emptyContainer}>
         <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No movies found in this collection.</Text>
@@ -362,6 +411,24 @@ const CollectionDetails = () => {
           )}
           showsVerticalScrollIndicator={false}
         />
+      ) : error && !collection ? (
+        <View style={styles.errorScreen}>
+          <Ionicons name="cloud-offline-outline" size={44} color={colors.textSecondary} />
+          <Text style={[styles.emptyText, { color: colors.text, fontWeight: '700', fontSize: 18, marginTop: 10 }]}>
+            Collection unavailable
+          </Text>
+          <Text style={[styles.emptyText, { color: colors.textSecondary, marginTop: 4 }]}>
+            {error}
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={fetchCollection}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="refresh" size={16} color={colors.onPrimary} />
+            <Text style={[styles.retryButtonText, { color: colors.onPrimary }]}>Retry</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <FlatList
           data={sortedParts}
@@ -576,10 +643,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 40,
   },
+  errorScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
   emptyText: {
     color: C.muted,
     fontSize: 14,
     textAlign: 'center',
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 22,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
 

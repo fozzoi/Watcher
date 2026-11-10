@@ -566,11 +566,15 @@ const WatchListPage = () => {
       setSyncProgress('Extracting titles...');
     }
     try {
-      const response = await axios.post('https://watcher-api-rho.vercel.app/api/gemini', {
-        action,
-        ...payload,
-        customApiKey: GLOBAL_CONFIG.customApiKey,
-      });
+      const response = await axios.post(
+        'https://watcher-api-rho.vercel.app/api/gemini',
+        {
+          action,
+          ...payload,
+          customApiKey: GLOBAL_CONFIG.customApiKey,
+        },
+        { timeout: 25000 },
+      );
 
       if (response.data.results && response.data.results.length > 0) {
         const { addedCount, existingCount, missedTitles } = await handleSyncMovies(response.data.results);

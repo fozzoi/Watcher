@@ -1,5 +1,5 @@
 // app/Player.tsx
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useReducer } from 'react';
 import {
   View,
   StyleSheet,
@@ -22,9 +22,16 @@ import { getProgress, saveProgress, WatchProgress } from '../src/utils/progress'
 import { getPlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
 import type { PlayerProvider, VideoFitMode } from '../src/utils/playerPreferences';
 import { findAdjacentEpisode, parseEpisodePosition, parseSeasonEpisodeCounts } from '../src/utils/playerEpisodes';
+import {
+  buildProviderUrl,
+  formatStreamErrorMessage,
+  getNextProvider,
+  INITIAL_PLAYER_STREAM_STATE,
+  isHttpErrorStatus,
+  playerStreamReducer,
+  STREAM_LOAD_TIMEOUT_MS,
+} from '../src/utils/playerStream';
 import { useAppTheme } from '../src/theme';
-
-const PROVIDERS: PlayerProvider[] = ['Vidy', 'VidLink', 'Atlantic', 'Movy'];
 
 const injectedPreScript = `
   (function() {
@@ -401,36 +408,6 @@ const generateInjectedPostScript = (currentFitMode: VideoFitMode) => `
   true;
 `;
 
-const buildProviderUrl = (
-  provider: PlayerProvider,
-  tmdbId: number,
-  mediaType: 'movie' | 'tv',
-  season: number,
-  episode: number,
-  savedSecs: number
-): string => {
-  const progressParam = savedSecs > 10 ? `&progress=${savedSecs}` : '';
-  if (provider === 'Vidy') {
-    return mediaType === 'tv'
-      ? `https://www.vidy.st/tv/${tmdbId}/${season}/${episode}?color=E50914&nextEpisode=true&episodeSelector=true&autoplayNextEpisode=true&autoplay=true&autoplay=1&autoPlay=true${progressParam}`
-      : `https://www.vidy.st/movie/${tmdbId}?color=E50914&autoplay=true&autoplay=1&autoPlay=true${progressParam}`;
-  }
-  if (provider === 'VidLink') {
-    return mediaType === 'tv'
-      ? `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}?autoplay=true&autoplay=1&autoPlay=true`
-      : `https://vidlink.pro/movie/${tmdbId}?autoplay=true&autoplay=1&autoPlay=true`;
-  }
-  if (provider === 'Atlantic') {
-    return mediaType === 'tv'
-      ? `https://atlantic.st/embed/tv/${tmdbId}/${season}/${episode}?autoplay=true&autoplay=1`
-      : `https://atlantic.st/embed/movie/${tmdbId}?autoplay=true&autoplay=1`;
-  }
-  // Movy
-  return mediaType === 'tv'
-    ? `https://www.movy.sx/tv/${tmdbId}/${season}/${episode}?autoplay=true&autoplay=1`
-    : `https://www.movy.sx/movie/${tmdbId}?autoplay=true&autoplay=1`;
-};
-
 export default function Player() {
   const router = useRouter();
   const { colors } = useAppTheme();
@@ -462,8 +439,8 @@ export default function Player() {
 
   const [provider, setProvider] = useState<PlayerProvider>('Vidy');
   const [providerInitialized, setProviderInitialized] = useState(false);
-  const [streamData, setStreamData] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [streamState, dispatchStream] = useReducer(playerStreamReducer, INITIAL_PLAYER_STREAM_STATE);
+  const [retryTick, setRetryTick] = useState(0);
   const [showNextEpisode, setShowNextEpisode] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(true);
   const [fitMode, setFitMode] = useState<VideoFitMode>('cover');
@@ -471,19 +448,28 @@ export default function Player() {
 
   const webViewRef = useRef<any>(null);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nextAttemptIdRef = useRef(0);
+  const userSelectedProviderRef = useRef(false);
+  const pendingResumeSecsRef = useRef(0);
+  const lastMediaIdentityRef = useRef('');
   const appState = useRef(AppState.currentState);
   const progressRef = useRef<WatchProgress | null>(null);
   const transitionRef = useRef(0);
   const sourceKey = `${mediaType}:${tmdbId}:${provider.toLowerCase()}`;
   const latestPositionRef = useRef({ position: 0, duration: 0 });
   const isLeavingRef = useRef(false);
+  const nextProvider = getNextProvider(provider);
+  const mediaIdentity = `${mediaType}:${tmdbId}:${season}:${episode}`;
 
   useEffect(() => {
     let isMounted = true;
     const loadPreferredProvider = async () => {
       try {
         const preferences = await getPlayerPreferences();
-        if (isMounted) setProvider(preferences.preferredProvider);
+        if (isMounted && !userSelectedProviderRef.current) {
+          setProvider(preferences.preferredProvider);
+        }
       } catch (error) {
         console.error('Failed to load preferred player source:', error);
       } finally {
@@ -495,25 +481,40 @@ export default function Player() {
     return () => { isMounted = false; };
   }, []);
 
-  // Auto-hide overlay after 3 seconds
+  const controlsPinnedVisible = streamState.loading || Boolean(streamState.error);
+  const effectiveControlsVisible = controlsVisible || controlsPinnedVisible;
+
+  // Auto-hide overlay after 3 seconds once stream has finished loading without error
   const resetControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
     }
     setControlsVisible(true);
-    controlsTimeoutRef.current = setTimeout(() => {
-      setControlsVisible(false);
-    }, 3000);
-  }, []);
+    if (!controlsPinnedVisible) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setControlsVisible(false);
+      }, 3000);
+    }
+  }, [controlsPinnedVisible]);
 
   useEffect(() => {
-    resetControlsTimeout();
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
+    }
+    if (!controlsPinnedVisible) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setControlsVisible(false);
+      }, 3000);
+    }
     return () => {
       if (controlsTimeoutRef.current) {
         clearTimeout(controlsTimeoutRef.current);
+        controlsTimeoutRef.current = null;
       }
     };
-  }, [resetControlsTimeout]);
+  }, [controlsPinnedVisible]);
 
   // Immediate live fit mode cycling (Fill -> Fit -> Stretch -> Fill)
   const cycleFitMode = () => {
@@ -542,16 +543,29 @@ export default function Player() {
   };
 
   const switchSource = () => {
-    const currentIndex = PROVIDERS.indexOf(provider);
-    const nextProvider = PROVIDERS[(currentIndex + 1) % PROVIDERS.length];
-    setProvider(nextProvider);
-    void savePlayerPreferences(undefined, { preferredProvider: nextProvider }).catch((error) => {
+    const targetProvider = getNextProvider(provider);
+    userSelectedProviderRef.current = true;
+    pendingResumeSecsRef.current = Math.max(
+      pendingResumeSecsRef.current,
+      Math.floor(latestPositionRef.current.position || progressRef.current?.position || 0),
+    );
+    const attemptId = ++nextAttemptIdRef.current;
+    dispatchStream({ type: 'START_INIT', attemptId });
+    setProvider(targetProvider);
+    void savePlayerPreferences(undefined, { preferredProvider: targetProvider }).catch((error) => {
       console.error('Failed to save preferred player source:', error);
     });
-    setLoading(true);
-    const savedSecs = Math.floor(progressRef.current?.position || 0);
-    const nextUrl = buildProviderUrl(nextProvider, tmdbId, mediaType, season, episode, savedSecs);
-    setStreamData(nextUrl);
+    resetControlsTimeout();
+  };
+
+  const retryStream = () => {
+    if (!streamState.streamUrl) {
+      setRetryTick((prev) => prev + 1);
+      resetControlsTimeout();
+      return;
+    }
+    const attemptId = ++nextAttemptIdRef.current;
+    dispatchStream({ type: 'RETRY', attemptId });
     resetControlsTimeout();
   };
 
@@ -613,15 +627,32 @@ export default function Player() {
     if (!providerInitialized) return;
 
     let isMounted = true;
+    const attemptId = ++nextAttemptIdRef.current;
+
     const initStream = async () => {
-      setLoading(true);
+      if (lastMediaIdentityRef.current !== mediaIdentity) {
+        lastMediaIdentityRef.current = mediaIdentity;
+        pendingResumeSecsRef.current = 0;
+      }
+      dispatchStream({ type: 'START_INIT', attemptId });
       isLeavingRef.current = false;
       latestPositionRef.current = { position: 0, duration: 0 };
       setShowNextEpisode(false);
-      setStreamData(null);
+
+      if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
+        dispatchStream({
+          type: 'INIT_FAILED',
+          attemptId,
+          message: 'Invalid media ID for playback.',
+        });
+        return;
+      }
+
       try {
         const saved = await getProgress(tmdbId, mediaType, season, episode, sourceKey);
         const preferences = await getPlayerPreferences(sourceKey);
+        if (!isMounted || attemptId !== nextAttemptIdRef.current) return;
+
         progressRef.current = saved;
 
         if (preferences.fitMode) {
@@ -631,21 +662,57 @@ export default function Player() {
           void savePlayerPreferences(sourceKey, { muted: false, volume: 1.0 });
         }
 
-        if (isMounted) {
-          const savedSecs = Math.floor(saved?.position || 0);
-          const initialUrl = buildProviderUrl(provider, tmdbId, mediaType, season, episode, savedSecs);
-          setStreamData(initialUrl);
-        }
+        const savedSecs = Math.max(
+          Math.floor(saved?.position || 0),
+          pendingResumeSecsRef.current,
+        );
+        pendingResumeSecsRef.current = 0;
+        const initialUrl = buildProviderUrl(provider, tmdbId, mediaType, season, episode, savedSecs);
+        dispatchStream({ type: 'STREAM_READY', attemptId, url: initialUrl });
       } catch (error) {
         console.error("❌ Stream init error:", error);
-      } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted && attemptId === nextAttemptIdRef.current) {
+          dispatchStream({
+            type: 'INIT_FAILED',
+            attemptId,
+            message: `Failed to initialize ${provider}. Try switching sources or retrying.`,
+          });
+        }
       }
     };
 
-    initStream();
-    return () => { isMounted = false; };
-  }, [tmdbId, mediaType, season, episode, provider, providerInitialized]);
+    void initStream();
+    return () => {
+      isMounted = false;
+    };
+  }, [tmdbId, mediaType, season, episode, provider, providerInitialized, sourceKey, mediaIdentity, retryTick]);
+
+  // Timeout fallback so stalled WebView navigations never leave the opaque loader stuck forever
+  useEffect(() => {
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+    if (!streamState.loading || !streamState.streamUrl) {
+      return;
+    }
+    const activeAttemptId = streamState.attemptId;
+    loadingTimeoutRef.current = setTimeout(() => {
+      webViewRef.current?.stopLoading?.();
+      dispatchStream({
+        type: 'LOAD_TIMEOUT',
+        attemptId: activeAttemptId,
+        provider,
+      });
+    }, STREAM_LOAD_TIMEOUT_MS);
+
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
+    };
+  }, [streamState.attemptId, streamState.loading, streamState.streamUrl, provider]);
 
   const handleAppStateChange = (nextAppState: any) => {
     if (nextAppState.match(/inactive|background/)) {
@@ -738,11 +805,11 @@ export default function Player() {
       />
       <StatusBar hidden={true} />
 
-      {streamData ? (
+      {streamState.streamUrl ? (
         <WebView
           ref={webViewRef}
-          key={streamData}
-          source={{ uri: streamData }}
+          key={`${streamState.streamUrl}:${streamState.reloadNonce}`}
+          source={{ uri: streamState.streamUrl }}
           style={styles.webview}
           containerStyle={{ backgroundColor: 'black' }}
           javaScriptEnabled={true}
@@ -754,7 +821,48 @@ export default function Player() {
           scalesPageToFit={false}
           injectedJavaScriptBeforeContentLoaded={injectedPreScript}
           injectedJavaScript={generateInjectedPostScript(fitMode)}
-          onLoadEnd={() => setLoading(false)}
+          onLoad={(event) => {
+            if (event?.nativeEvent?.url === 'about:blank') return;
+            dispatchStream({ type: 'LOAD_SUCCESS', attemptId: streamState.attemptId });
+          }}
+          onLoadEnd={() => {
+            dispatchStream({ type: 'LOAD_END', attemptId: streamState.attemptId });
+          }}
+          onError={(event) => {
+            const { code, description, domain } = event?.nativeEvent || {};
+            dispatchStream({
+              type: 'LOAD_ERROR',
+              attemptId: streamState.attemptId,
+              code,
+              domain,
+              message: formatStreamErrorMessage(provider, { kind: 'network', description }),
+            });
+          }}
+          onHttpError={(event) => {
+            const { statusCode, description } = event?.nativeEvent || {};
+            if (!isHttpErrorStatus(statusCode)) return;
+            dispatchStream({
+              type: 'LOAD_ERROR',
+              attemptId: streamState.attemptId,
+              message: formatStreamErrorMessage(provider, { kind: 'http', statusCode, description }),
+            });
+          }}
+          onRenderProcessGone={(event) => {
+            const didCrash = Boolean(event?.nativeEvent?.didCrash);
+            dispatchStream({
+              type: 'LOAD_ERROR',
+              attemptId: streamState.attemptId,
+              message: formatStreamErrorMessage(provider, { kind: 'renderProcessGone', didCrash }),
+            });
+          }}
+          onContentProcessDidTerminate={() => {
+            dispatchStream({
+              type: 'LOAD_ERROR',
+              attemptId: streamState.attemptId,
+              message: formatStreamErrorMessage(provider, { kind: 'processTerminated' }),
+            });
+          }}
+          renderError={() => <View style={styles.container} />}
           onMessage={(event: WebViewMessageEvent): void => {
             try {
               const progress = JSON.parse(event.nativeEvent.data);
@@ -835,9 +943,9 @@ export default function Player() {
       <View
         style={[
           styles.hudContainer,
-          { opacity: controlsVisible ? 1 : 0 }
+          { opacity: effectiveControlsVisible ? 1 : 0 }
         ]}
-        pointerEvents={controlsVisible ? 'box-none' : 'none'}
+        pointerEvents={effectiveControlsVisible ? 'box-none' : 'none'}
       >
         <View style={styles.hudCapsule}>
           <TouchableOpacity
@@ -903,10 +1011,42 @@ export default function Player() {
         </TouchableOpacity>
       )}
 
-      {loading && (
-        <View style={styles.loader}>
+      {streamState.loading && (
+        <View style={styles.loader} onTouchStart={resetControlsTimeout}>
           <LoadingIndicator size="large" />
           <Text style={styles.loadingText}>Loading {provider}...</Text>
+        </View>
+      )}
+
+      {!streamState.loading && streamState.error && (
+        <View style={styles.errorOverlay}>
+          <Ionicons name="cloud-offline-outline" size={40} color="rgba(255,255,255,0.8)" />
+          <Text style={styles.errorTitle}>Unable to load {provider}</Text>
+          <Text style={styles.errorMessage}>{streamState.error}</Text>
+          <View style={styles.errorActions}>
+            <TouchableOpacity
+              style={[styles.errorButton, { backgroundColor: colors.primary }]}
+              onPress={switchSource}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={`Switch to ${nextProvider}`}
+            >
+              <Ionicons name="swap-horizontal" size={16} color={colors.onPrimary} />
+              <Text style={[styles.errorButtonText, { color: colors.onPrimary }]}>
+                Switch to {nextProvider}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.errorSecondaryButton}
+              onPress={retryStream}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={`Retry ${provider}`}
+            >
+              <Ionicons name="refresh" size={16} color="#fff" />
+              <Text style={styles.errorSecondaryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
     </View>
@@ -918,6 +1058,64 @@ const styles = StyleSheet.create({
   webview: { flex: 1, backgroundColor: 'transparent' },
   loader: { ...StyleSheet.absoluteFill, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
   loadingText: { color: 'white', marginTop: 15, fontWeight: '600' },
+  errorOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0, 0, 0, 0.94)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingTop: 56,
+    zIndex: 110,
+  },
+  errorTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  errorMessage: {
+    color: 'rgba(255, 255, 255, 0.72)',
+    fontSize: 13.5,
+    marginTop: 6,
+    textAlign: 'center',
+    maxWidth: 420,
+    lineHeight: 19,
+  },
+  errorActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 18,
+  },
+  errorButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 24,
+  },
+  errorButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  errorSecondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  errorSecondaryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   hudContainer: {
     position: 'absolute',
     top: 64, // Positioned lower down

@@ -18,6 +18,8 @@ export interface ExtractedPalette {
 export const AMBIENT_PENDING_BG = '#1B1A1F';
 
 // In-memory cache to make re-renders and repeat visits instantaneous
+const MAX_PALETTE_CACHE_ENTRIES = 200;
+const PALETTE_FETCH_TIMEOUT_MS = 8000;
 const paletteCache = new Map<string, ExtractedPalette>();
 
 // Extractions currently running. A press-time warm and the details screen hook
@@ -153,16 +155,29 @@ async function decodeAndExtract(imageUrl: string): Promise<ExtractedPalette | nu
   try {
     let skData: any = null;
     try {
-      skData = await Skia.Data.fromURI(imageUrl);
+      let uriTimer: ReturnType<typeof setTimeout> | null = null;
+      skData = await Promise.race([
+        Skia.Data.fromURI(imageUrl),
+        new Promise<null>((resolve) => {
+          uriTimer = setTimeout(() => resolve(null), PALETTE_FETCH_TIMEOUT_MS);
+        }),
+      ]);
+      if (uriTimer) clearTimeout(uriTimer);
     } catch {
       // Fallback to fetch below
     }
 
     if (!skData) {
-      const res = await fetch(imageUrl);
-      if (!res.ok) return null;
-      const buffer = await res.arrayBuffer();
-      skData = Skia.Data.fromBytes(new Uint8Array(buffer));
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), PALETTE_FETCH_TIMEOUT_MS);
+      try {
+        const res = await fetch(imageUrl, { signal: controller.signal });
+        if (!res.ok) return null;
+        const buffer = await res.arrayBuffer();
+        skData = Skia.Data.fromBytes(new Uint8Array(buffer));
+      } finally {
+        clearTimeout(timeoutId);
+      }
     }
 
     if (!skData) return null;
@@ -296,6 +311,14 @@ async function decodeAndExtract(imageUrl: string): Promise<ExtractedPalette | nu
       gradient,
     };
 
+    if (paletteCache.has(imageUrl)) {
+      paletteCache.delete(imageUrl);
+    } else if (paletteCache.size >= MAX_PALETTE_CACHE_ENTRIES) {
+      const oldestKey = paletteCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        paletteCache.delete(oldestKey);
+      }
+    }
     paletteCache.set(imageUrl, palette);
     return palette;
   } catch (error) {

@@ -40,7 +40,6 @@ import {
   TMDBPerson,
   TMDBResult,
   TMDBImage,
-  getFullDetails,
 } from '../../src/tmdb';
 import { CastDetailSkeleton } from '../../src/components/cast/CastDetailSkeleton';
 import { useAppTheme, shadows, getActiveGlowShadow } from '../../src/theme';
@@ -184,6 +183,8 @@ export default function CastDetails() {
   const [credits, setCredits] = useState<TMDBResult[]>([]);
   const [personImages, setPersonImages] = useState<TMDBImage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const loadRequestRef = useRef(0);
   const [isBioExpanded, setIsBioExpanded] = useState(false);
   const [sortBy, setSortBy] = useState<'popular' | 'rating' | 'latest'>('popular');
 
@@ -213,27 +214,40 @@ export default function CastDetails() {
     setDialogConfig({ ...config, visible: true });
   }, []);
 
-  useEffect(() => {
-    loadData();
-    checkIfLiked();
-    const unsub = subscribeToSavedItemsChanges(() => {
-      checkIfLiked();
-    });
-    return unsub;
-  }, [personId]);
+  const loadData = useCallback(async () => {
+    const reqId = ++loadRequestRef.current;
+    if (!personId || isNaN(personId)) {
+      setPerson(null);
+      setCredits([]);
+      setPersonImages([]);
+      setError('Invalid person profile.');
+      setLoading(false);
+      return;
+    }
 
-  const checkIfLiked = () => {
-    setIsLiked(hasSavedItem(personId, 'artist'));
-  };
-
-  const loadData = async () => {
     setLoading(true);
+    setError(null);
+    setPerson(null);
+    setCredits([]);
+    setPersonImages([]);
+
     try {
-      const [personData, creditsData, imagesData] = await Promise.all([
-        getPersonDetails(personId),
-        getPersonCombinedCredits(personId),
-        getPersonImages(personId),
+      const [personRes, creditsRes, imagesRes] = await Promise.allSettled([
+        getPersonDetails(personId, { priority: 'high', throwOnError: true }),
+        getPersonCombinedCredits(personId, { priority: 'high' }),
+        getPersonImages(personId, { priority: 'high' }),
       ]);
+
+      if (reqId !== loadRequestRef.current) return;
+
+      if (personRes.status === 'rejected' || !personRes.value) {
+        setError('Could not load profile details. Please check your connection and try again.');
+        return;
+      }
+
+      const personData = personRes.value;
+      const creditsData = creditsRes.status === 'fulfilled' && Array.isArray(creditsRes.value) ? creditsRes.value : [];
+      const imagesData = imagesRes.status === 'fulfilled' && Array.isArray(imagesRes.value) ? imagesRes.value : [];
 
       setPerson(personData);
       setPersonImages(imagesData);
@@ -252,12 +266,32 @@ export default function CastDetails() {
       );
 
       setCredits(uniqueCredits);
-    } catch (error) {
-      console.error('Error loading person details:', error);
+    } catch (err) {
+      if (reqId !== loadRequestRef.current) return;
+      console.error('Error loading person details:', err);
+      setError('Could not load profile details. Please check your connection and try again.');
     } finally {
-      setLoading(false);
+      if (reqId === loadRequestRef.current) {
+        setLoading(false);
+      }
     }
-  };
+  }, [personId]);
+
+  const checkIfLiked = useCallback(() => {
+    setIsLiked(hasSavedItem(personId, 'artist'));
+  }, [personId]);
+
+  useEffect(() => {
+    loadData();
+    checkIfLiked();
+    const unsub = subscribeToSavedItemsChanges(() => {
+      checkIfLiked();
+    });
+    return () => {
+      loadRequestRef.current += 1;
+      unsub();
+    };
+  }, [personId, loadData, checkIfLiked]);
 
   const sortedCredits = useMemo(() => {
     const list = [...credits];
@@ -337,6 +371,10 @@ export default function CastDetails() {
 
   // Defer mounting remaining 80+ credits until after the screen slide animation settles
   useEffect(() => {
+    setCreditsLimit(INITIAL_CREDITS);
+  }, [personId]);
+
+  useEffect(() => {
     if (credits.length <= INITIAL_CREDITS) return;
     const cancelTransition = runAfterTransition(() => {
       setCreditsLimit(credits.length);
@@ -377,8 +415,34 @@ export default function CastDetails() {
         ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E']
         : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']);
 
-  if (loading || !person) {
+  if (loading) {
     return <CastDetailSkeleton />;
+  }
+
+  if (error || !person) {
+    return (
+      <View style={[styles.errorScreen, { backgroundColor: colors.background }]}>
+        <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? 'light-content' : 'dark-content'} />
+        <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
+          <TouchableOpacity style={styles.glassBtn} onPress={() => router.back()} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+        <Ionicons name="cloud-offline-outline" size={48} color={colors.textSecondary} />
+        <Text style={[styles.errorTitle, { color: colors.text }]}>Profile unavailable</Text>
+        <Text style={[styles.errorMessage, { color: colors.textSecondary }]}>
+          {error || 'Could not load person details.'}
+        </Text>
+        <TouchableOpacity
+          style={[styles.retryButton, { backgroundColor: colors.primary }]}
+          onPress={loadData}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="refresh" size={16} color={colors.onPrimary} />
+          <Text style={[styles.retryButtonText, { color: colors.onPrimary }]}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
   return (
@@ -970,4 +1034,35 @@ const styles = StyleSheet.create({
   thumbnailWrapper: { marginRight: 10, borderWidth: 2, borderColor: 'transparent', borderRadius: 8, overflow: 'hidden' },
   thumbnailActive: { borderColor: C.gold },
   thumbnailImage: { width: 50, height: 75, backgroundColor: C.surface2 },
+  errorScreen: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    gap: 10,
+  },
+  errorTitle: {
+    fontSize: 19,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  errorMessage: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 22,
+    paddingVertical: 11,
+    borderRadius: 24,
+  },
+  retryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
 });

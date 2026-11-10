@@ -70,7 +70,16 @@ export const initDb = () => {
         data_json TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS tmdb_response_cache (
+        cache_key TEXT PRIMARY KEY,
+        data_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmdb_cache_updated ON tmdb_response_cache(updated_at);
     `);
+    tmdbCacheTableEnsured = true;
+    exploreCacheTableEnsured = true;
   } catch (error) {
     console.error('Failed to initialize SQLite database:', error);
     throw error;
@@ -504,12 +513,40 @@ export const clearForYouCache = () => {
   }
 };
 
-let memoryExploreCache: Record<number, any> = {};
+let exploreCacheTableEnsured = false;
+let tmdbCacheTableEnsured = false;
+let memoryExploreCache: Record<number, { data: any; updatedAt: number }> = {};
+
+const ensureExploreCacheTable = () => {
+  if (exploreCacheTableEnsured) return;
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS explore_content_cache (
+      genre_id INTEGER PRIMARY KEY,
+      data_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  exploreCacheTableEnsured = true;
+};
+
+const ensureTmdbCacheTable = () => {
+  if (tmdbCacheTableEnsured) return;
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS tmdb_response_cache (
+      cache_key TEXT PRIMARY KEY,
+      data_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_tmdb_cache_updated ON tmdb_response_cache(updated_at);
+  `);
+  tmdbCacheTableEnsured = true;
+};
 
 export const saveExploreContentCacheSync = (genreId: number, data: any) => {
   try {
-    memoryExploreCache[genreId] = data;
+    ensureExploreCacheTable();
     const now = Date.now();
+    memoryExploreCache[genreId] = { data, updatedAt: now };
     db.runSync(
       'INSERT OR REPLACE INTO explore_content_cache (genre_id, data_json, updated_at) VALUES (?, ?, ?)',
       [genreId, JSON.stringify(data), now]
@@ -519,27 +556,29 @@ export const saveExploreContentCacheSync = (genreId: number, data: any) => {
   }
 };
 
-export const getExploreContentCacheSync = (genreId: number = 0): any | null => {
+export const getExploreContentCacheEntrySync = (
+  genreId: number = 0
+): { data: any; updatedAt: number } | null => {
   try {
     if (memoryExploreCache[genreId]) {
       return memoryExploreCache[genreId];
     }
-    // Safety check in case table not yet created
-    db.execSync(`
-      CREATE TABLE IF NOT EXISTS explore_content_cache (
-        genre_id INTEGER PRIMARY KEY,
-        data_json TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-    `);
-    const row = db.getFirstSync<{ data_json: string }>(
-      'SELECT data_json FROM explore_content_cache WHERE genre_id = ?',
+    ensureExploreCacheTable();
+    const row = db.getFirstSync<{ data_json: string; updated_at: number }>(
+      'SELECT data_json, updated_at FROM explore_content_cache WHERE genre_id = ?',
       [genreId]
     );
     if (row?.data_json) {
-      const parsed = JSON.parse(row.data_json);
-      memoryExploreCache[genreId] = parsed;
-      return parsed;
+      try {
+        const parsed = JSON.parse(row.data_json);
+        const entry = { data: parsed, updatedAt: Number(row.updated_at) || 0 };
+        memoryExploreCache[genreId] = entry;
+        return entry;
+      } catch {
+        delete memoryExploreCache[genreId];
+        db.runSync('DELETE FROM explore_content_cache WHERE genre_id = ?', [genreId]);
+        return null;
+      }
     }
     return null;
   } catch (error) {
@@ -548,11 +587,84 @@ export const getExploreContentCacheSync = (genreId: number = 0): any | null => {
   }
 };
 
+export const getExploreContentCacheSync = (genreId: number = 0): any | null => {
+  return getExploreContentCacheEntrySync(genreId)?.data ?? null;
+};
+
 export const clearExploreCache = () => {
   try {
     memoryExploreCache = {};
+    ensureExploreCacheTable();
     db.runSync('DELETE FROM explore_content_cache');
   } catch (error) {
     console.error('Failed to clear explore_content_cache:', error);
+  }
+};
+
+const MAX_PERSISTENT_TMDB_ENTRIES = 400;
+const MAX_PERSISTENT_TMDB_AGE_MS = 1000 * 60 * 60 * 24 * 14; // 14 days
+let tmdbCacheWritesSincePrune = 0;
+
+export const getTmdbResponseCacheSync = (
+  cacheKey: string
+): { data: any; updatedAt: number } | null => {
+  try {
+    ensureTmdbCacheTable();
+    const row = db.getFirstSync<{ data_json: string; updated_at: number }>(
+      'SELECT data_json, updated_at FROM tmdb_response_cache WHERE cache_key = ?',
+      [cacheKey]
+    );
+    if (!row?.data_json) return null;
+    try {
+      const parsed = JSON.parse(row.data_json);
+      return { data: parsed, updatedAt: Number(row.updated_at) || 0 };
+    } catch {
+      db.runSync('DELETE FROM tmdb_response_cache WHERE cache_key = ?', [cacheKey]);
+      return null;
+    }
+  } catch (error) {
+    console.warn('Failed to read tmdb_response_cache:', error);
+    return null;
+  }
+};
+
+export const saveTmdbResponseCacheSync = (cacheKey: string, data: any) => {
+  if (data === undefined || data === null) return;
+  try {
+    ensureTmdbCacheTable();
+    const now = Date.now();
+    db.runSync(
+      'INSERT OR REPLACE INTO tmdb_response_cache (cache_key, data_json, updated_at) VALUES (?, ?, ?)',
+      [cacheKey, JSON.stringify(data), now]
+    );
+
+    tmdbCacheWritesSincePrune++;
+    if (tmdbCacheWritesSincePrune >= 20) {
+      tmdbCacheWritesSincePrune = 0;
+      const cutoff = now - MAX_PERSISTENT_TMDB_AGE_MS;
+      db.runSync('DELETE FROM tmdb_response_cache WHERE updated_at < ?', [cutoff]);
+      db.runSync(
+        `DELETE FROM tmdb_response_cache WHERE cache_key NOT IN (
+          SELECT cache_key FROM tmdb_response_cache ORDER BY updated_at DESC LIMIT ?
+        )`,
+        [MAX_PERSISTENT_TMDB_ENTRIES]
+      );
+    }
+  } catch (error) {
+    console.warn('Failed to write tmdb_response_cache:', error);
+  }
+};
+
+export const clearTmdbResponseCacheSync = (keyPrefix: string = '') => {
+  try {
+    ensureTmdbCacheTable();
+    if (!keyPrefix) {
+      db.runSync('DELETE FROM tmdb_response_cache');
+    } else {
+      const escaped = keyPrefix.replace(/[\\%_]/g, '\\$&');
+      db.runSync("DELETE FROM tmdb_response_cache WHERE cache_key LIKE ? ESCAPE '\\'", [`${escaped}%`]);
+    }
+  } catch (error) {
+    console.warn('Failed to clear tmdb_response_cache:', error);
   }
 };

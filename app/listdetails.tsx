@@ -197,17 +197,23 @@ const ListDetails = ({ route }: any) => {
   
   const [movies, setMovies] = useState<any[]>(initialMovies || []);
   const [selectedMovie, setSelectedMovie] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(!initialMovies);
+  const [isLoading, setIsLoading] = useState(!initialMovies || initialMovies.length === 0);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [similarMovies, setSimilarMovies] = useState<any[]>([]);
   const [isSimilarLoading, setIsSimilarLoading] = useState(false);
   const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<any>(null);
   const [episodes, setEpisodes] = useState<any[]>([]);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
+  const [episodesError, setEpisodesError] = useState<string | null>(null);
   
   const [bgPoster, setBgPoster] = useState<any>(null);
   
   const mainScrollViewRef = useRef<any>(null);
+  const moviePressReqRef = useRef(0);
+  const episodeReqRef = useRef(0);
+  const similarReqRef = useRef(0);
+  const lastTargetMovieRef = useRef<any>(null);
 
   const scale = useSharedValue(1);
   const animatedBgStyle = useAnimatedStyle(() => {
@@ -232,64 +238,102 @@ const ListDetails = ({ route }: any) => {
     } else if (!initialMovies || initialMovies.length === 0) {
       loadMovies(); 
     }
+
+    return () => {
+      moviePressReqRef.current += 1;
+      episodeReqRef.current += 1;
+      similarReqRef.current += 1;
+    };
   }, [initialSelectedMovie]); 
 
   const loadMovies = async () => {
+    const reqId = ++moviePressReqRef.current;
     setIsLoading(true);
+    setLoadError(null);
+    lastTargetMovieRef.current = null;
     try {
       const typeStr = Array.isArray(contentType) ? contentType[0] : contentType;
-      const data = await fetchMoreContentByType(typeStr, 1);
+      const data = await fetchMoreContentByType(typeStr, 1, {
+        priority: 'high',
+        throwOnError: true,
+      });
+      if (reqId !== moviePressReqRef.current) return;
       setMovies(data);
       if (data.length > 0) {
-        setBgPoster(data[0].poster_path); 
-        handleMoviePress(data[0]); 
+        setBgPoster(data[0].poster_path);
+        await handleMoviePress(data[0]);
+      } else {
+        setIsLoading(false);
       }
     } catch (error) {
+      if (reqId !== moviePressReqRef.current) return;
       console.error('Failed to fetch movies:', error);
-    } 
+      setLoadError('Could not load titles. Check your connection and try again.');
+      setIsLoading(false);
+    }
   };
 
   const fetchSimilarMovies = async (movieId: any, mediaType: any) => {
+    const reqId = ++similarReqRef.current;
     setIsSimilarLoading(true);
     try {
-      const media = await getSimilarMedia(movieId, mediaType);
-      setSimilarMovies(media);
+      const media = await getSimilarMedia(movieId, mediaType, 1, { priority: 'high' });
+      if (reqId === similarReqRef.current) {
+        setSimilarMovies(media);
+      }
     } catch (error) {
       console.error('Failed to fetch similar movies:', error);
     } finally {
-      setIsSimilarLoading(false);
+      if (reqId === similarReqRef.current) {
+        setIsSimilarLoading(false);
+      }
     }
   };
 
   const handleMoviePress = async (movie: any) => {
+    const reqId = ++moviePressReqRef.current;
+    episodeReqRef.current += 1;
+    similarReqRef.current += 1;
+    lastTargetMovieRef.current = movie;
+    setSelectedMovie(null);
     setSelectedSeason(null);
     setEpisodes([]);
+    setEpisodesError(null);
+    setSimilarMovies([]);
+    setLoadError(null);
     setIsLoading(true);
 
     // Scroll to top
     mainScrollViewRef.current?.scrollTo({ y: 0, animated: false });
 
     try {
-      const details = await getMediaDetails(movie.id, movie.media_type);
-      
-      setBgPoster(details.poster_path); 
+      const mType = movie.media_type || (movie.first_air_date ? 'tv' : 'movie');
+      const details = await getMediaDetails(movie.id, mType, 'US', { priority: 'high' });
+      if (reqId !== moviePressReqRef.current) return;
+
+      setBgPoster(details.poster_path);
       setSelectedMovie(details);
-      
+
       if (details) {
         fetchSimilarMovies(details.id, details.media_type);
-        checkIfInWatchlist(details); 
-        
+        checkIfInWatchlist(details);
+
         if (details.media_type === 'tv' && details.seasons && details.seasons.length > 0) {
-          const firstSeason = details.seasons.find(s => s.season_number > 0) || details.seasons[0];
+          const validSeasons = details.seasons.filter((s: any) => s.season_number > 0);
+          const firstSeason = validSeasons[0] || details.seasons[0];
           if (firstSeason) {
-            handleSeasonSelect(firstSeason.season_number);
+            handleSeasonSelect(firstSeason.season_number, details.id);
           }
         }
       }
     } catch (error) {
+      if (reqId !== moviePressReqRef.current) return;
       console.error('Failed to fetch movie details:', error);
+      setLoadError('Could not load details. Check your connection and try again.');
     } finally {
-      setIsLoading(false);
+      if (reqId === moviePressReqRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -325,17 +369,28 @@ const ListDetails = ({ route }: any) => {
     router.push(`/search?prefillQuery=${encodeURIComponent(`${selectedMovie.title || selectedMovie.name}`)}&fromMovieId=${selectedMovie.id}&fromMediaType=${mType}`);
   };
 
-  const handleSeasonSelect = async (seasonNumber: any) => {
-    if (!selectedMovie) return;
+  const handleSeasonSelect = async (seasonNumber: any, movieIdOverride?: number) => {
+    const targetMovieId = movieIdOverride ?? selectedMovie?.id;
+    if (!targetMovieId) return;
+    const reqId = ++episodeReqRef.current;
     setSelectedSeason(seasonNumber);
+    setEpisodesError(null);
     setLoadingEpisodes(true);
     try {
-      const seasonEpisodes = await getSeasonEpisodes(selectedMovie.id, seasonNumber);
-      setEpisodes(seasonEpisodes);
+      const seasonEpisodes = await getSeasonEpisodes(targetMovieId, seasonNumber, { priority: 'high' });
+      if (reqId === episodeReqRef.current) {
+        setEpisodes(seasonEpisodes);
+      }
     } catch (error) {
-      console.error('Failed to fetch episodes:', error);
+      if (reqId === episodeReqRef.current) {
+        console.error('Failed to fetch episodes:', error);
+        setEpisodes([]);
+        setEpisodesError("Couldn't load episodes.");
+      }
     } finally {
-      setLoadingEpisodes(false);
+      if (reqId === episodeReqRef.current) {
+        setLoadingEpisodes(false);
+      }
     }
   };
 
@@ -353,7 +408,9 @@ const ListDetails = ({ route }: any) => {
       </Text>
       <View style={styles.ratingRow}>
         <Ionicons name="star" size={12} color={palette.yellow} />
-        <Text style={[styles.rating, { color: colors.textSecondary }]}>{item.vote_average.toFixed(1)}</Text>
+        <Text style={[styles.rating, { color: colors.textSecondary }]}>
+          {typeof item.vote_average === 'number' ? item.vote_average.toFixed(1) : 'NR'}
+        </Text>
       </View>
     </TouchableOpacity>
     
@@ -379,7 +436,9 @@ const ListDetails = ({ route }: any) => {
             <View style={styles.metaRow}>
               <View style={[styles.metaChip, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
                 <Ionicons name="star" size={14} color={palette.yellow} />
-                <Text style={[styles.metaText, { color: colors.text }]}>{selectedMovie.vote_average.toFixed(1)}</Text>
+                <Text style={[styles.metaText, { color: colors.text }]}>
+                  {typeof selectedMovie.vote_average === 'number' ? selectedMovie.vote_average.toFixed(1) : 'NR'}
+                </Text>
               </View>
               <View style={[styles.metaChip, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
                 <Text style={[styles.metaText, { color: colors.text }]}>
@@ -482,7 +541,10 @@ const ListDetails = ({ route }: any) => {
               style={styles.seasonTabsContainer}
               nestedScrollEnabled={true} 
             >
-              {(selectedMovie.seasons.filter((s: any) => s.season_number > 0) || selectedMovie.seasons).map((season: any) => (
+              {(selectedMovie.seasons.filter((s: any) => s.season_number > 0).length > 0
+                ? selectedMovie.seasons.filter((s: any) => s.season_number > 0)
+                : selectedMovie.seasons
+              ).map((season: any) => (
                 <TouchableOpacity activeOpacity={0.95}
                   key={`season-${season.id}`}
                   style={[
@@ -508,6 +570,18 @@ const ListDetails = ({ route }: any) => {
               <View style={styles.episodesContainer}>
                 {loadingEpisodes ? (
                   <LoadingIndicator size="large" color={colors.primary} />
+                ) : episodesError ? (
+                  <View style={{ alignItems: 'center', paddingVertical: 16, gap: 8 }}>
+                    <Text style={{ color: colors.textSecondary, fontSize: 13 }}>{episodesError}</Text>
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 18 }}
+                      onPress={() => handleSeasonSelect(selectedSeason)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="refresh" size={14} color={colors.onPrimary} />
+                      <Text style={{ color: colors.onPrimary, fontSize: 13, fontWeight: '700' }}>Retry</Text>
+                    </TouchableOpacity>
+                  </View>
                 ) : (
                   episodes.map((episode) => (
                     <View key={`episode-${episode.id}`} style={[styles.episodeCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
@@ -582,7 +656,9 @@ const ListDetails = ({ route }: any) => {
               </Text>
               <View style={styles.ratingRow}>
                 <Ionicons name="star" size={12} color={palette.yellow} />
-                <Text style={[styles.rating, { color: colors.textSecondary }]}>{item.vote_average.toFixed(1)}</Text>
+                <Text style={[styles.rating, { color: colors.textSecondary }]}>
+                  {typeof item.vote_average === 'number' ? item.vote_average.toFixed(1) : 'NR'}
+                </Text>
               </View>
             </TouchableOpacity>
           )}
@@ -639,8 +715,32 @@ const ListDetails = ({ route }: any) => {
             {isLoading ? (
               // --- RENDER SKELETON UI WHEN LOADING ---
               <SkeletonDetails />
+            ) : selectedMovie ? (
+              renderMovieDetails()
             ) : (
-              selectedMovie && renderMovieDetails()
+              <View style={{ alignItems: 'center', paddingVertical: 48, paddingHorizontal: 24, gap: 10 }}>
+                <Ionicons name="cloud-offline-outline" size={40} color={colors.textSecondary} />
+                <Text style={{ color: colors.text, fontSize: 17, fontWeight: '700', textAlign: 'center' }}>
+                  {loadError ? 'Could not load content' : 'No titles available'}
+                </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 14, textAlign: 'center' }}>
+                  {loadError || 'No movies or shows were found for this list.'}
+                </Text>
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 22, marginTop: 6 }}
+                  onPress={() => {
+                    if (lastTargetMovieRef.current) {
+                      handleMoviePress(lastTargetMovieRef.current);
+                    } else {
+                      loadMovies();
+                    }
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="refresh" size={16} color={colors.onPrimary} />
+                  <Text style={{ color: colors.onPrimary, fontSize: 14, fontWeight: '700' }}>Retry</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         </ScrollView>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -12,7 +12,7 @@ import {
 import { LoadingIndicator } from '../src/components/shared/LoadingIndicator';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LegendList } from '@legendapp/list/react-native';
-import { getImageUrl, getFullDetails, TMDBResult, getDiscoverMedia, fetchMoreContentByType } from '../src/tmdb';
+import { getImageUrl, TMDBResult, getDiscoverMedia, fetchMoreContentByType } from '../src/tmdb';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { ShimmerBlock } from '../src/components/shared/Shimmer';
@@ -29,7 +29,15 @@ const ViewAllPage = () => {
   const rawType = (paramType as string) || 'trendingmovies';
   const lang = paramLang as string | undefined;
   const type = rawType === 'lang' ? (lang && lang !== 'all' ? `lang-movies-${lang}` : 'world-cinema') : rawType;
-  const data = paramData ? JSON.parse(paramData as string) : [];
+  const data = (() => {
+    if (!paramData) return [];
+    try {
+      const parsed = JSON.parse(paramData as string);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
   const genreId = paramGenreId ? parseInt(paramGenreId as string) : undefined;
 
   const [movies, setMovies] = useState<TMDBResult[]>(data || []);
@@ -37,6 +45,9 @@ const ViewAllPage = () => {
   const [page, setPage] = useState(1);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState(false);
+  const fetchReqIdRef = useRef(0);
 
   // --- FILTER STATE ---
   const [showFilters, setShowFilters] = useState(false);
@@ -53,8 +64,15 @@ const ViewAllPage = () => {
 
   // --- FETCHING LOGIC ---
   const fetchContent = async (pageNum: number, currentFilters: typeof filters, isReset: boolean = false) => {
-    if (isReset) setIsLoading(true);
-    else setIsLoadingMore(true);
+    const reqId = ++fetchReqIdRef.current;
+    if (isReset) {
+      setIsLoading(true);
+      setError(null);
+      setLoadMoreError(false);
+    } else {
+      setIsLoadingMore(true);
+      setLoadMoreError(false);
+    }
 
     try {
       const hasCustomFilters = currentFilters.year || currentFilters.language || currentFilters.rating > 0;
@@ -63,14 +81,23 @@ const ViewAllPage = () => {
       if (hasCustomFilters) {
         // If filtering, use the Discover API and pass 'type' as the baseCategory
         const baseMediaType = type.toLowerCase().includes('tv') || type.toLowerCase().includes('shows') ? 'tv' : 'movie';
-        results = await getDiscoverMedia(baseMediaType, pageNum, currentFilters, type);
+        results = await getDiscoverMedia(baseMediaType, pageNum, currentFilters, type, {
+          priority: 'high',
+          throwOnError: true,
+        });
       } else {
         // If NO filters, fetch the exact category endpoint to keep pagination relevant
         const fetchType = currentFilters.genreId ? `genre/${currentFilters.genreId}` : type;
-        results = await fetchMoreContentByType(fetchType, pageNum);
+        results = await fetchMoreContentByType(fetchType, pageNum, {
+          priority: 'high',
+          throwOnError: true,
+        });
       }
-      
+
+      if (reqId !== fetchReqIdRef.current) return;
+
       if (results.length === 0) {
+        if (isReset) setMovies([]);
         setHasMore(false);
       } else {
         // Filter out duplicates before adding to state
@@ -83,11 +110,19 @@ const ViewAllPage = () => {
         setPage(pageNum);
         setHasMore(true);
       }
-    } catch (error) {
-      console.error("Failed to fetch movies:", error);
+    } catch (err) {
+      if (reqId !== fetchReqIdRef.current) return;
+      console.error("Failed to fetch movies:", err);
+      if (isReset) {
+        setError('Could not load titles. Check your connection and try again.');
+      } else {
+        setLoadMoreError(true);
+      }
     } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
+      if (reqId === fetchReqIdRef.current) {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+      }
     }
   };
 
@@ -98,10 +133,13 @@ const ViewAllPage = () => {
       setPage(1);
       setHasMore(true);
     }
+    return () => {
+      fetchReqIdRef.current += 1;
+    };
   }, []);
 
   const loadMoreMovies = () => {
-    if (isLoading || isLoadingMore || !hasMore) return;
+    if (isLoading || isLoadingMore || !hasMore || loadMoreError) return;
     fetchContent(page + 1, filters, false);
   };
 
@@ -144,6 +182,23 @@ const ViewAllPage = () => {
   );
 
   const renderFooter = () => {
+    if (loadMoreError) {
+      return (
+        <View style={styles.footerLoading}>
+          <Text style={[styles.footerErrorText, { color: colors.textSecondary }]}>
+            Failed to load more titles
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={() => fetchContent(page + 1, filters, false)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="refresh" size={14} color={colors.onPrimary} />
+            <Text style={[styles.retryText, { color: colors.onPrimary }]}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
     if (!isLoadingMore) return <View style={{ height: 40 }} />;
     return (
       <View style={styles.footerLoading}>
@@ -189,6 +244,37 @@ const ViewAllPage = () => {
             ))}
           </View>
         </ScrollView>
+      ) : error && movies.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="cloud-offline-outline" size={44} color={colors.textSecondary} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Could not load titles</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>{error}</Text>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={() => fetchContent(1, filters, true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="refresh" size={16} color={colors.onPrimary} />
+            <Text style={[styles.retryText, { color: colors.onPrimary }]}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : movies.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="film-outline" size={44} color={colors.textSecondary} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No titles found</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+            Try adjusting or resetting your filters.
+          </Text>
+          {(filters.year || filters.language || filters.rating > 0) && (
+            <TouchableOpacity
+              style={[styles.retryButton, { backgroundColor: colors.primary }]}
+              onPress={resetFilters}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.retryText, { color: colors.onPrimary }]}>Reset Filters</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       ) : (
         <LegendList
           data={movies}
@@ -343,7 +429,13 @@ const styles = StyleSheet.create({
   resetButton: { flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: '#2A2A2A', alignItems: 'center' },
   resetText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
   applyButton: { flex: 2, paddingVertical: 14, borderRadius: 12, backgroundColor: '#E50914', alignItems: 'center' },
-  applyText: { color: 'white', fontSize: 16, fontWeight: 'bold' }
+  applyText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, gap: 8 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center', marginTop: 4 },
+  emptySubtitle: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 8 },
+  footerErrorText: { fontSize: 13, marginBottom: 8 },
+  retryButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 22 },
+  retryText: { fontSize: 14, fontWeight: '700' },
 });
 
 export default ViewAllPage;

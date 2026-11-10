@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -27,39 +27,66 @@ const SimilarMoviesPage = () => {
 
   const [movies, setMovies] = useState<TMDBResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMorePages, setHasMorePages] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState(false);
+  const fetchReqIdRef = useRef(0);
 
   const fetchSimilarMovies = useCallback(async (pageNum = 1, refresh = false) => {
-    if (refresh) {
-      setIsLoading(true);
+    const reqId = ++fetchReqIdRef.current;
+    const isInitialOrRefresh = refresh || pageNum === 1;
+    if (isInitialOrRefresh) {
+      if (!refresh) setIsLoading(true);
+      setError(null);
+      setLoadMoreError(false);
+    } else {
+      setIsLoadingMore(true);
+      setLoadMoreError(false);
     }
-    
+
     try {
-      const results = await getSimilarMedia(movieId, mediaType, pageNum);
-      
+      const results = await getSimilarMedia(movieId, mediaType, pageNum, {
+        priority: 'high',
+        throwOnError: true,
+      });
+
+      if (reqId !== fetchReqIdRef.current) return;
+
       if (results.length === 0) {
+        if (isInitialOrRefresh) setMovies([]);
         setHasMorePages(false);
       } else {
-        if (refresh || pageNum === 1) {
-          setMovies(results);
-        } else {
-          setMovies(prevMovies => [...prevMovies, ...results]);
-        }
+        setMovies(prevMovies => {
+          if (isInitialOrRefresh) return results;
+          const existingIds = new Set(prevMovies.map(m => m.id));
+          return [...prevMovies, ...results.filter(m => !existingIds.has(m.id))];
+        });
+        setPage(pageNum);
+        setHasMorePages(true);
       }
-    } catch (error) {
-      console.error('Error fetching similar movies:', error);
+    } catch (err) {
+      if (reqId !== fetchReqIdRef.current) return;
+      console.error('Error fetching similar movies:', err);
+      if (isInitialOrRefresh) {
+        setError('Could not load similar titles. Check your connection and try again.');
+      } else {
+        setLoadMoreError(true);
+      }
     } finally {
-      setIsLoading(false);
-      setRefreshing(false);
+      if (reqId === fetchReqIdRef.current) {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+        setRefreshing(false);
+      }
     }
   }, [movieId, mediaType]);
 
   const handleLoadMore = () => {
-    if (!isLoading && hasMorePages) {
+    if (!isLoading && !isLoadingMore && hasMorePages && !loadMoreError) {
       const nextPage = page + 1;
-      setPage(nextPage);
       fetchSimilarMovies(nextPage);
     }
   };
@@ -68,11 +95,16 @@ const SimilarMoviesPage = () => {
     setRefreshing(true);
     setPage(1);
     setHasMorePages(true);
+    setError(null);
+    setLoadMoreError(false);
     fetchSimilarMovies(1, true);
   };
 
   useEffect(() => {
-    fetchSimilarMovies();
+    fetchSimilarMovies(1, false);
+    return () => {
+      fetchReqIdRef.current += 1;
+    };
   }, [fetchSimilarMovies]);
 
   const renderMovieItem = ({ item }: { item: TMDBResult }) => (
@@ -97,14 +129,33 @@ const SimilarMoviesPage = () => {
         </Text>
         <View style={styles.ratingContainer}>
           <Ionicons name="star" size={14} color="#FFD60A" />
-          <Text style={[styles.rating, { color: colors.textSecondary }]}>{item.vote_average.toFixed(1)}</Text>
+          <Text style={[styles.rating, { color: colors.textSecondary }]}>
+            {typeof item.vote_average === 'number' ? item.vote_average.toFixed(1) : 'NR'}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
   );
 
   const renderFooter = () => {
-    if (!isLoading) return null;
+    if (loadMoreError) {
+      return (
+        <View style={styles.footer}>
+          <Text style={[styles.footerErrorText, { color: colors.textSecondary }]}>
+            Could not load more titles
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={() => fetchSimilarMovies(page + 1)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="refresh" size={14} color={colors.onPrimary} />
+            <Text style={[styles.retryText, { color: colors.onPrimary }]}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    if (!isLoadingMore) return null;
     return (
       <View style={styles.footer}>
         <LoadingIndicator size="large" color={colors.primary} />
@@ -113,7 +164,30 @@ const SimilarMoviesPage = () => {
   };
 
   const renderEmpty = () => {
-    if (isLoading) return null;
+    if (isLoading) {
+      return (
+        <View style={styles.emptyContainer}>
+          <LoadingIndicator size="large" color={colors.primary} />
+        </View>
+      );
+    }
+    if (error) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="cloud-offline-outline" size={44} color={colors.textSecondary} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Could not load titles</Text>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>{error}</Text>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={() => fetchSimilarMovies(1, false)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="refresh" size={16} color={colors.onPrimary} />
+            <Text style={[styles.retryText, { color: colors.onPrimary }]}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
     return (
       <View style={styles.emptyContainer}>
         <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No similar titles found</Text>
@@ -237,6 +311,30 @@ const styles = StyleSheet.create({
     color: '#aaa',
     fontSize: width * 0.04,
     textAlign: 'center',
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  footerErrorText: {
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 22,
+  },
+  retryText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
 

@@ -20,8 +20,9 @@ import {
   saveForYouShelves,
 } from '../src/database'; 
 
+import { Image as ExpoImage } from 'expo-image';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { setGlobalConfig } from '../src/tmdb';
+import { setGlobalConfig, clearCache } from '../src/tmdb';
 import { resetOnboarding } from '../src/userPreferences';
 import Constants from 'expo-constants';
 import { isNotificationsEnabled, setNotificationsEnabled, sendTestNotification } from '../src/notifications';
@@ -302,6 +303,7 @@ const Settings = () => {
     setGlobalConfig('nsfwFilterEnabled', value);
     await AsyncStorage.setItem('settings_nsfw', JSON.stringify(value));
     queueCloudValue('preferences', { nsfwFilterEnabled: value });
+    DeviceEventEmitter.emit('watcher_cache_cleared', { reason: 'nsfw' });
   };
 
   const toggleSmartNotifs = async (value: boolean) => {
@@ -585,16 +587,22 @@ const Settings = () => {
           text: "Clear Cache", 
           style: "destructive",
           onPress: async () => {
+            clearCache();
+            await Promise.all([
+              ExpoImage.clearMemoryCache().catch(() => false),
+              ExpoImage.clearDiskCache().catch(() => false),
+            ]);
             const cacheDir = FileSystem.cacheDirectory;
             if (cacheDir) {
               await FileSystem.deleteAsync(cacheDir, { idempotent: true });
               await FileSystem.makeDirectoryAsync(cacheDir);
-              showDialog({
-                title: "Cache Cleared",
-                message: "Temporary cache files have been cleared.",
-                type: "success",
-              });
             }
+            DeviceEventEmitter.emit('watcher_cache_cleared', { reason: 'manual' });
+            showDialog({
+              title: "Cache Cleared",
+              message: "Temporary and cached response files have been cleared.",
+              type: "success",
+            });
           }
         }
       ]

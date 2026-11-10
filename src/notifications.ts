@@ -191,7 +191,7 @@ const executeNotificationCheckInternal = async () => {
       await Promise.all(chunk.map(async (item) => {
         try {
           const mType = item.media_type === 'tv' || item.first_air_date ? 'tv' : 'movie';
-          const details = await getMediaDetails(item.id, mType, prefs.country || 'IN');
+          const details = await getMediaDetails(item.id, mType, prefs.country || 'IN', { priority: 'low' });
           if (isAdultContent(details)) return;
           
           if (mType === 'tv') {

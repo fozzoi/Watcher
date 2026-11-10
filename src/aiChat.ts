@@ -37,17 +37,21 @@ export async function getGeminiChatReply(
   watchlistCollections: string[] = [],
   userPreferences: any = null
 ): Promise<ChatReplyPayload> {
-  const response = await axios.post(API_URL, {
-    action: 'chat',
-    message,
-    history,
-    userMemory,
-    watchedTitles: watchedTitles.slice(0, 50),
-    watchlistTitles: watchlistTitles.slice(0, 100),
-    watchlistCollections: watchlistCollections.slice(0, 50),
-    userPreferences,
-    customApiKey: GLOBAL_CONFIG.customApiKey,
-  });
+  const response = await axios.post(
+    API_URL,
+    {
+      action: 'chat',
+      message,
+      history,
+      userMemory,
+      watchedTitles: watchedTitles.slice(0, 50),
+      watchlistTitles: watchlistTitles.slice(0, 100),
+      watchlistCollections: watchlistCollections.slice(0, 50),
+      userPreferences,
+      customApiKey: GLOBAL_CONFIG.customApiKey,
+    },
+    { timeout: 25000 }
+  );
 
   const parsed: RawReply = response.data.reply;
   console.log('🤖 RAW GEMINI REPLY:', JSON.stringify(parsed, null, 2));
@@ -60,7 +64,7 @@ export async function getGeminiChatReply(
       // searchTMDB returns an array; take the first (best) match for each title
       const movies = await resolveFirst(parsed.titles, (q) => {
         const cleanQuery = q.replace(/\s*\(\d{4}\)\s*$/, '').trim();
-        return searchTMDB(cleanQuery, 1);
+        return searchTMDB(cleanQuery, 1, { priority: 'high' });
       });
       if (!movies.length) {
         const fallbackMsg = parsed.text ? `${parsed.text}\n\n(Note: I couldn't find TMDB posters for those titles.)` : "Couldn't find those in the database — try describing it differently?";
@@ -73,7 +77,7 @@ export async function getGeminiChatReply(
       // searchPeople returns an array; take the first (best) match for each name
       const actors = await resolveFirst(parsed.names, (q) => {
         const cleanQuery = q.replace(/\s*\(\d{4}\)\s*$/, '').trim();
-        return searchPeople(cleanQuery, 1);
+        return searchPeople(cleanQuery, 1, { priority: 'high' });
       });
       if (!actors.length) {
         const fallbackMsg = parsed.text ? `${parsed.text}\n\n(Note: I couldn't find TMDB profiles for those actors.)` : "Couldn't find that person in the database — try another name?";
@@ -84,7 +88,7 @@ export async function getGeminiChatReply(
 
     case 'movie_detail': {
       const cleanQuery = parsed.title.replace(/\s*\(\d{4}\)\s*$/, '').trim();
-      const results = await searchTMDB(cleanQuery, 1);
+      const results = await searchTMDB(cleanQuery, 1, { priority: 'high' });
       const movie = results[0] ?? null;
       if (!movie) {
         const fallbackMsg = parsed.text ? `${parsed.text}\n\n(Note: I couldn't find TMDB details for "${parsed.title}".)` : `Couldn't find details for "${parsed.title}" in the database.`;
@@ -117,12 +121,16 @@ async function resolveFirst<T>(queries: string[], resolver: (q: string) => Promi
  */
 export async function updateUserMemory(existingMemory: string, userMessage: string): Promise<string> {
   try {
-    const response = await axios.post(API_URL, {
-      action: 'update_memory',
-      existingMemory,
-      userMessage,
-      customApiKey: GLOBAL_CONFIG.customApiKey,
-    });
+    const response = await axios.post(
+      API_URL,
+      {
+        action: 'update_memory',
+        existingMemory,
+        userMessage,
+        customApiKey: GLOBAL_CONFIG.customApiKey,
+      },
+      { timeout: 25000 }
+    );
     return response.data.memory ?? existingMemory;
   } catch {
     return existingMemory;

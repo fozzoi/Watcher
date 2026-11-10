@@ -234,6 +234,30 @@ export const isMediaReleased = (item: any, todayStr?: string): boolean => {
   return true;
 };
 
+// --- Iconic Franchises mapping by Genre ID (TMDB Collection IDs) ---
+export const ICONIC_FRANCHISES_BY_GENRE: Record<number, number[]> = {
+  878: [726871, 2344, 173710, 8091, 422837], // Sci-Fi: Dune, Matrix, Planet of the Apes, Alien, Blade Runner
+  28: [404609, 263, 87359, 8945, 531330], // Action: John Wick, Dark Knight, Mission Impossible, Mad Max, Top Gun
+  12: [119, 1241, 295, 87096, 10], // Adventure: Lord of the Rings, Harry Potter, Pirates, Avatar, Star Wars
+  14: [119, 1241, 295], // Fantasy: Lord of the Rings, Harry Potter, Pirates
+  16: [573436, 2150, 10194, 77816], // Animation: Spider-Verse, Shrek, Toy Story, Kung Fu Panda
+  27: [521226, 313086, 656], // Horror: A Quiet Place, Conjuring, Saw
+  53: [87359, 404609, 722971], // Thriller: Mission Impossible, John Wick, Knives Out
+  80: [230, 722971, 263], // Crime: Godfather, Knives Out, Dark Knight
+};
+
+export const DEFAULT_POPULAR_FRANCHISES = [
+  726871, // Dune Collection
+  404609, // John Wick Collection
+  263,    // The Dark Knight Collection
+  119,    // The Lord of the Rings Collection
+  573436, // Spider-Man: Spider-Verse Collection
+  87359,  // Mission: Impossible Collection
+  1241,   // Harry Potter Collection
+  173710, // Planet of the Apes Collection
+  2344,   // The Matrix Collection
+];
+
 export async function generateForYouShelves(): Promise<ForYouShelf[]> {
   try {
     const todayStr = getTodayDateString();
@@ -254,30 +278,6 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
     }[] = [];
 
     let sortOrder = 0;
-
-    // --- Iconic Franchises mapping by Genre ID (TMDB Collection IDs) ---
-    const ICONIC_FRANCHISES_BY_GENRE: Record<number, number[]> = {
-      878: [724855, 2344, 173710, 8091, 480261], // Sci-Fi: Dune, Matrix, Planet of the Apes, Alien, Blade Runner
-      28: [404609, 263, 87359, 8945, 531330], // Action: John Wick, Dark Knight, Mission Impossible, Mad Max, Top Gun
-      12: [119, 1241, 295, 87096, 10], // Adventure: Lord of the Rings, Harry Potter, Pirates, Avatar, Star Wars
-      14: [119, 1241, 295], // Fantasy: Lord of the Rings, Harry Potter, Pirates
-      16: [618529, 12, 10194, 77816], // Animation: Spider-Verse, Shrek, Toy Story, Kung Fu Panda
-      27: [726871, 313086, 1157], // Horror: A Quiet Place, Conjuring, Saw
-      53: [87359, 404609, 871131], // Thriller: Mission Impossible, John Wick, Knives Out
-      80: [230, 871131, 263], // Crime: Godfather, Knives Out, Dark Knight
-    };
-
-    const DEFAULT_POPULAR_FRANCHISES = [
-      724855, // Dune Collection
-      404609, // John Wick Collection
-      263,    // The Dark Knight Collection
-      119,    // The Lord of the Rings Collection
-      618529, // Spider-Man (Spider-Verse) Collection
-      87359,  // Mission: Impossible Collection
-      1241,   // Harry Potter Collection
-      173710, // Planet of the Apes Collection
-      2344,   // The Matrix Collection
-    ];
 
     // --- Shelf 1: "Continue The Saga" (Unified Mixed Multi-Franchise Continuations) ---
     try {
@@ -307,7 +307,7 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
       if (moviesToCheck.length > 0) {
         const collectionIds = await Promise.all(
           moviesToCheck.map(async (m: any) => {
-            return await getMovieCollectionId(Number(m.id));
+            return await getMovieCollectionId(Number(m.id), { priority: 'low' });
           })
         );
         collectionIds.forEach((cId) => {
@@ -324,7 +324,7 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
         await Promise.all(
           Array.from(collectionIdSet).map(async (colId) => {
             try {
-              return await getCollectionDetails(colId);
+              return await getCollectionDetails(colId, { priority: 'low' });
             } catch {
               return null;
             }
@@ -369,7 +369,7 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
           collectionIdSet.add(candId);
 
           try {
-            const candCol = await getCollectionDetails(candId);
+            const candCol = await getCollectionDetails(candId, { priority: 'low' });
             if (candCol?.parts && candCol.parts.length > 1) {
               const unwatched = candCol.parts.filter(
                 (p: any) => !watchedIds.has(Number(p.id)) && isMediaReleased(p, todayStr)
@@ -475,11 +475,11 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
           sort_by: 'vote_average.desc',
           'vote_count.gte': 80,
           'primary_release_date.lte': todayStr,
-        });
+        }, 1, { priority: 'low' });
 
         // Fallback to combined credits if discover count is low
         if (movies.length < 4) {
-          const credits = await getPersonCombinedCredits(Number(person.id));
+          const credits = await getPersonCombinedCredits(Number(person.id), { priority: 'low' });
           movies = credits.filter((m) => m.poster_path && (m.vote_count || 0) >= 30);
         }
 
@@ -509,7 +509,7 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
           'vote_count.gte': 200,
           sort_by: 'popularity.desc',
           'primary_release_date.lte': todayStr,
-        });
+        }, 1, { priority: 'low' });
 
         const unwatched = sweetMovies.filter(
           (m) => !watchedIds.has(Number(m.id)) && isMediaReleased(m, todayStr)
@@ -537,7 +537,7 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
           'vote_count.gte': 250,
           sort_by: 'popularity.desc',
           'primary_release_date.lte': todayStr,
-        });
+        }, 1, { priority: 'low' });
 
         const unwatched = topGenreMovies.filter(
           (m) => !watchedIds.has(Number(m.id)) && isMediaReleased(m, todayStr)

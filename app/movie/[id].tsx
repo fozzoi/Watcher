@@ -562,16 +562,32 @@ const MovieAIPanel = React.memo(({
   const [lensError, setLensError] = useState<string | null>(null);
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   const [loadingAi, setLoadingAi] = useState(false);
+  const [vibeError, setVibeError] = useState<string | null>(null);
+  const lensControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      lensControllerRef.current?.abort();
+    };
+  }, []);
 
   const fetchLensInsight = useCallback(async () => {
     if (!movie || (!movie.title && !movie.name)) return;
+    lensControllerRef.current?.abort();
+    const controller = new AbortController();
+    lensControllerRef.current = controller;
     setLensLoading(true);
     setLensError(null);
     setLensInsight(null);
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
     try {
       const response = await fetch('https://watcher-api-rho.vercel.app/api/gemini', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           action: 'lens',
           title: movie.title || movie.name,
@@ -581,22 +597,57 @@ const MovieAIPanel = React.memo(({
           customApiKey: GLOBAL_CONFIG.customApiKey,
         }),
       });
+      if (!response.ok) {
+        throw new Error(`Request failed (${response.status})`);
+      }
       const data = await response.json();
+      if (!isMountedRef.current) return;
       if (data?.result) setLensInsight(data.result);
       else setLensError(data?.error || 'No insight returned.');
     } catch (e: any) {
-      setLensError(e.message || 'Failed to fetch Lens insight.');
+      if (!isMountedRef.current) return;
+      if (e?.name === 'AbortError') {
+        setLensError('Request timed out. Please try again.');
+      } else {
+        setLensError(e.message || 'Failed to fetch Lens insight.');
+      }
     } finally {
-      setLensLoading(false);
+      clearTimeout(timeoutId);
+      if (isMountedRef.current) setLensLoading(false);
     }
   }, [movie]);
 
   const fetchAiRecommendations = useCallback(async () => {
     if (!movie || (!movie.title && !movie.name)) return;
     setLoadingAi(true);
-    const aiData = await getGeminiMoviesSimilarTo(movie.title || movie.name, movie.media_type, movie.id);
-    setAiRecommendations(aiData);
-    setLoadingAi(false);
+    setVibeError(null);
+    try {
+      const aiData = await getGeminiMoviesSimilarTo(
+        movie.title || movie.name,
+        movie.media_type,
+        movie.id,
+        { priority: 'high', throwOnError: true },
+      );
+      if (!isMountedRef.current) return;
+      if (!aiData || aiData.length === 0) {
+        setVibeError('No vibe recommendations found.');
+      }
+      setAiRecommendations(aiData || []);
+    } catch (e: any) {
+      if (!isMountedRef.current) return;
+      const isTimeout =
+        e?.code === 'ECONNABORTED' ||
+        e?.code === 'ETIMEDOUT' ||
+        (typeof e?.message === 'string' && e.message.toLowerCase().includes('timeout'));
+      setVibeError(
+        isTimeout
+          ? 'Request timed out. Please try again.'
+          : 'Failed to load recommendations. Please try again.',
+      );
+      setAiRecommendations([]);
+    } finally {
+      if (isMountedRef.current) setLoadingAi(false);
+    }
   }, [movie]);
 
   return (
@@ -726,6 +777,16 @@ const MovieAIPanel = React.memo(({
               drawDistance={150}
               decelerationRate="normal"
             />
+          ) : vibeError ? (
+            <View>
+              <Text style={[styles.aiErrorText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }]}>
+                {vibeError}
+              </Text>
+              <TouchableOpacity activeOpacity={0.8} onPress={fetchAiRecommendations} style={styles.aiRetry}>
+                <Feather name="rotate-cw" size={13} color={isAmbientActive ? '#FFFFFF' : colors.primary} />
+                <Text style={[styles.aiRetryText, { color: isAmbientActive ? '#FFFFFF' : colors.primary }]}>Try again</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             <TouchableOpacity
               activeOpacity={0.8}
@@ -751,6 +812,8 @@ interface MovieEpisodesSectionProps {
   selectedSeason: number | null;
   onSelectSeason: (seasonNum: number) => void;
   loadingEpisodes: boolean;
+  episodesError: string | null;
+  onRetryEpisodes: () => void;
   episodes: TMDBEpisode[];
   episodesLimit: number;
   onShowMore: () => void;
@@ -768,6 +831,8 @@ const MovieEpisodesSection = React.memo(({
   selectedSeason,
   onSelectSeason,
   loadingEpisodes,
+  episodesError,
+  onRetryEpisodes,
   episodes,
   episodesLimit,
   onShowMore,
@@ -824,6 +889,20 @@ const MovieEpisodesSection = React.memo(({
             <EpisodeShimmer key={i} thumbWidth={episodeThumbWidth} />
           ))}
         </View>
+      ) : episodesError ? (
+        <View style={[styles.epRow, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.06)' : colors.surfaceContainer, justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 14 }]}>
+          <Text style={{ color: isAmbientActive ? 'rgba(255, 255, 255, 0.75)' : colors.textSecondary, fontSize: 13, flex: 1 }}>
+            {episodesError}
+          </Text>
+          <TouchableOpacity activeOpacity={0.8} onPress={onRetryEpisodes} style={styles.aiRetry}>
+            <Feather name="rotate-cw" size={14} color={isAmbientActive ? '#FFFFFF' : colors.primary} />
+            <Text style={[styles.aiRetryText, { color: isAmbientActive ? '#FFFFFF' : colors.primary }]}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : episodes.length === 0 ? (
+        <Text style={{ color: isAmbientActive ? 'rgba(255, 255, 255, 0.65)' : colors.textSecondary, fontSize: 13 }}>
+          No episodes listed for this season yet.
+        </Text>
       ) : (
         <View>
           {visibleEpisodes.map((ep) => {
@@ -937,6 +1016,9 @@ export default function DetailPage() {
     similarMovies: [],
   });
 
+  const [extrasLoaded, setExtrasLoaded] = useState(false);
+  const [similarError, setSimilarError] = useState<string | null>(null);
+  const [loadingSimilar, setLoadingSimilar] = useState(false);
   const [lastWatched, setLastWatched] = useState<any>(null);
   const [sourceStatus, setSourceStatus] = useState<'checking' | 'available' | 'unavailable'>('available');
   const [torrentModalVisible, setTorrentModalVisible] = useState(false);
@@ -946,7 +1028,11 @@ export default function DetailPage() {
   const [episodes, setEpisodes] = useState<TMDBEpisode[]>([]);
   const [episodesLimit, setEpisodesLimit] = useState(INITIAL_EPISODES_LIMIT);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
+  const [episodesError, setEpisodesError] = useState<string | null>(null);
   const episodeRequestRef = useRef(0);
+  const initialRequestRef = useRef(0);
+  const similarRequestRef = useRef(0);
+  const lastSyncedProgressSeasonRef = useRef<number | null>(null);
 
   // Derived metadata (prevents redundant state duplication & extra render cycles)
   const genres: { id: number; name: string }[] = movie?.genres || [];
@@ -998,22 +1084,75 @@ export default function DetailPage() {
     return () => sub.remove();
   }, [router]);
 
-  // Phase 1: Fast initial metadata
+  // Phase 1: Fast initial metadata (hydrates immediately from cache/SWR + reads watch progress in parallel)
   const fetchInitial = useCallback(async () => {
     if (!id) return;
+    const reqId = ++initialRequestRef.current;
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId) || numericId <= 0) {
+      setDetailsError('Invalid title ID.');
+      return;
+    }
+
+    setMovie(null);
+    setDetailsError(null);
+    setExtras({
+      directors: [],
+      cast: [],
+      images: [],
+      posters: [],
+      collectionData: null,
+      similarMovies: [],
+    });
+    setExtrasLoaded(false);
+    setSimilarError(null);
+    setLoadingSimilar(false);
+    similarRequestRef.current += 1;
+    setSelectedSeason(null);
+    setEpisodes([]);
+    setEpisodesError(null);
+    lastSyncedProgressSeasonRef.current = null;
+
     try {
-      setDetailsError(null);
-      const data = await getMediaDetails(Number(id), (media_type as 'movie' | 'tv') || 'movie');
+      const [data, progress] = await Promise.all([
+        getMediaDetails(numericId, (media_type as 'movie' | 'tv') || 'movie', 'US', {
+          priority: 'high',
+          onBackgroundUpdate: (freshData) => {
+            if (reqId === initialRequestRef.current && freshData?.id) {
+              setMovie(freshData);
+              if (freshData.media_type === 'tv' && freshData.seasons && freshData.seasons.length > 0) {
+                const validSeasons = freshData.seasons.filter((s: any) => s.season_number > 0);
+                const fallbackSeason = validSeasons[0]?.season_number ?? freshData.seasons[0]?.season_number;
+                if (fallbackSeason !== undefined) {
+                  setSelectedSeason((prev) => prev ?? fallbackSeason);
+                }
+              }
+            }
+          },
+        }),
+        getProgress(numericId).catch(() => null),
+      ]);
+
+      if (reqId !== initialRequestRef.current) return;
+
+      setLastWatched(progress);
+      lastSyncedProgressSeasonRef.current = progress?.lastSeason ?? null;
       setMovie(data);
 
       if (data.media_type === 'tv' && data.seasons && data.seasons.length > 0) {
-        const firstValidSeason = data.seasons.find((s: any) => s.season_number > 0);
-        if (firstValidSeason) {
-          setSelectedSeason(firstValidSeason.season_number);
+        const validSeasons = data.seasons.filter((s: any) => s.season_number > 0);
+        const preferredSeason =
+          progress?.lastSeason && data.seasons.some((s: any) => s.season_number === progress.lastSeason)
+            ? progress.lastSeason
+            : (validSeasons[0]?.season_number ?? data.seasons[0]?.season_number);
+        if (preferredSeason !== undefined) {
+          setSelectedSeason(preferredSeason);
         }
       }
     } catch {
-      setDetailsError('Unable to load this title. Check your connection or retry.');
+      if (reqId === initialRequestRef.current) {
+        setDetailsError('Unable to load this title. Check your connection or retry.');
+      }
     }
   }, [id, media_type]);
 
@@ -1022,50 +1161,74 @@ export default function DetailPage() {
   }, [fetchInitial]);
 
   // Phase 2: Deferred crew, cast, collection, and recommendations (fires as soon as movie.id AND renderStage >= 1)
+  const loadSimilar = useCallback(async (movieId: number, mediaType: 'movie' | 'tv') => {
+    const reqId = ++similarRequestRef.current;
+    setLoadingSimilar(true);
+    setSimilarError(null);
+    try {
+      const similarData = await getSimilarMedia(movieId, mediaType, 1, { priority: 'high', throwOnError: true });
+      if (reqId !== similarRequestRef.current) return;
+      setExtras((prev) => ({ ...prev, similarMovies: similarData || [] }));
+    } catch {
+      if (reqId !== similarRequestRef.current) return;
+      setSimilarError("Couldn't load similar titles.");
+    } finally {
+      if (reqId === similarRequestRef.current) setLoadingSimilar(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!movie?.id || renderStage < 1) return;
     let isActive = true;
 
-    const fullDetailsPromise = getFullDetails({ id: movie.id, media_type: movie.media_type } as any).catch(() => null);
+    const hasInlineDetails = Array.isArray(movie.cast);
+    const fullDetailsPromise = hasInlineDetails
+      ? Promise.resolve(movie)
+      : getFullDetails({ id: movie.id, media_type: movie.media_type } as any, 'US', { priority: 'high' }).catch(() => null);
     const collectionPromise = movie.belongs_to_collection?.id
-      ? getCollectionDetails(movie.belongs_to_collection.id).catch(() => null)
+      ? getCollectionDetails(movie.belongs_to_collection.id, { priority: 'high' }).catch(() => null)
       : Promise.resolve(null);
-    const similarPromise = getSimilarMedia(movie.id, movie.media_type).catch(() => []);
+    const similarPromise = getSimilarMedia(movie.id, movie.media_type, 1, { priority: 'high', throwOnError: true })
+      .then((items) => ({ items, failed: false }))
+      .catch(() => ({ items: [], failed: true }));
 
     Promise.all([
       fullDetailsPromise,
       collectionPromise,
       similarPromise,
-    ]).then(async ([rawFullData, colData, similarData]) => {
+    ]).then(async ([rawFullData, colData, similarRes]) => {
       if (!isActive) return;
 
-      const fullData: any = rawFullData;
+      const fullData: any = rawFullData || movie;
       const mergedDirectors: any[] = [];
-      if (fullData?.director) {
+      const addDirector = (person: any, defaultRole: string) => {
+        if (!person?.id || mergedDirectors.find((entry) => entry.id === person.id)) return;
         mergedDirectors.push({
-          ...fullData.director,
-          role: fullData.director.job || (movie.media_type === 'tv' ? 'Creator' : 'Director'),
+          ...person,
+          role: person.job || defaultRole,
         });
+      };
+
+      const defaultRole = movie.media_type === 'tv' ? 'Creator' : 'Director';
+      if (Array.isArray(fullData?.directors)) {
+        fullData.directors.forEach((d: any) => addDirector(d, defaultRole));
+      }
+      if (fullData?.director) {
+        addDirector(fullData.director, defaultRole);
       }
       const crew = fullData?.crew || fullData?.credits?.crew || [];
       const creators = fullData?.created_by || [];
       const dirFromCrew = crew.filter(
         (p: any) => p.job === 'Director' || p.department === 'Directing'
       );
-      [...creators, ...dirFromCrew].forEach((person: any) => {
-        if (!person?.id || mergedDirectors.find((entry) => entry.id === person.id)) return;
-        mergedDirectors.push({
-          ...person,
-          role: person.job || (movie.media_type === 'tv' ? 'Creator' : 'Director'),
-        });
-      });
+      [...creators, ...dirFromCrew].forEach((person: any) => addDirector(person, defaultRole));
 
       let extraImages = fullData?.images || [];
       let extraPosters = fullData?.posters || [];
 
-      if ((!extraImages || extraImages.length === 0) && (!extraPosters || extraPosters.length === 0)) {
+      if (!Array.isArray(fullData?.images) && !Array.isArray(fullData?.posters)) {
         try {
-          const imgs = await getMediaImages(movie.id, movie.media_type);
+          const imgs = await getMediaImages(movie.id, movie.media_type, { priority: 'high' });
           if (isActive) {
             extraImages = imgs.backdrops || [];
             extraPosters = imgs.posters || [];
@@ -1075,6 +1238,7 @@ export default function DetailPage() {
 
       if (!isActive) return;
 
+      setSimilarError(similarRes.failed ? "Couldn't load similar titles." : null);
       // Commit secondary metadata atomically into extras; NEVER mutate movie
       setExtras({
         directors: mergedDirectors,
@@ -1082,9 +1246,12 @@ export default function DetailPage() {
         images: extraImages,
         posters: extraPosters,
         collectionData: colData,
-        similarMovies: similarData || [],
+        similarMovies: similarRes.items || [],
       });
-    }).catch(() => {});
+      setExtrasLoaded(true);
+    }).catch(() => {
+      if (isActive) setExtrasLoaded(true);
+    });
 
     return () => {
       isActive = false;
@@ -1112,8 +1279,14 @@ export default function DetailPage() {
       getProgress(movie.id).then((progress) => {
         if (!isActive) return;
         setLastWatched(progress);
-        if (movie.media_type === 'tv' && progress?.lastSeason) {
-          setSelectedSeason(progress.lastSeason);
+        const nextProgressSeason = progress?.lastSeason ?? null;
+        if (
+          movie.media_type === 'tv' &&
+          nextProgressSeason &&
+          nextProgressSeason !== lastSyncedProgressSeasonRef.current
+        ) {
+          lastSyncedProgressSeasonRef.current = nextProgressSeason;
+          setSelectedSeason(nextProgressSeason);
         }
         const s = movie.media_type === 'tv' ? (progress?.lastSeason || 1) : 1;
         const e = movie.media_type === 'tv' ? (progress?.lastEpisode || 1) : 1;
@@ -1130,14 +1303,25 @@ export default function DetailPage() {
     if (!movie?.id) return;
     const reqId = ++episodeRequestRef.current;
     setLoadingEpisodes(true);
+    setEpisodesError(null);
     setEpisodesLimit(INITIAL_EPISODES_LIMIT);
     try {
-      const data = await getSeasonEpisodes(movie.id, seasonNumber);
+      const data = await getSeasonEpisodes(movie.id, seasonNumber, {
+        priority: 'high',
+        onBackgroundUpdate: (freshEpisodes) => {
+          if (reqId === episodeRequestRef.current) {
+            setEpisodes(freshEpisodes);
+          }
+        },
+      });
       if (reqId === episodeRequestRef.current) {
         setEpisodes(data);
       }
     } catch {
-      if (reqId === episodeRequestRef.current) setEpisodes([]);
+      if (reqId === episodeRequestRef.current) {
+        setEpisodes([]);
+        setEpisodesError("Couldn't load episodes for this season.");
+      }
     } finally {
       if (reqId === episodeRequestRef.current) setLoadingEpisodes(false);
     }
@@ -1311,6 +1495,18 @@ export default function DetailPage() {
     return (
       <View style={[styles.root, styles.detailsLoading, { backgroundColor: colors.background }]}>
         <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
+        <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => {
+              if (router.canGoBack()) router.back();
+              else router.replace('/(tabs)');
+            }}
+            style={styles.glassBtn}
+          >
+            <Ionicons name="chevron-back" size={22} color="#FFF" />
+          </TouchableOpacity>
+        </View>
         <Ionicons name="alert-circle-outline" size={44} color={colors.textSecondary} />
         <Text style={[styles.detailsError, { color: colors.textSecondary }]}>{detailsError}</Text>
         <TouchableOpacity
@@ -1500,11 +1696,12 @@ export default function DetailPage() {
           {renderStage >= 1 && (
             <>
               {/* Directors with In-Page Skeleton Placeholder */}
+              {(!extrasLoaded || directors.length > 0) ? (
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>
                   {movie.media_type === 'tv' ? 'Created by' : 'Directed by'}
                 </Text>
-                {!directors || directors.length === 0 ? (
+                {!extrasLoaded ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
                     {[1, 2, 3].map((i) => (
                       <View key={i} style={[styles.directorCard, { paddingRight: 16 }]}>
@@ -1537,8 +1734,10 @@ export default function DetailPage() {
                   </ScrollView>
                 )}
               </View>
+              ) : null}
 
               {/* Cast with In-Page Skeleton Placeholder */}
+              {(!extrasLoaded || cast.length > 0) ? (
               <View style={styles.section}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <Text style={[styles.sectionTitle, { marginBottom: 0, color: isAmbientActive ? '#FFFFFF' : colors.text }]}>
@@ -1556,7 +1755,7 @@ export default function DetailPage() {
                     </TouchableOpacity>
                   ) : null}
                 </View>
-                {!cast || cast.length === 0 ? (
+                {!extrasLoaded ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
                     {[1, 2, 3, 4].map((i) => (
                       <CardShimmer key={i} width={castCardWidth} height={castCardWidth * 1.35} />
@@ -1602,6 +1801,7 @@ export default function DetailPage() {
                   </ScrollView>
                 )}
               </View>
+              ) : null}
 
               {/* TV Episodes with In-Page Skeleton Placeholder */}
               {movie.media_type === 'tv' && movie.seasons && movie.seasons.length > 0 ? (
@@ -1610,6 +1810,10 @@ export default function DetailPage() {
                   selectedSeason={selectedSeason}
                   onSelectSeason={(seasonNum) => setSelectedSeason(seasonNum)}
                   loadingEpisodes={loadingEpisodes}
+                  episodesError={episodesError}
+                  onRetryEpisodes={() => {
+                    if (selectedSeason !== null) void fetchEpisodes(selectedSeason);
+                  }}
                   episodes={episodes}
                   episodesLimit={episodesLimit}
                   onShowMore={() => setEpisodesLimit((prev) => prev + 15)}
@@ -1685,14 +1889,29 @@ export default function DetailPage() {
               />
 
               {/* Similar Titles with In-Page Skeleton Placeholder */}
+              {(!extrasLoaded || loadingSimilar || similarError || similarMovies.length > 0) ? (
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>More like this</Text>
-                {!similarMovies || similarMovies.length === 0 ? (
+                {(!extrasLoaded || loadingSimilar) ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
                     {[1, 2, 3, 4].map((i) => (
                       <CardShimmer key={i} width={similarCardWidth} height={similarCardWidth * 1.5} />
                     ))}
                   </ScrollView>
+                ) : similarError && similarMovies.length === 0 ? (
+                  <View style={[styles.epRow, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.06)' : colors.surfaceContainer, justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 14 }]}>
+                    <Text style={{ color: isAmbientActive ? 'rgba(255, 255, 255, 0.75)' : colors.textSecondary, fontSize: 13, flex: 1 }}>
+                      {similarError}
+                    </Text>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => void loadSimilar(movie.id, movie.media_type)}
+                      style={styles.aiRetry}
+                    >
+                      <Feather name="rotate-cw" size={14} color={isAmbientActive ? '#FFFFFF' : colors.primary} />
+                      <Text style={[styles.aiRetryText, { color: isAmbientActive ? '#FFFFFF' : colors.primary }]}>Retry</Text>
+                    </TouchableOpacity>
+                  </View>
                 ) : (
                   <LegendList
                     horizontal
@@ -1707,6 +1926,7 @@ export default function DetailPage() {
                   />
                 )}
               </View>
+              ) : null}
             </>
           )}
         </View>
@@ -1735,18 +1955,6 @@ const styles = StyleSheet.create({
     right: 0,
     overflow: 'hidden',
     backgroundColor: '#000',
-  },
-  detailsLoading: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  detailsError: {
-    color: C.mutedSoft,
-    fontSize: 15,
-    marginHorizontal: 32,
-    marginTop: 18,
-    textAlign: 'center',
   },
   topBar: {
     position: 'absolute',

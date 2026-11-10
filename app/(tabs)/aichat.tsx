@@ -18,7 +18,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { getSavedItems, getAllAiEmbeddings, subscribeToSavedItemsChanges } from '../../src/database';
 
-import { getImageUrl, getFullDetails, fetchChatGemini, fetchEmbedding, updateUserMemoryWithAi } from '../../src/tmdb';
+import { getImageUrl, fetchChatGemini, fetchEmbedding, updateUserMemoryWithAi } from '../../src/tmdb';
 import { getUserPreferences } from '../../src/userPreferences';
 import {
   Conversation, listConversations, saveConversation, deleteConversation,
