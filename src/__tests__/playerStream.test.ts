@@ -118,4 +118,43 @@ describe('playerStream helpers & state reducer', () => {
     expect(state.hasLoaded).toBe(true);
     expect(state.error).toBeNull();
   });
+
+  test('resets hasLoaded on real LOAD_ERROR after Android-style premature onLoad and preserves primary timeout error', () => {
+    let state = playerStreamReducer(INITIAL_PLAYER_STREAM_STATE, { type: 'START_INIT', attemptId: 1 });
+    state = playerStreamReducer(state, {
+      type: 'STREAM_READY',
+      attemptId: 1,
+      url: 'https://www.vidy.st/movie/123',
+    });
+
+    // Android RNCWebViewClient emits onLoad before onError on onReceivedError
+    state = playerStreamReducer(state, { type: 'LOAD_SUCCESS', attemptId: 1 });
+    expect(state.hasLoaded).toBe(true);
+
+    state = playerStreamReducer(state, {
+      type: 'LOAD_ERROR',
+      attemptId: 1,
+      code: -2,
+      message: formatStreamErrorMessage('Vidy', { kind: 'network', description: 'net::ERR_NAME_NOT_RESOLVED' }),
+    });
+    expect(state.loading).toBe(false);
+    expect(state.hasLoaded).toBe(false);
+    expect(state.error).toBe('net::ERR_NAME_NOT_RESOLVED');
+
+    // Separate attempt that times out must NOT have its timeout message overwritten by stopLoading() abort error
+    let timedOut = playerStreamReducer(INITIAL_PLAYER_STREAM_STATE, { type: 'START_INIT', attemptId: 2 });
+    timedOut = playerStreamReducer(timedOut, {
+      type: 'STREAM_READY',
+      attemptId: 2,
+      url: 'https://vidlink.pro/movie/123',
+    });
+    timedOut = playerStreamReducer(timedOut, { type: 'LOAD_TIMEOUT', attemptId: 2, provider: 'VidLink' });
+    timedOut = playerStreamReducer(timedOut, {
+      type: 'LOAD_ERROR',
+      attemptId: 2,
+      code: -999,
+      message: 'WebView aborted',
+    });
+    expect(timedOut.error).toContain('Timed out while loading VidLink');
+  });
 });

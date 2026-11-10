@@ -284,10 +284,17 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
       const watchlist = getSavedItems('watchlist') || [];
       const collectionIdSet = new Set<number>();
 
+      const addValidCollectionId = (rawId: any) => {
+        const parsed = Number(rawId);
+        if (Number.isInteger(parsed) && parsed > 0) {
+          collectionIdSet.add(parsed);
+        }
+      };
+
       // A) Extract collections from history
       history.slice(0, 30).forEach((item: any) => {
         const cId = item.belongs_to_collection?.id || item.collection_id;
-        if (cId) collectionIdSet.add(Number(cId));
+        addValidCollectionId(cId);
       });
 
       // B) Extract collections from watchlist
@@ -296,12 +303,15 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
           item.belongs_to_collection?.id ||
           item.collection_id ||
           (item.media_type === 'collection' ? item.id : null);
-        if (cId) collectionIdSet.add(Number(cId));
+        addValidCollectionId(cId);
       });
 
       // C) For recent history movies without explicit collection object, inspect details
       const moviesToCheck = history
-        .filter((i: any) => !i.belongs_to_collection && !i.collection_id && i.media_type !== 'tv')
+        .filter((i: any) => {
+          const movieId = Number(i?.id);
+          return !i.belongs_to_collection && !i.collection_id && i.media_type !== 'tv' && Number.isInteger(movieId) && movieId > 0;
+        })
         .slice(0, 8);
 
       if (moviesToCheck.length > 0) {
@@ -311,9 +321,7 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
           })
         );
         collectionIds.forEach((cId) => {
-          if (cId) {
-            collectionIdSet.add(cId);
-          }
+          addValidCollectionId(cId);
         });
       }
 

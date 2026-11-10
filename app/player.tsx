@@ -545,6 +545,9 @@ export default function Player() {
   const switchSource = () => {
     const targetProvider = getNextProvider(provider);
     userSelectedProviderRef.current = true;
+    if (!providerInitialized) {
+      setProviderInitialized(true);
+    }
     pendingResumeSecsRef.current = Math.max(
       pendingResumeSecsRef.current,
       Math.floor(latestPositionRef.current.position || progressRef.current?.position || 0),
@@ -560,6 +563,10 @@ export default function Player() {
 
   const retryStream = () => {
     if (!streamState.streamUrl) {
+      if (!providerInitialized) {
+        userSelectedProviderRef.current = true;
+        setProviderInitialized(true);
+      }
       setRetryTick((prev) => prev + 1);
       resetControlsTimeout();
       return;
@@ -633,6 +640,7 @@ export default function Player() {
       if (lastMediaIdentityRef.current !== mediaIdentity) {
         lastMediaIdentityRef.current = mediaIdentity;
         pendingResumeSecsRef.current = 0;
+        progressRef.current = null;
       }
       dispatchStream({ type: 'START_INIT', attemptId });
       isLeavingRef.current = false;
@@ -687,17 +695,18 @@ export default function Player() {
     };
   }, [tmdbId, mediaType, season, episode, provider, providerInitialized, sourceKey, mediaIdentity, retryTick]);
 
-  // Timeout fallback so stalled WebView navigations never leave the opaque loader stuck forever
+  // Timeout fallback so stalled init or WebView navigations never leave the opaque loader stuck forever
   useEffect(() => {
     if (loadingTimeoutRef.current) {
       clearTimeout(loadingTimeoutRef.current);
       loadingTimeoutRef.current = null;
     }
-    if (!streamState.loading || !streamState.streamUrl) {
+    if (!streamState.loading) {
       return;
     }
     const activeAttemptId = streamState.attemptId;
     loadingTimeoutRef.current = setTimeout(() => {
+      if (isLeavingRef.current) return;
       webViewRef.current?.stopLoading?.();
       dispatchStream({
         type: 'LOAD_TIMEOUT',
@@ -822,13 +831,15 @@ export default function Player() {
           injectedJavaScriptBeforeContentLoaded={injectedPreScript}
           injectedJavaScript={generateInjectedPostScript(fitMode)}
           onLoad={(event) => {
-            if (event?.nativeEvent?.url === 'about:blank') return;
+            if (isLeavingRef.current || event?.nativeEvent?.url === 'about:blank') return;
             dispatchStream({ type: 'LOAD_SUCCESS', attemptId: streamState.attemptId });
           }}
-          onLoadEnd={() => {
+          onLoadEnd={(event) => {
+            if (isLeavingRef.current || event?.nativeEvent?.url === 'about:blank') return;
             dispatchStream({ type: 'LOAD_END', attemptId: streamState.attemptId });
           }}
           onError={(event) => {
+            if (isLeavingRef.current) return;
             const { code, description, domain } = event?.nativeEvent || {};
             dispatchStream({
               type: 'LOAD_ERROR',
@@ -839,6 +850,7 @@ export default function Player() {
             });
           }}
           onHttpError={(event) => {
+            if (isLeavingRef.current) return;
             const { statusCode, description } = event?.nativeEvent || {};
             if (!isHttpErrorStatus(statusCode)) return;
             dispatchStream({
@@ -848,6 +860,7 @@ export default function Player() {
             });
           }}
           onRenderProcessGone={(event) => {
+            if (isLeavingRef.current) return;
             const didCrash = Boolean(event?.nativeEvent?.didCrash);
             dispatchStream({
               type: 'LOAD_ERROR',
@@ -856,13 +869,14 @@ export default function Player() {
             });
           }}
           onContentProcessDidTerminate={() => {
+            if (isLeavingRef.current) return;
             dispatchStream({
               type: 'LOAD_ERROR',
               attemptId: streamState.attemptId,
               message: formatStreamErrorMessage(provider, { kind: 'processTerminated' }),
             });
           }}
-          renderError={() => <View style={styles.container} />}
+          renderError={() => <View style={styles.renderErrorBackdrop} />}
           onMessage={(event: WebViewMessageEvent): void => {
             try {
               const progress = JSON.parse(event.nativeEvent.data);
@@ -1056,6 +1070,7 @@ export default function Player() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'black' },
   webview: { flex: 1, backgroundColor: 'transparent' },
+  renderErrorBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'black' },
   loader: { ...StyleSheet.absoluteFill, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
   loadingText: { color: 'white', marginTop: 15, fontWeight: '600' },
   errorOverlay: {

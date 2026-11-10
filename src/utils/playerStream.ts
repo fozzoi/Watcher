@@ -172,7 +172,8 @@ export const playerStreamReducer = (
       return {
         ...state,
         loading: false,
-        error: action.message,
+        hasLoaded: false,
+        error: state.error ?? action.message,
       };
     case 'LOAD_TIMEOUT':
       if (action.attemptId !== state.attemptId) return state;

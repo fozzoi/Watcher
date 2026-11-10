@@ -144,4 +144,37 @@ describe('tasteProfile franchise collection IDs and For You shelf generation', (
     expect(requestedIds).not.toContain(871131);
     expect(shelves.some((s) => s.shelfId === 'saga-all' || (s as any).shelf_id === 'saga-all')).toBe(true);
   });
+
+  test('skips invalid/NaN collection IDs in saved items and tolerates null 404 responses', async () => {
+    const tasteProfile = require('../services/tasteProfile') as typeof import('../services/tasteProfile');
+
+    mockGetSavedItems.mockImplementation((kind: string) => {
+      if (kind === 'history') {
+        return [
+          { id: 'bad-id', media_type: 'movie' },
+          { id: 438631, belongs_to_collection: { id: 726871 } },
+          { id: 100, belongs_to_collection: { id: 'not-a-number' } },
+        ];
+      }
+      if (kind === 'watchlist') {
+        return [{ id: 0, media_type: 'collection' }, { id: -5, media_type: 'collection' }];
+      }
+      return [];
+    });
+
+    mockGetCollectionDetails.mockResolvedValue(null);
+    const storedShelves: any[] = [];
+    mockSaveForYouShelves.mockImplementation((shelves: any[]) => {
+      storedShelves.splice(0, storedShelves.length, ...shelves);
+    });
+    mockGetForYouCachedShelves.mockImplementation(() => storedShelves);
+
+    const shelves = await tasteProfile.generateForYouShelves();
+
+    expect(mockGetMovieCollectionId).not.toHaveBeenCalled();
+    const requestedIds = mockGetCollectionDetails.mock.calls.map((c) => c[0]);
+    expect(requestedIds.every((id) => Number.isInteger(id) && id > 0)).toBe(true);
+    expect(requestedIds).toContain(726871);
+    expect(shelves.some((s) => s.shelfId === 'saga-all' || (s as any).shelf_id === 'saga-all')).toBe(true);
+  });
 });

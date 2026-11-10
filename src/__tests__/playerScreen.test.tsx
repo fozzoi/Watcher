@@ -345,4 +345,109 @@ describe('Player screen loading, error, crash, and timeout recovery', () => {
     expect(container.textContent).toContain('Unable to load Vidy');
     expect(container.textContent).toContain('Invalid media ID');
   });
+
+  test('ignores about:blank onLoadEnd and handles Android onLoad-before-onError and post-timeout abort errors', async () => {
+    const Player = require('../../app/player').default;
+
+    await act(async () => {
+      root.render(React.createElement(Player));
+    });
+    await flushAsync();
+
+    // about:blank onLoad + onLoadEnd must NOT clear loading or prevent timeout
+    await act(async () => {
+      latestWebViewProps.onLoad({ nativeEvent: { url: 'about:blank' } });
+      latestWebViewProps.onLoadEnd({ nativeEvent: { url: 'about:blank' } });
+    });
+    expect(container.textContent).toContain('Loading Vidy...');
+
+    // Real Android RNCWebViewClient error sequence: onLoad -> onLoadEnd -> onError -> onLoadEnd
+    await act(async () => {
+      latestWebViewProps.onLoad({ nativeEvent: { url: latestWebViewProps.source.uri } });
+      latestWebViewProps.onLoadEnd({ nativeEvent: { url: latestWebViewProps.source.uri } });
+      latestWebViewProps.onError({
+        nativeEvent: { code: -2, description: 'net::ERR_NAME_NOT_RESOLVED' },
+      });
+      latestWebViewProps.onLoadEnd({ nativeEvent: { url: latestWebViewProps.source.uri } });
+    });
+    expect(container.textContent).not.toContain('Loading Vidy...');
+    expect(container.textContent).toContain('Unable to load Vidy');
+    expect(container.textContent).toContain('net::ERR_NAME_NOT_RESOLVED');
+
+    // Switch to VidLink and time out; trailing onError from stopLoading() must keep timeout message
+    const switchBtn = findButtonByText(container, 'Switch to VidLink');
+    await act(async () => {
+      switchBtn!.click();
+    });
+    await flushAsync();
+
+    await act(async () => {
+      jest.advanceTimersByTime(STREAM_LOAD_TIMEOUT_MS + 100);
+    });
+    await act(async () => {
+      latestWebViewProps.onError({
+        nativeEvent: { code: -3, description: 'net::ERR_ABORTED' },
+      });
+    });
+    expect(container.textContent).toContain('Timed out while loading VidLink');
+    expect(container.textContent).not.toContain('ERR_ABORTED');
+  });
+
+  test('recovers from stalled preference initialization via timeout and Retry/Switch', async () => {
+    mockGetPlayerPreferences.mockImplementationOnce(() => new Promise(() => {}));
+    const Player = require('../../app/player').default;
+
+    await act(async () => {
+      root.render(React.createElement(Player));
+    });
+    await flushAsync();
+
+    expect(container.textContent).toContain('Loading Vidy...');
+
+    await act(async () => {
+      jest.advanceTimersByTime(STREAM_LOAD_TIMEOUT_MS + 100);
+    });
+
+    expect(container.textContent).not.toContain('Loading Vidy...');
+    expect(container.textContent).toContain('Timed out while loading Vidy');
+
+    // Retry recovers even though initial getPlayerPreferences never resolved
+    const retryBtn = findButtonByText(container, 'Retry');
+    await act(async () => {
+      retryBtn!.click();
+    });
+    await flushAsync();
+
+    expect(container.textContent).toContain('Loading Vidy...');
+    expect(latestWebViewProps?.source?.uri).toContain('https://www.vidy.st/movie/438631');
+  });
+
+  test('ignores late WebView process termination once user starts exiting', async () => {
+    const Player = require('../../app/player').default;
+
+    await act(async () => {
+      root.render(React.createElement(Player));
+    });
+    await flushAsync();
+
+    await act(async () => {
+      latestWebViewProps.onLoad({ nativeEvent: { url: latestWebViewProps.source.uri } });
+      latestWebViewProps.onLoadEnd({ nativeEvent: { url: latestWebViewProps.source.uri } });
+    });
+
+    // Tap Back button in HUD (first button in HUD)
+    const backBtn = Array.from(container.querySelectorAll('button')).find((btn) =>
+      btn.querySelector('[data-icon="arrow-back"]'),
+    );
+    expect(backBtn).toBeDefined();
+    await act(async () => {
+      backBtn!.click();
+    });
+
+    // Simulate iOS destroyWebView firing onContentProcessDidTerminate while exiting
+    await act(async () => {
+      latestWebViewProps.onContentProcessDidTerminate();
+    });
+    expect(container.textContent).not.toContain('Unable to load');
+  });
 });
