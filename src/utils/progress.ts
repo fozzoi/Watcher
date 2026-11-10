@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DeviceEventEmitter } from 'react-native';
 import { logTasteEvent, TASTE_WEIGHTS } from '../services/tasteProfile';
+import { flushCloudOutbox, queueCloudProgressRemoval, queueCloudValue, waitForPendingOutboxWrites } from '../cloudSync';
 
 export const PROGRESS_KEY = '@watch_progress';
 const LEGACY_PROGRESS_KEY = 'watch_progress_v1';
@@ -24,6 +25,54 @@ const getIdentityPrefix = (
 ) => `${mediaType}:${tmdbId}:${mediaType === 'tv' ? `${season || 1}:${episode || 1}` : 'movie'}`;
 
 let writeQueue = Promise.resolve();
+let pendingProgressPayload: Record<string, any> | null = null;
+let progressSyncTimer: ReturnType<typeof setTimeout> | null = null;
+let lastProgressCloudPushAt = 0;
+const PROGRESS_CLOUD_THROTTLE_MS = 10000;
+
+export const flushPendingCloudProgressSync = async () => {
+  if (progressSyncTimer) {
+    clearTimeout(progressSyncTimer);
+    progressSyncTimer = null;
+  }
+  const payload = pendingProgressPayload;
+  pendingProgressPayload = null;
+  lastProgressCloudPushAt = Date.now();
+  try {
+    if (payload) {
+      queueCloudValue('watchProgress', payload);
+      await waitForPendingOutboxWrites();
+    }
+    await flushCloudOutbox();
+  } catch {}
+};
+
+function scheduleCloudProgressSync(payload: Record<string, any>, immediate = false) {
+  pendingProgressPayload = { ...(pendingProgressPayload || {}), ...payload };
+  const elapsed = Date.now() - lastProgressCloudPushAt;
+  if (immediate || elapsed >= PROGRESS_CLOUD_THROTTLE_MS) {
+    if (progressSyncTimer) {
+      clearTimeout(progressSyncTimer);
+      progressSyncTimer = null;
+    }
+    const toSend = pendingProgressPayload;
+    pendingProgressPayload = null;
+    lastProgressCloudPushAt = Date.now();
+    if (toSend) queueCloudValue('watchProgress', toSend);
+    return;
+  }
+  if (!progressSyncTimer) {
+    progressSyncTimer = setTimeout(() => {
+      progressSyncTimer = null;
+      const toSend = pendingProgressPayload;
+      pendingProgressPayload = null;
+      if (!toSend) return;
+      lastProgressCloudPushAt = Date.now();
+      queueCloudValue('watchProgress', toSend);
+    }, PROGRESS_CLOUD_THROTTLE_MS - elapsed);
+    (progressSyncTimer as any)?.unref?.();
+  }
+}
 
 export interface WatchProgress {
   tmdbId: number;
@@ -102,33 +151,31 @@ export const saveProgress = async (progress: WatchProgress & { sourceKey?: strin
 
       DeviceEventEmitter.emit('watcher_watch_progress_changed', history);
 
-      // Push progress mutation to cloud sync in background
-      import('../cloudSync').then(({ queueCloudValue }) => {
-        const payload: Record<string, any> = {
-          [String(progress.tmdbId)]: {
-            progress: pos,
-            position: pos,
-            duration: dur,
-            percentage: Math.round(pct * 10) / 10,
-            completed: isCompleted,
-            season: progress.lastSeason,
-            episode: progress.lastEpisode,
-            lastSeason: progress.lastSeason,
-            lastEpisode: progress.lastEpisode,
-            tmdbId: progress.tmdbId,
-            mediaType: progress.mediaType,
-            title: progress.title,
-            poster: progress.poster,
-            updatedAt: updatedItem.updatedAt,
-          },
+      // Push progress mutation to cloud sync (coalesced/throttled during playback, immediate on completion)
+      const cloudPayload: Record<string, any> = {
+        [String(progress.tmdbId)]: {
+          progress: pos,
+          position: pos,
+          duration: dur,
+          percentage: Math.round(pct * 10) / 10,
+          completed: isCompleted,
+          season: progress.lastSeason,
+          episode: progress.lastEpisode,
+          lastSeason: progress.lastSeason,
+          lastEpisode: progress.lastEpisode,
+          tmdbId: progress.tmdbId,
+          mediaType: progress.mediaType,
+          title: progress.title,
+          poster: progress.poster,
+          updatedAt: updatedItem.updatedAt,
+        },
+      };
+      if (progress.mediaType === 'tv') {
+        cloudPayload[identity] = {
+          ...updatedItem,
         };
-        if (progress.mediaType === 'tv') {
-          payload[identity] = {
-            ...updatedItem,
-          };
-        }
-        queueCloudValue('watchProgress', payload);
-      }).catch(() => {});
+      }
+      scheduleCloudProgressSync(cloudPayload, isCompleted);
 
       // Silent taste event logging based on completion / drop thresholds
       if (nextProgress >= 0.75) {
@@ -245,6 +292,7 @@ export const removeProgress = async (tmdbId: number) => {
     await AsyncStorage.setItem(LEGACY_PROGRESS_KEY, serialized);
 
     DeviceEventEmitter.emit('watcher_watch_progress_changed', history);
+    queueCloudProgressRemoval(tmdbId);
   } catch (e) {
     console.error("Failed to remove progress", e);
   }

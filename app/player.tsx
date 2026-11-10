@@ -18,7 +18,7 @@ import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { getProgress, saveProgress, WatchProgress } from '../src/utils/progress';
+import { flushPendingCloudProgressSync, getProgress, saveProgress, WatchProgress } from '../src/utils/progress';
 import { getPlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
 import type { PlayerProvider, VideoFitMode } from '../src/utils/playerPreferences';
 import { findAdjacentEpisode, parseEpisodePosition, parseSeasonEpisodeCounts } from '../src/utils/playerEpisodes';
@@ -738,10 +738,14 @@ export default function Player() {
   const flushProgress = async () => {
     const { position, duration } = latestPositionRef.current;
     const saved = progressRef.current;
-    if (!saved && position <= 0) return;
+    if (!saved && position <= 0) {
+      await flushPendingCloudProgressSync();
+      return;
+    }
     const pos = position || saved?.position || 0;
     const dur = duration || saved?.duration || 0;
     await handleSaveProgress(pos, dur);
+    await flushPendingCloudProgressSync();
   };
 
   const handleSaveProgress = async (position = 0, duration = 0, completed?: boolean) => {

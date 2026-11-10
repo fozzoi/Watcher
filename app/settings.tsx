@@ -211,11 +211,17 @@ const Settings = () => {
     loadSettings();
     handleCheckUpdate(true); // Silent check on mount
     cloudSync.getAuthUser().then(u => setCloudUser(u));
+    const authListener = DeviceEventEmitter.addListener('watcher_cloud_auth_changed', (user: MobileUserProfile | null) => {
+      setCloudUser(user);
+    });
     const nsfwListener = DeviceEventEmitter.addListener('watcher_nsfw_setting_changed', (value: boolean) => {
       setIsNsfwFilter(value);
       setGlobalConfig('nsfwFilterEnabled', value);
     });
-    return () => nsfwListener.remove();
+    return () => {
+      authListener.remove();
+      nsfwListener.remove();
+    };
   }, []);
 
   const handleCloudDemoLogin = async () => {

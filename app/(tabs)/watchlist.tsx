@@ -30,6 +30,7 @@ import {
   subscribeToSavedItemsChanges,
 } from '../../src/database';
 import { syncSavedStore } from '../../src/state/savedState';
+import { pollCloudChangesIfStale } from '../../src/cloudSync';
 import { LoadingIndicator } from '../../src/components/shared/LoadingIndicator';
 import { getImageUrl, searchTMDB, GLOBAL_CONFIG, setGlobalConfig } from '../../src/tmdb';
 import { isAdultContent } from '../../src/contentSafety';
@@ -502,6 +503,7 @@ const WatchListPage = () => {
   useFocusEffect(
     useCallback(() => {
       loadData();
+      void pollCloudChangesIfStale(10000);
     }, [loadData])
   );
 

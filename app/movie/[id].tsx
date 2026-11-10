@@ -36,6 +36,7 @@ import {
   getCollectionDetails,
 } from '../../src/tmdb';
 import { getProgress, isEpisodeCompleted } from '../../src/utils/progress';
+import { pollCloudChangesIfStale } from '../../src/cloudSync';
 import {
   getSavedItems,
   addSavedItem,
@@ -1293,6 +1294,7 @@ export default function DetailPage() {
         prefetchSources(movie.id, movie.media_type, movie.title || movie.name || '', s, e);
       });
       syncSavedStore();
+      void pollCloudChangesIfStale(10000);
       return () => {
         isActive = false;
       };

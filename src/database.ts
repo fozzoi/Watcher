@@ -9,10 +9,17 @@ const savedItemsUiListeners = new Set<(type: SavedItemType) => void>();
 let cloudOnlyMode = false;
 const cloudItems: Record<SavedItemType, any[]> = { watchlist: [], history: [], artist: [] };
 
+const normalizeMediaType = (item: any): 'movie' | 'tv' | 'collection' => {
+  if (item?.media_type === 'tv') return 'tv';
+  if (item?.media_type === 'collection') return 'collection';
+  if (item?.media_type === 'movie') return 'movie';
+  return item?.first_air_date && !item?.release_date ? 'tv' : 'movie';
+};
+
 const itemRowId = (item: any, type: SavedItemType) => {
   const id = String(item?.id ?? item?.media_id ?? '');
   if (type === 'artist') return `${type}_${id}`;
-  return `${type}_${item?.media_type === 'tv' ? 'tv' : 'movie'}_${id}`;
+  return `${type}_${normalizeMediaType(item)}_${id}`;
 };
 
 export const subscribeToSavedItemsChanges = (listener: (type: SavedItemType) => void) => {
@@ -104,13 +111,14 @@ export const setCloudOnlyMode = (enabled: boolean, library?: any) => {
   if (!cloudOnlyMode) return;
   cloudOnlyMode = false;
   try {
+    const baseTime = Date.now();
     db.withTransactionSync(() => {
       db.runSync('DELETE FROM saved_items');
       const stmt = db.prepareSync('INSERT OR REPLACE INTO saved_items (id, media_id, type, data, created_at) VALUES (?, ?, ?, ?, ?)');
       for (const type of ['watchlist', 'history', 'artist'] as const) {
         cloudItems[type].forEach((item, index) => {
           const mediaId = Number(item?.id ?? item?.media_id);
-          if (Number.isFinite(mediaId)) stmt.executeSync([itemRowId(item, type), mediaId, type, JSON.stringify(item), Date.now() + index]);
+          if (Number.isFinite(mediaId)) stmt.executeSync([itemRowId(item, type), mediaId, type, JSON.stringify(item), baseTime - index]);
         });
       }
       stmt.finalizeSync();
@@ -119,6 +127,9 @@ export const setCloudOnlyMode = (enabled: boolean, library?: any) => {
   cloudItems.watchlist = [];
   cloudItems.history = [];
   cloudItems.artist = [];
+  notifySavedItemsUiListeners('watchlist');
+  notifySavedItemsUiListeners('history');
+  notifySavedItemsUiListeners('artist');
 };
 
 /**
@@ -211,7 +222,7 @@ export const hasSavedItem = (mediaId: number, type: SavedItemType): boolean => {
   }
 };
 
-export type SavedItemsMutation = { type: SavedItemType; action: 'add' | 'remove' | 'clear'; item?: any; mediaId?: number; mediaType?: 'movie' | 'tv' };
+export type SavedItemsMutation = { type: SavedItemType; action: 'add' | 'remove' | 'clear'; item?: any; mediaId?: number; mediaType?: 'movie' | 'tv' | 'collection' };
 let onSavedItemsChangedCallback: ((mutation: SavedItemsMutation) => void) | null = null;
 
 export const setOnSavedItemsChangedListener = (callback: ((mutation: SavedItemsMutation) => void) | null) => {
@@ -258,11 +269,15 @@ export const addSavedItem = (item: any, type: SavedItemType) => {
 /**
  * Remove an item from a specific list.
  */
-export const removeSavedItem = (mediaId: number, type: SavedItemType, mediaType?: 'movie' | 'tv') => {
+export const removeSavedItem = (mediaId: number, type: SavedItemType, mediaType?: 'movie' | 'tv' | 'collection') => {
   if (cloudOnlyMode) {
-    const removed = cloudItems[type].filter(item => Number(item?.id ?? item?.media_id) === Number(mediaId) && (!mediaType || (item?.media_type === 'tv' ? 'tv' : 'movie') === mediaType));
+    const removed = cloudItems[type].filter(item =>
+      Number(item?.id ?? item?.media_id) === Number(mediaId) &&
+      (type === 'artist' || !mediaType || normalizeMediaType(item) === mediaType)
+    );
     cloudItems[type] = cloudItems[type].filter(item => !removed.includes(item));
-    notifySavedItemsChanged({ type, action: 'remove', mediaId, mediaType: mediaType || (removed[0]?.media_type === 'tv' ? 'tv' : 'movie') });
+    const resolvedMediaType = type === 'artist' ? undefined : (mediaType || (removed[0] ? normalizeMediaType(removed[0]) : undefined));
+    notifySavedItemsChanged({ type, action: 'remove', mediaId, mediaType: resolvedMediaType });
     return;
   }
   try {
@@ -270,11 +285,11 @@ export const removeSavedItem = (mediaId: number, type: SavedItemType, mediaType?
     const removed = existing.filter(row => {
       if (type === 'artist' || !mediaType) return true;
       const item = JSON.parse(row.data);
-      return (item?.media_type === 'tv' ? 'tv' : 'movie') === mediaType;
+      return normalizeMediaType(item) === mediaType;
     });
-    if (!mediaType && type !== 'artist' && removed[0]) mediaType = JSON.parse(removed[0].data)?.media_type === 'tv' ? 'tv' : 'movie';
+    if (!mediaType && type !== 'artist' && removed[0]) mediaType = normalizeMediaType(JSON.parse(removed[0].data));
     for (const row of removed) db.runSync('DELETE FROM saved_items WHERE id = ?', [row.id]);
-    notifySavedItemsChanged({ type, action: 'remove', mediaId, mediaType });
+    notifySavedItemsChanged({ type, action: 'remove', mediaId, mediaType: type === 'artist' ? undefined : mediaType });
   } catch (error) {
     console.error(`Failed to remove item from ${type}:`, error);
   }

@@ -136,6 +136,7 @@ jest.mock('@expo/vector-icons', () => {
 jest.mock('../utils/progress', () => ({
   getProgress: (...args: any[]) => mockGetProgress(...args),
   saveProgress: jest.fn(async () => {}),
+  flushPendingCloudProgressSync: jest.fn(async () => {}),
 }));
 
 jest.mock('../utils/playerPreferences', () => ({
