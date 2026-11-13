@@ -5,6 +5,7 @@
   },
   "build": {
     "development": {
+      "environment": "production",
       "android": {
         "buildType": "apk"
       },

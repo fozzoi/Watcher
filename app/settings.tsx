@@ -45,8 +45,14 @@ import * as Crypto from 'expo-crypto';
 
 WebBrowser.maybeCompleteAuthSession();
 
-// Use the web client ID — works for browser-based OAuth on Android
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
+// Use Google Client IDs with durable fallbacks
+const DEFAULT_GOOGLE_CLIENT_ID = '36298979840-rl5fpn33hdisiks5f37mfso3n3jk2qur.apps.googleusercontent.com';
+const DEFAULT_GOOGLE_WEB_CLIENT_ID = '36298979840-vdgsir6fd1kkaj28m24r6mmdq7p1fdg7.apps.googleusercontent.com';
+
+const GOOGLE_CLIENT_ID =
+  Platform.OS === 'web'
+    ? (process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || DEFAULT_GOOGLE_WEB_CLIENT_ID)
+    : (process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID);
 
 
 interface DialogConfig {
@@ -178,31 +184,37 @@ const Settings = () => {
 
   const handleGoogleSignIn = async () => {
     setIsSyncingCloud(true);
+
+    // 1. On Android, attempt native One Tap first (fastest, seamless 1-tap UX in production builds)
     if (Platform.OS === 'android') {
       try {
+        console.log('[Auth] Attempting native Google One Tap sign-in...');
         const idToken = await signInWithNativeGoogle();
-        if (!idToken) {
-          setIsSyncingCloud(false);
+        if (idToken) {
+          console.log('[Auth] Native One Tap sign-in succeeded');
+          await handleGoogleLoginSuccess(idToken, 'idToken');
           return;
         }
-        await handleGoogleLoginSuccess(idToken, 'idToken');
-      } catch (error: any) {
-        setIsSyncingCloud(false);
-        showDialog({
-          title: 'Sign-In Failed',
-          message: error?.message || 'Native Google sign-in failed. Check the Android OAuth package name and signing SHA-1.',
-          type: 'danger',
-        });
+      } catch (nativeError: any) {
+        console.warn('[Auth] Native One Tap error:', nativeError?.message || nativeError);
       }
-      return;
+      console.log('[Auth] Native One Tap unavailable or returned no credential; falling back to browser OAuth...');
     }
 
+    // 2. Fall back to browser-based OAuth (works on dev builds, emulators, web, and custom builds)
     try {
+      console.log('[Auth] Opening browser Google Sign-In...');
       const result = await promptAsync();
-      if (result.type === 'cancel' || result.type === 'dismiss') setIsSyncingCloud(false);
+      if (result.type === 'cancel' || result.type === 'dismiss') {
+        setIsSyncingCloud(false);
+      }
     } catch (error: any) {
       setIsSyncingCloud(false);
-      showDialog({ title: 'Sign-In Failed', message: error?.message || 'Google OAuth failed.', type: 'danger' });
+      showDialog({
+        title: 'Sign-In Failed',
+        message: error?.message || 'Google OAuth failed. Please try again.',
+        type: 'danger',
+      });
     }
   };
   // ────────────────────────────────────────────────────────────────
@@ -831,7 +843,7 @@ const Settings = () => {
                 ) : (
                   <Ionicons name="logo-google" size={18} color={colors.onPrimary} />
                 )}
-                <Text style={styles.googleSignInText}>
+                <Text style={[styles.googleSignInText, { color: colors.onPrimary }]}>
                   {isSyncingCloud ? 'Signing in...' : 'Sign in with Google'}
                 </Text>
               </TouchableOpacity>
@@ -1139,7 +1151,6 @@ const styles = StyleSheet.create({
     marginVertical: 12,
   },
   googleSignInText: {
-    color: '#FFFFFF',
     fontSize: 15,
     fontFamily: 'GoogleSansFlex-Bold',
     letterSpacing: 0.2,
