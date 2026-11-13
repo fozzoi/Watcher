@@ -152,7 +152,7 @@ describe('Android cloudSync, database, and progress synchronization', () => {
     expect(mockAxiosPost).toHaveBeenCalledTimes(2);
     expect(mockAxiosPost.mock.calls[1][1].mutation.item.id).toBe(102);
     expect(JSON.parse(mockAsyncStorage.get('cloud_sync_outbox_v1:u-1') || '[]')).toEqual([]);
-    expect(mockAsyncStorage.get('cloud_sync_revision')).toBe('6');
+    expect(mockAsyncStorage.get('cloud_sync_revision')).toBe('4');
   });
 
   test('does not overwrite pending local edits when flush fails and pollCloudChanges runs', async () => {
@@ -316,6 +316,7 @@ describe('Android cloudSync, database, and progress synchronization', () => {
     mockAsyncStorage.set('cloud_auth_token', 'tok-1');
     mockAsyncStorage.set('cloud_auth_user', JSON.stringify({ userId: 'u-1', email: 'a@b.c', name: 'A', picture: '' }));
     mockAsyncStorage.set('cloud_sync_revision', '0');
+    mockAsyncStorage.set('cloud_sync_revision_repaired_v1:u-1', 'true');
 
     const database = require('../database') as typeof import('../database');
     const cloudSyncMod = require('../cloudSync') as typeof import('../cloudSync');

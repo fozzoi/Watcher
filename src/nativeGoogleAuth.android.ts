@@ -1,5 +1,6 @@
 import {
   GoogleOneTapSignIn,
+  isCancelledResponse,
   isNoSavedCredentialFoundResponse,
   isSuccessResponse,
 } from 'react-native-nitro-google-signin';
@@ -28,7 +29,14 @@ export async function signInWithNativeGoogle(): Promise<string | null> {
     result = await GoogleOneTapSignIn.presentExplicitSignIn();
   }
 
-  if (!isSuccessResponse(result)) return null;
+  if (!isSuccessResponse(result)) {
+    if (isCancelledResponse(result)) {
+      throw new Error(
+        "Google sign-in did not complete. If you selected an account, check that the Android OAuth client matches this app's package name and has the signing SHA-1 for this development build.",
+      );
+    }
+    throw new Error(`Google sign-in did not complete (status: ${result.type}).`);
+  }
   if (!result.data.idToken) throw new Error('Google did not return an ID token.');
   return result.data.idToken;
 }

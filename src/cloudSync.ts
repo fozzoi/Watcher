@@ -6,6 +6,54 @@ import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, setCloud
 import { GLOBAL_CONFIG, setGlobalConfig } from './tmdb';
 
 const AUTH_API_BASE = 'https://watcher-api-rho.vercel.app';
+
+function formatAxiosError(error: any): string {
+  if (!error) return 'Unknown error';
+  if (error.code === 'ECONNABORTED' || (typeof error.message === 'string' && error.message.toLowerCase().includes('timeout'))) {
+    const timeout = error.config?.timeout ? `${error.config.timeout}ms` : 'configured timeout';
+    return `Network timeout (${timeout} exceeded contacting server)`;
+  }
+  if (error.response) {
+    const status = error.response.status;
+    const serverErr = error.response.data?.error || error.response.data?.message;
+    return serverErr ? `Server error (${status}): ${serverErr}` : `HTTP ${status} (${error.response.statusText || 'Error'})`;
+  }
+  if (error.message === 'Network Error') {
+    return 'Network unreachable. Please check your internet connection or server status.';
+  }
+  if (error.request && !error.response) {
+    return `No response from server (${error.code || error.message || 'connection failed'})`;
+  }
+  return error.message || 'Sync failed';
+}
+
+function logSync(tag: string, message: string, meta?: any) {
+  const prefix = `[CloudSync:${tag}]`;
+  if (meta !== undefined) {
+    console.log(`${prefix} ${message}`, meta);
+  } else {
+    console.log(`${prefix} ${message}`);
+  }
+}
+
+function warnSync(tag: string, message: string, meta?: any) {
+  const prefix = `[CloudSync:${tag}]`;
+  if (meta !== undefined) {
+    console.warn(`${prefix} ${message}`, meta);
+  } else {
+    console.warn(`${prefix} ${message}`);
+  }
+}
+
+function errorSync(tag: string, message: string, meta?: any) {
+  const prefix = `[CloudSync:${tag}]`;
+  if (meta !== undefined) {
+    console.error(`${prefix} ${message}`, meta);
+  } else {
+    console.error(`${prefix} ${message}`);
+  }
+}
+
 let applyingRemoteChanges = false;
 let cloudMutationQueuePaused = false;
 let outboxLock: Promise<unknown> = Promise.resolve();
@@ -209,12 +257,16 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
   if (!ignoreBackoff && Date.now() < retryAfter) {
     const user = await cloudSync.getAuthUser();
     const remaining = user ? (await readOutboxRaw(user.userId)).length : 0;
+    logSync('Outbox', `Backoff active (${Math.max(0, retryAfter - Date.now())}ms remaining), skipping flush`);
     return { flushed: remaining === 0, remaining };
   }
 
   const run = (async (): Promise<FlushResult> => {
     const [user, token] = await Promise.all([cloudSync.getAuthUser(), cloudSync.getAuthToken()]);
-    if (!user || !token) return { flushed: false, remaining: 0, error: 'Not signed in' };
+    if (!user || !token) {
+      warnSync('Outbox', 'Cannot flush: user not signed in');
+      return { flushed: false, remaining: 0, error: 'Not signed in' };
+    }
 
     let lastError: string | undefined;
     try {
@@ -236,14 +288,23 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
         }
 
         inFlightOperationId = operation.operationId;
+        const opStart = Date.now();
         try {
           const isSnapshotMerge = operation.type === 'librarySnapshotMerge' && operation.action === 'merge';
           const requestBody = isSnapshotMerge
             ? { ...(operation.value || {}), mode: 'merge' }
             : { action: 'mutate', mutation: operation };
+          const timeout = isSnapshotMerge ? 45000 : 30000;
+          const bodySizeKb = (JSON.stringify(requestBody).length / 1024).toFixed(1);
+          logSync('Outbox', `Flushing op type=${operation.type} action=${operation.action} mediaId=${operation.mediaId ?? operation.item?.id ?? 'none'} opId=${operation.operationId} (~${bodySizeKb} KB, timeout ${timeout}ms)...`);
+
           const response = await axios.post(`${AUTH_API_BASE}/api/sync`, requestBody, {
-            headers: { Authorization: `Bearer ${token}` }, timeout: 12000,
+            headers: { Authorization: `Bearer ${token}` },
+            timeout,
           });
+
+          logSync('Outbox', `SUCCESS opId=${operation.operationId} in ${Date.now() - opStart}ms: status=${response.data?.status} rev=${response.data?.revision ?? '?'}`);
+
           await withOutboxLock(async () => {
             const current = await readOutboxRaw(user.userId);
             const next = current.filter((op: any) => op?.operationId !== operation.operationId);
@@ -258,8 +319,11 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
           retryDelay = 1000;
         } catch (error: any) {
           const status = error?.response?.status;
+          const elapsed = Date.now() - opStart;
+          const formattedErr = formatAxiosError(error);
+
           if (status === 400) {
-            console.warn('Dropping invalid cloud mutation from queue:', operation?.type, error?.response?.data);
+            warnSync('Outbox', `Dropping invalid mutation (${status}) after ${elapsed}ms: ${formattedErr}`, { type: operation?.type, data: error?.response?.data });
             await withOutboxLock(async () => {
               const current = await readOutboxRaw(user.userId);
               const next = current.filter((op: any) => op?.operationId !== operation.operationId);
@@ -268,13 +332,19 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
             continue;
           }
           if (status === 401) {
+            warnSync('Outbox', `Session expired (401) after ${elapsed}ms; handling sign out`);
             await handleExpiredSession();
             return { flushed: false, remaining: 0, error: 'Session expired. Please sign in again.' };
           }
+
           retryAfter = Date.now() + retryDelay;
           retryDelay = Math.min(30000, retryDelay * 2);
-          lastError = error?.response?.data?.error || error.message || 'Cloud sync failed';
-          console.warn('Cloud edit saved for retry:', error?.response?.data || error.message);
+          lastError = formattedErr;
+          warnSync('Outbox', `Failed to flush edit after ${elapsed}ms (retry in ${retryDelay / 1000}s): ${formattedErr}`, {
+            status,
+            code: error?.code,
+            details: error?.response?.data,
+          });
           const remaining = await withOutboxLock(async () => (await readOutboxRaw(user.userId)).length);
           return { flushed: false, remaining, error: lastError };
         } finally {
@@ -409,19 +479,27 @@ export async function prepareCloudSessionOnStartup(): Promise<void> {
 }
 
 async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean }): Promise<PollResult> {
-  if (initialMergeInFlight) return { ok: false, error: 'Initial library merge is already running' };
+  if (initialMergeInFlight) {
+    logSync('Poll', 'Bailing: initial library merge is already in flight');
+    return { ok: false, error: 'Initial library merge is already running' };
+  }
   if (inFlightPollPromise) return inFlightPollPromise;
 
   const run = (async (): Promise<PollResult> => {
+    const pollStart = Date.now();
     try {
       const [token, user] = await Promise.all([cloudSync.getAuthToken(), cloudSync.getAuthUser()]);
-      if (!token || !user) return { ok: false, error: 'Sign in to sync your library' };
+      if (!token || !user) {
+        logSync('Poll', 'Bailing: not signed in');
+        return { ok: false, error: 'Sign in to sync your library' };
+      }
 
       // Ensure pending local mutations are serialized and flushed before pulling
       // remote state so snapshots never clobber unsynced local edits.
       await waitForPendingOutboxWrites();
       const flushResult = await flushCloudOutbox({ ignoreBackoff: options?.ignoreBackoff });
       if (!flushResult.flushed || flushResult.remaining > 0) {
+        warnSync('Poll', `Outbox has ${flushResult.remaining} pending edits that could not be uploaded`, flushResult.error);
         return { ok: false, error: flushResult.error || 'Could not upload local edits yet' };
       }
 
@@ -429,15 +507,25 @@ async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean })
       // from other devices. Rebuild this account's local view once from the cloud.
       const repairKey = revisionRepairKey(user.userId);
       if (await AsyncStorage.getItem(repairKey) === null) {
+        logSync('Poll', `Running one-time revision repair for user ${user.userId}`);
         await AsyncStorage.removeItem('cloud_sync_revision');
         await AsyncStorage.setItem(repairKey, 'true');
       }
 
       const savedRevision = await AsyncStorage.getItem('cloud_sync_revision');
+      logSync('Poll', `Checking cloud changes... localRev=${savedRevision ?? 'none'}`);
+
       if (savedRevision === null) {
+        logSync('Poll', 'Local revision is null; fetching full snapshot...');
         setCloudOnlyMode(true);
-        const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+        const snapStart = Date.now();
+        const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 45000,
+        });
         if (snapshot.data?.library) {
+          const lib = snapshot.data.library;
+          logSync('Poll', `Full snapshot received in ${Date.now() - snapStart}ms: rev=${snapshot.data.revision} watchlist=${lib.watchlist?.length ?? 0} history=${lib.history?.length ?? 0}`);
           await applyCloudLibrary(snapshot.data.library, Number(snapshot.data.revision || 0));
           lastPollAt = Date.now();
           return { ok: true, updated: true };
@@ -446,11 +534,16 @@ async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean })
       }
 
       const revision = Number(savedRevision || 0);
+      const deltaStart = Date.now();
       const response = await axios.get(`${AUTH_API_BASE}/api/sync?since_revision=${revision}`, {
-        headers: { Authorization: `Bearer ${token}` }, timeout: 12000,
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 25000,
       });
       const nextRevision = Number(response.data?.revision || 0);
+      logSync('Poll', `Delta GET in ${Date.now() - deltaStart}ms: server rev=${nextRevision} status=${response.data?.status}`);
+
       if (!nextRevision || nextRevision <= revision) {
+        logSync('Poll', `Up to date (local rev=${revision}, server rev=${nextRevision}) in ${Date.now() - pollStart}ms`);
         lastPollAt = Date.now();
         return { ok: true, updated: false };
       }
@@ -468,6 +561,7 @@ async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean })
           )
         );
       if (response.data?.status === 'delta' && completeDelta) {
+        logSync('Poll', `Applying ${changes.length} delta mutations (rev ${revision + 1}..${nextRevision})...`);
         applyingRemoteChanges = true;
         try {
           let savedCollections: any[] | null = null;
@@ -534,24 +628,38 @@ async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean })
         await AsyncStorage.setItem('cloud_sync_revision', String(nextRevision));
         await persistCurrentSnapshotCache(user.userId);
         lastPollAt = Date.now();
+        logSync('Poll', `Delta applied successfully (rev=${nextRevision}) in ${Date.now() - pollStart}ms`);
         return { ok: true, updated: true };
       }
 
-      const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+      logSync('Poll', 'Delta incomplete or fell through; downloading full snapshot...');
+      const snapStart = Date.now();
+      const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 45000,
+      });
       if (snapshot.data?.library) {
+        const lib = snapshot.data.library;
+        logSync('Poll', `Full snapshot applied in ${Date.now() - snapStart}ms: rev=${snapshot.data.revision || nextRevision} watchlist=${lib.watchlist?.length ?? 0} history=${lib.history?.length ?? 0}`);
         await applyCloudLibrary(snapshot.data.library, Number(snapshot.data.revision || nextRevision));
         lastPollAt = Date.now();
         return { ok: true, updated: true };
       }
       return { ok: false, error: 'Cloud response did not include a library' };
     } catch (error: any) {
+      const elapsed = Date.now() - pollStart;
+      const formattedErr = formatAxiosError(error);
       if (error?.response?.status === 401) {
+        warnSync('Poll', `Session expired (401) after ${elapsed}ms; handling sign out`);
         await handleExpiredSession();
         return { ok: false, error: 'Session expired. Please sign in again.' };
       }
-      const message = error?.response?.data?.error || error.message || 'Cloud sync check failed';
-      console.warn('Cloud sync check failed:', error?.response?.data || error.message);
-      return { ok: false, error: message };
+      warnSync('Poll', `Poll failed after ${elapsed}ms: ${formattedErr}`, {
+        status: error?.response?.status,
+        code: error?.code,
+        message: error?.message,
+      });
+      return { ok: false, error: formattedErr };
     }
   })();
 
@@ -607,14 +715,17 @@ export const cloudSync = {
    * Sign in with Google Token or Credentials
    */
   async loginWithGoogle(idToken?: string, accessToken?: string): Promise<{ success: boolean; user?: MobileUserProfile; error?: string }> {
+    const loginStart = Date.now();
     try {
+      logSync('Auth', 'Initiating Google mobile login...');
       const response = await axios.post(`${AUTH_API_BASE}/api/auth`, {
         idToken,
         accessToken,
-      }, { timeout: 12000 });
+      }, { timeout: 25000 });
 
       const { user, token } = response.data;
       if (!user || !token) throw new Error('Invalid response from auth server');
+      logSync('Auth', `Google login success in ${Date.now() - loginStart}ms for userId=${user.userId}`);
       await prepareLocalLibraryForAccount(user.userId);
 
       await Promise.all([
@@ -628,8 +739,9 @@ export const cloudSync = {
 
       return { success: true, user };
     } catch (err: any) {
-      console.error('Google mobile login failed:', err?.response?.data || err.message);
-      return { success: false, error: err?.response?.data?.error || err.message || 'Login failed' };
+      const formattedErr = formatAxiosError(err);
+      errorSync('Auth', `Google mobile login failed in ${Date.now() - loginStart}ms: ${formattedErr}`, err?.response?.data || err.message);
+      return { success: false, error: formattedErr };
     }
   },
 
@@ -637,13 +749,16 @@ export const cloudSync = {
    * 1-Click Demo / Test Account Sign-In
    */
   async loginWithDemo(): Promise<{ success: boolean; user?: MobileUserProfile; error?: string }> {
+    const loginStart = Date.now();
     try {
+      logSync('Auth', 'Initiating Demo account login...');
       const response = await axios.post(`${AUTH_API_BASE}/api/auth`, {
         action: 'demo',
-      }, { timeout: 12000 });
+      }, { timeout: 25000 });
 
       const { user, token } = response.data;
       if (!user || !token) throw new Error('Invalid response from auth server');
+      logSync('Auth', `Demo login success in ${Date.now() - loginStart}ms for userId=${user.userId}`);
       await prepareLocalLibraryForAccount(user.userId);
 
       await Promise.all([
@@ -656,8 +771,9 @@ export const cloudSync = {
 
       return { success: true, user };
     } catch (err: any) {
-      console.error('Demo mobile login failed:', err?.response?.data || err.message);
-      return { success: false, error: err?.message || 'Demo login failed' };
+      const formattedErr = formatAxiosError(err);
+      errorSync('Auth', `Demo mobile login failed in ${Date.now() - loginStart}ms: ${formattedErr}`, err?.response?.data || err.message);
+      return { success: false, error: formattedErr };
     }
   },
 
@@ -666,6 +782,7 @@ export const cloudSync = {
    */
   async logout(): Promise<void> {
     const user = await this.getAuthUser();
+    logSync('Auth', `Logging out user ${user?.userId || 'unknown'}`);
     try {
       await this.syncWithCloud();
     } catch {
@@ -685,29 +802,43 @@ export const cloudSync = {
    * Full bi-directional sync with cloud
    */
   async mergeLocalWithCloud(): Promise<{ success: boolean; error?: string; message?: string }> {
+    const mergeStart = Date.now();
     const token = await this.getAuthToken();
     if (!token) {
+      warnSync('Merge', 'Bailing: not signed in');
       return { success: false, error: 'Sign in to sync your library' };
     }
-    if (initialMergeInFlight) return { success: false, error: 'Initial library merge is already running' };
+    if (initialMergeInFlight) {
+      warnSync('Merge', 'Bailing: merge already in flight');
+      return { success: false, error: 'Initial library merge is already running' };
+    }
     initialMergeInFlight = true;
 
     try {
       await waitForPendingOutboxWrites();
+      logSync('Merge', 'Flushing outbox before snapshot merge...');
       await flushCloudOutbox({ ignoreBackoff: true });
+
       const knownRevision = Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0);
       if (knownRevision > 0) {
+        logSync('Merge', `Checking delta since rev=${knownRevision}...`);
         const delta = await axios.get(`${AUTH_API_BASE}/api/sync?since_revision=${knownRevision}`, {
-          headers: { Authorization: `Bearer ${token}` }, timeout: 12000,
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 25000,
         });
         if (Array.isArray(delta.data?.changes) && delta.data.changes.some((change: any) => change.action === 'clear' && !change.type)) {
-          const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+          logSync('Merge', 'Clear action detected in delta; fetching clean cloud snapshot...');
+          const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, {
+            headers: { Authorization: `Bearer ${token}` },
+            timeout: 45000,
+          });
           if (snapshot.data?.library) {
             await applyCloudLibrary(snapshot.data.library, Number(snapshot.data.revision || delta.data.revision || 0));
             return { success: true, message: 'Cloud library reset applied' };
           }
         }
       }
+
       // 1. Gather local SQLite items and watch progress
       const localWatchlist = getSavedItems('watchlist') || [];
       const localHistory = getSavedItems('history') || [];
@@ -734,18 +865,25 @@ export const cloudSync = {
         } catch {}
       }
 
-      // 2. Post to cloud sync endpoint
+      const payloadKb = (JSON.stringify(payload).length / 1024).toFixed(1);
+      logSync('Merge', `Uploading full local library (~${payloadKb} KB): watchlist=${localWatchlist.length}, history=${localHistory.length}, artists=${localArtists.length}, progress=${Object.keys(localProgress).length}...`);
+
+      // 2. Post to cloud sync endpoint with retry
       let response: any;
       for (let attempt = 0; attempt < 4; attempt++) {
         try {
+          const attemptStart = Date.now();
           response = await axios.post(`${AUTH_API_BASE}/api/sync`, payload, {
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            timeout: 15000,
+            timeout: 45000,
           });
+          logSync('Merge', `POST snapshot attempt ${attempt + 1} succeeded in ${Date.now() - attemptStart}ms`);
           break;
         } catch (error: any) {
+          const formattedErr = formatAxiosError(error);
+          warnSync('Merge', `POST snapshot attempt ${attempt + 1} failed: ${formattedErr}`, { status: error?.response?.status, code: error?.code });
           if (error?.response?.status !== 409 || attempt === 3) throw error;
-          await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+          await new Promise(resolve => setTimeout(resolve, 200 * (attempt + 1)));
         }
       }
 
@@ -754,31 +892,46 @@ export const cloudSync = {
         throw new Error('Sync response did not contain library data');
       }
 
+      logSync('Merge', `Applying merged library (revision ${response.data?.revision}): watchlist=${merged.watchlist?.length ?? 0}, history=${merged.history?.length ?? 0}`);
       await applyCloudLibrary(merged, Number(response.data?.revision || 0));
       await AsyncStorage.setItem('last_cloud_sync_time', new Date().toISOString());
       lastPollAt = Date.now();
 
+      logSync('Merge', `Full merge completed successfully in ${Date.now() - mergeStart}ms`);
       return {
         success: true,
         message: `Synced ${merged.watchlist?.length || 0} watchlist, ${merged.history?.length || 0} history items`
       };
     } catch (err: any) {
+      const elapsed = Date.now() - mergeStart;
+      const formattedErr = formatAxiosError(err);
       if (err?.response?.status === 401) {
+        warnSync('Merge', `Session expired (401) after ${elapsed}ms; handling sign out`);
         await handleExpiredSession();
       }
-      console.error('Mobile cloud sync error:', err?.response?.data || err.message);
-      return { success: false, error: err?.response?.data?.error || err.message || 'Sync failed' };
-    } finally { initialMergeInFlight = false; }
+      errorSync('Merge', `Full merge failed after ${elapsed}ms: ${formattedErr}`, {
+        status: err?.response?.status,
+        code: err?.code,
+        message: err?.message,
+      });
+      return { success: false, error: formattedErr };
+    } finally {
+      initialMergeInFlight = false;
+    }
   },
 
   async syncWithCloud(): Promise<{ success: boolean; error?: string; message?: string }> {
+    const syncStart = Date.now();
+    logSync('Sync', 'Triggering syncWithCloud...');
     const token = await this.getAuthToken();
     if (!token) return { success: false, error: 'Sign in to sync your library' };
     const result = await pollCloudChangesWithResult({ ignoreBackoff: true });
     if (!result.ok) {
+      warnSync('Sync', `syncWithCloud failed in ${Date.now() - syncStart}ms: ${result.error}`);
       return { success: false, error: result.error || 'Sync failed' };
     }
     await AsyncStorage.setItem('last_cloud_sync_time', new Date().toISOString());
+    logSync('Sync', `syncWithCloud finished in ${Date.now() - syncStart}ms (updated=${result.updated})`);
     return {
       success: true,
       message: result.updated ? 'Synced latest cloud updates' : 'Cloud library is up to date',

@@ -246,15 +246,18 @@ const Settings = () => {
 
   const handleManualCloudSync = async () => {
     setIsSyncingCloud(true);
+    console.log('[Settings:Sync] Manual cloud sync initiated by user');
     const res = await cloudSync.syncWithCloud();
     setIsSyncingCloud(false);
     if (res.success) {
+      console.log('[Settings:Sync] Manual cloud sync succeeded:', res.message);
       showDialog({
         title: "Library Synced! 🎉",
         message: res.message || "All items synchronized with Watcher Cloud.",
         type: "success",
       });
     } else {
+      console.warn('[Settings:Sync] Manual cloud sync failed:', res.error);
       showDialog({
         title: "Sync Failed",
         message: res.error || "Could not sync with cloud.",
