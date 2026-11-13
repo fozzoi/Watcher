@@ -13,7 +13,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 import {
   getSavedItems,
-  addSavedItem,
+  batchRestoreSavedItems,
   getRecentTasteEvents,
   restoreTasteEvents,
   getForYouCachedShelves,
@@ -90,6 +90,7 @@ const Settings = () => {
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
 
   const [refreshing, setRefreshing] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   const showToast = (message: string) => {
     if (Platform.OS === 'android') {
@@ -258,8 +259,8 @@ const Settings = () => {
 
   const handleManualCloudSync = async () => {
     setIsSyncingCloud(true);
-    console.log('[Settings:Sync] Manual cloud sync initiated by user');
-    const res = await cloudSync.syncWithCloud();
+    console.log('[Settings:Sync] Manual cloud sync initiated by user — running full mergeLocalWithCloud...');
+    const res = await cloudSync.mergeLocalWithCloud();
     setIsSyncingCloud(false);
     if (res.success) {
       console.log('[Settings:Sync] Manual cloud sync succeeded:', res.message);
@@ -542,26 +543,21 @@ const Settings = () => {
       const result = await DocumentPicker.getDocumentAsync({ type: ['application/json', '*/*'], copyToCacheDirectory: true });
       if (result.canceled || !result.assets || result.assets.length === 0) return;
 
+      setIsRestoring(true);
       const fileUri = result.assets[0].uri;
       const response = await fetch(fileUri);
       const fileContent = await response.text();
       const backupData = JSON.parse(fileContent);
 
-      let restoredTotal = 0;
-      await withCloudMutationQueuePaused(() => {
-        if (backupData.watchlist && Array.isArray(backupData.watchlist)) {
-          backupData.watchlist.forEach((i: any) => addSavedItem(i, 'watchlist'));
-          restoredTotal += backupData.watchlist.length;
-        }
-        if (backupData.artists && Array.isArray(backupData.artists)) {
-          backupData.artists.forEach((i: any) => addSavedItem(i, 'artist'));
-          restoredTotal += backupData.artists.length;
-        }
-        if (backupData.history && Array.isArray(backupData.history)) {
-          backupData.history.forEach((i: any) => addSavedItem(i, 'history'));
-          restoredTotal += backupData.history.length;
-        }
+      // Fast, batched restore using single SQLite transaction & Map deduplication
+      const { restoredCount } = batchRestoreSavedItems({
+        watchlist: backupData.watchlist,
+        artist: backupData.artists || backupData.favoriteArtists,
+        history: backupData.history,
       });
+
+      let restoredTotal = restoredCount;
+
       if (backupData.tasteEvents && Array.isArray(backupData.tasteEvents)) {
         restoreTasteEvents(backupData.tasteEvents);
         restoredTotal += backupData.tasteEvents.length;
@@ -578,16 +574,24 @@ const Settings = () => {
       }
 
       if (restoredTotal > 0) {
-        let cloudMessage = '';
-        if (await cloudSync.getAuthUser()) {
-          const syncResult = await queueCloudLibrarySnapshotMerge();
-          cloudMessage = syncResult.flushed && syncResult.remaining === 0
-            ? '\n\nMerged into your cloud library.'
-            : `\n\nSaved on this device. Cloud merge is queued for retry${syncResult.error ? `: ${syncResult.error}` : '.'}`;
+        // Asynchronously sync restored items up to cloud in background so UI never freezes or blocks navigation
+        const authUser = await cloudSync.getAuthUser();
+        if (authUser) {
+          queueCloudLibrarySnapshotMerge()
+            .then((syncResult) => {
+              console.log('[Settings:Restore] Background cloud snapshot merge finished:', syncResult);
+              if (syncResult.flushed && syncResult.remaining === 0) {
+                showToast('Cloud sync complete ☁️');
+              }
+            })
+            .catch((err) => {
+              console.warn('[Settings:Restore] Background cloud sync error:', err);
+            });
         }
+
         showDialog({
           title: "Backup Restored! 🎉",
-          message: `Successfully restored ${restoredTotal} items.\n\nGo back to your Library to see them.${cloudMessage}`,
+          message: `Successfully restored ${restoredTotal} items.\n\nGo back to your Library to see them.${authUser ? '\n\nRestored items are syncing to your cloud account in the background.' : ''}`,
           type: "success",
         });
       } else {
@@ -603,6 +607,8 @@ const Settings = () => {
         message: "Make sure you selected a valid Watcher Backup .json file.",
         type: "danger",
       });
+    } finally {
+      setIsRestoring(false);
     }
   };
 
@@ -735,14 +741,23 @@ const Settings = () => {
     );
   };
 
-  const ActionRow = ({ title, subtitle, onPress, destructive }: any) => {
+  const ActionRow = ({ title, subtitle, onPress, destructive, disabled, loading }: any) => {
     return (
-      <TouchableOpacity activeOpacity={0.6} onPress={onPress} style={styles.row}>
+      <TouchableOpacity
+        activeOpacity={0.6}
+        onPress={onPress}
+        disabled={disabled || loading}
+        style={[styles.row, disabled && { opacity: 0.6 }]}
+      >
         <View style={styles.rowText}>
           <Text style={[styles.rowTitle, { color: colors.text }, destructive && { color: colors.error }]}>{title}</Text>
           <Text style={[styles.rowSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
         </View>
-        <Feather name="chevron-right" size={20} color={colors.textSecondary} />
+        {loading ? (
+          <LoadingIndicator size={20} color={colors.primary} />
+        ) : (
+          <Feather name="chevron-right" size={20} color={colors.textSecondary} />
+        )}
       </TouchableOpacity>
     );
   };
@@ -1007,8 +1022,10 @@ const Settings = () => {
           <SettingSeparator />
           <ActionRow 
             title="Restore Backup" 
-            subtitle="Import from a .json backup file" 
-            onPress={handleRestoreBackup} 
+            subtitle={isRestoring ? "Restoring and syncing..." : "Import from a .json backup file"} 
+            onPress={handleRestoreBackup}
+            disabled={isRestoring}
+            loading={isRestoring}
           />
           <SettingSeparator />
           <ActionRow 

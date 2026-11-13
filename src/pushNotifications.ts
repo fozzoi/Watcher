@@ -206,7 +206,7 @@ export async function syncPushTokenAndWatchlist(tokenOverride?: string): Promise
     await axios.post(
       `${WATCHER_API_BASE}/api/push-token`,
       payload,
-      { timeout: 8000 }
+      { timeout: 25000 }
     );
     await AsyncStorage.setItem(STORAGE_KEY_SYNCED_TOKEN, token);
 

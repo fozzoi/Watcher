@@ -1,98 +1,98 @@
-# name: Build Expo APK
-on:
-  push:
-    branches:
-      - master
-      - main
-  workflow_dispatch:
+# # name: Build Expo APK
+# on:
+#   push:
+#     branches:
+#       - master
+#       - main
+#   workflow_dispatch:
 
-# Required to allow the workflow to create a GitHub Release
-permissions:
-  contents: write
+# # Required to allow the workflow to create a GitHub Release
+# permissions:
+#   contents: write
 
-jobs:
-  build:
-    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message || '', '[skip-apk]') }}
-    runs-on: ubuntu-latest
-    env:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+# jobs:
+#   build:
+#     if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message || '', '[skip-apk]') }}
+#     runs-on: ubuntu-latest
+#     env:
+#       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
+#       - name: Setup Node
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: 22
 
-      - name: Install EAS CLI
-        run: npm install -g eas-cli
+#       - name: Install EAS CLI
+#         run: npm install -g eas-cli
 
-      - name: Install dependencies
-        run: npm install
+#       - name: Install dependencies
+#         run: npm install
 
-      - name: Read app version
-        id: app
-        shell: bash
-        run: |
-          version="$(node -p "require('./app.json').expo.version")"
-          if [ -z "$version" ] || [ "$version" = "undefined" ]; then
-            echo "Error: Failed to read valid version from app.json" >&2
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Building app version: $version"
+#       - name: Read app version
+#         id: app
+#         shell: bash
+#         run: |
+#           version="$(node -p "require('./app.json').expo.version")"
+#           if [ -z "$version" ] || [ "$version" = "undefined" ]; then
+#             echo "Error: Failed to read valid version from app.json" >&2
+#             exit 1
+#           fi
+#           echo "version=$version" >> "$GITHUB_OUTPUT"
+#           echo "Building app version: $version"
 
-      - name: Build production APK with EAS
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        shell: bash
-        run: |
-          eas build --platform android --profile production --non-interactive --wait --json > build.json
-          build_id="$(jq -r 'if type == "array" then .[0].id else .id end' build.json)"
-          test -n "$build_id" && test "$build_id" != "null"
-          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
+#       - name: Build production APK with EAS
+#         env:
+#           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+#         shell: bash
+#         run: |
+#           eas build --platform android --profile production --non-interactive --wait --json > build.json
+#           build_id="$(jq -r 'if type == "array" then .[0].id else .id end' build.json)"
+#           test -n "$build_id" && test "$build_id" != "null"
+#           echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
 
-      - name: Download EAS APK
-        id: artifact
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        shell: bash
-        run: |
-          eas build:download --build-id "$(jq -r 'if type == "array" then .[0].id else .id end' build.json)" --non-interactive 2>&1 | tee download.log
-          apk="$(sed -n 's/^Build downloaded to //p' download.log | tail -n 1)"
-          test -n "$apk"
-          test -f "$apk"
-          mv "$apk" watcher.apk
+#       - name: Download EAS APK
+#         id: artifact
+#         env:
+#           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+#         shell: bash
+#         run: |
+#           eas build:download --build-id "$(jq -r 'if type == "array" then .[0].id else .id end' build.json)" --non-interactive 2>&1 | tee download.log
+#           apk="$(sed -n 's/^Build downloaded to //p' download.log | tail -n 1)"
+#           test -n "$apk"
+#           test -f "$apk"
+#           mv "$apk" watcher.apk
 
-      - name: Upload to GitHub Releases
-        uses: softprops/action-gh-release@v2
-        with:
-          files: watcher.apk
-          tag_name: "v${{ steps.app.outputs.version }}"
-          name: "The Watcher ${{ steps.app.outputs.version }}"
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#       - name: Upload to GitHub Releases
+#         uses: softprops/action-gh-release@v2
+#         with:
+#           files: watcher.apk
+#           tag_name: "v${{ steps.app.outputs.version }}"
+#           name: "The Watcher ${{ steps.app.outputs.version }}"
+#           generate_release_notes: true
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Broadcast update notification to all devices via Expo Push API
-      - name: Broadcast App Update Push Notification
-        if: success()
-        run: |
-          VERSION="${{ steps.app.outputs.version }}"
-          if [ -z "$VERSION" ]; then
-            VERSION="$(jq -r '.expo.version // empty' app.json)"
-          fi
-          if [ -z "$VERSION" ]; then
-            echo "Error: Failed to determine app version for push notification broadcast" >&2
-            exit 1
-          fi
-          echo "Broadcasting push notification for version $VERSION..."
-          curl --fail-with-body --silent --show-error --retry 3 -X POST "https://watcher-api-rho.vercel.app/api/notify-update" \
-            -H "Content-Type: application/json" \
-            -H "x-notify-secret: ${{ secrets.NOTIFY_SECRET }}" \
-            -d "{
-              \"version\": \"$VERSION\",
-              \"releaseName\": \"The Watcher $VERSION\",
-              \"apkUrl\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"
-            }"
+#       # Broadcast update notification to all devices via Expo Push API
+#       - name: Broadcast App Update Push Notification
+#         if: success()
+#         run: |
+#           VERSION="${{ steps.app.outputs.version }}"
+#           if [ -z "$VERSION" ]; then
+#             VERSION="$(jq -r '.expo.version // empty' app.json)"
+#           fi
+#           if [ -z "$VERSION" ]; then
+#             echo "Error: Failed to determine app version for push notification broadcast" >&2
+#             exit 1
+#           fi
+#           echo "Broadcasting push notification for version $VERSION..."
+#           curl --fail-with-body --silent --show-error --retry 3 -X POST "https://watcher-api-rho.vercel.app/api/notify-update" \
+#             -H "Content-Type: application/json" \
+#             -H "x-notify-secret: ${{ secrets.NOTIFY_SECRET }}" \
+#             -d "{
+#               \"version\": \"$VERSION\",
+#               \"releaseName\": \"The Watcher $VERSION\",
+#               \"apkUrl\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"
+#             }"

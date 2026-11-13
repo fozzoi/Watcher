@@ -102,17 +102,19 @@ export default function RootLayout() {
       }
     })();
 
-    // Automatically sync push token and watchlist whenever changed
-    const unsubscribeSaved = addSavedItemsChangeListener(() => {
-      syncPushTokenAndWatchlist().catch((err) =>
-        console.log('Watchlist push sync error:', err)
-      );
-    });
-    setOnPreferencesChangedListener(() => {
-      syncPushTokenAndWatchlist().catch((err) =>
-        console.log('Preference push sync error:', err)
-      );
-    });
+    // Automatically sync push token and watchlist whenever changed (debounced)
+    let pushSyncDebounceTimer: any = null;
+    const triggerDebouncedPushSync = () => {
+      if (pushSyncDebounceTimer) clearTimeout(pushSyncDebounceTimer);
+      pushSyncDebounceTimer = setTimeout(() => {
+        syncPushTokenAndWatchlist().catch((err) =>
+          console.log('Watchlist push sync error:', err)
+        );
+      }, 4000);
+    };
+
+    const unsubscribeSaved = addSavedItemsChangeListener(triggerDebouncedPushSync);
+    setOnPreferencesChangedListener(triggerDebouncedPushSync);
 
     const syncIfActive = () => {
       if (AppState.currentState === 'active') pollCloudChanges();

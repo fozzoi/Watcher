@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import * as Crypto from 'expo-crypto';
 import { DeviceEventEmitter } from 'react-native';
-import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, setCloudOnlyMode, SavedItemsMutation, setOnSavedItemsChangedListener } from './database';
+import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, setCloudOnlyMode, SavedItemsMutation, setOnSavedItemsChangedListener, addSavedItemsChangeListener } from './database';
 import { GLOBAL_CONFIG, setGlobalConfig } from './tmdb';
 
 const AUTH_API_BASE = 'https://watcher-api-rho.vercel.app';
@@ -54,6 +54,30 @@ function errorSync(tag: string, message: string, meta?: any) {
   }
 }
 
+function sanitizeAiChatForSync(chatData: any) {
+  if (!chatData || typeof chatData !== 'object') return undefined;
+  const conversations = Array.isArray(chatData.conversations)
+    ? chatData.conversations.slice(0, 10).map((c: any) => ({
+        id: String(c.id || '').slice(0, 64),
+        title: String(c.title || '').slice(0, 100),
+        updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : Date.now(),
+        messages: Array.isArray(c.messages)
+          ? c.messages.slice(-15).map((m: any) => ({
+              id: m.id,
+              role: m.role,
+              text: String(m.text || '').slice(0, 1500),
+              timestamp: m.timestamp || Date.now(),
+            }))
+          : [],
+      }))
+    : [];
+  return {
+    conversations,
+    userMemory: typeof chatData.userMemory === 'string' ? chatData.userMemory.slice(0, 4000) : '',
+    aiName: typeof chatData.aiName === 'string' ? chatData.aiName.slice(0, 50) : 'Cine',
+  };
+}
+
 let applyingRemoteChanges = false;
 let cloudMutationQueuePaused = false;
 let outboxLock: Promise<unknown> = Promise.resolve();
@@ -64,6 +88,7 @@ let initialMergeInFlight = false;
 let retryDelay = 1000;
 let retryAfter = 0;
 let lastPollAt = 0;
+let lastFlushedSnapshotMergeTime = 0;
 
 const outboxKey = (userId: string) => `cloud_sync_outbox_v1:${userId}`;
 const snapshotCacheKey = (userId: string) => `cloud_library_snapshot_v1:${userId}`;
@@ -209,10 +234,30 @@ async function prepareLocalLibraryForAccount(userId: string) {
 async function enqueueCloudOperation(operation: any): Promise<void> {
   try {
     const user = await cloudSync.getAuthUser();
-    if (!user) return;
+    if (!user) {
+      console.warn(`[CloudSync:Outbox] Cannot queue mutation (${operation?.type}:${operation?.action}): User is NOT signed in. Items will sync when signed in.`);
+      return;
+    }
     await withOutboxLock(async () => {
       const outbox = await readOutboxRaw(user.userId);
       const nextOp = { ...operation, operationId: Crypto.randomUUID(), clientTimestamp: Date.now() };
+
+      // Coalesce pending non-in-flight librarySnapshotMerge so multiple restores/merges don't queue multiple full payloads
+      if (nextOp.type === 'librarySnapshotMerge') {
+        const idx = outbox.findIndex(
+          (op: any) =>
+            op &&
+            op.type === 'librarySnapshotMerge' &&
+            op.operationId !== inFlightOperationId
+        );
+        if (idx >= 0) {
+          outbox[idx] = nextOp;
+          await writeOutboxRaw(user.userId, outbox);
+          await persistCurrentSnapshotCache(user.userId);
+          console.log(`[CloudSync:Outbox] Replaced pending librarySnapshotMerge for user ${user.userId}. Outbox count: ${outbox.length}`);
+          return;
+        }
+      }
 
       // Coalesce pending non-in-flight watchProgress/preferences set operations so
       // playback ticks never flood the outbox or hit server rate limits.
@@ -235,6 +280,7 @@ async function enqueueCloudOperation(operation: any): Promise<void> {
           };
           await writeOutboxRaw(user.userId, outbox);
           await persistCurrentSnapshotCache(user.userId);
+          console.log(`[CloudSync:Outbox] Coalesced ${nextOp.type}:set for user ${user.userId}. Outbox count: ${outbox.length}`);
           return;
         }
       }
@@ -242,10 +288,11 @@ async function enqueueCloudOperation(operation: any): Promise<void> {
       outbox.push(nextOp);
       await writeOutboxRaw(user.userId, outbox);
       await persistCurrentSnapshotCache(user.userId);
+      console.log(`[CloudSync:Outbox] Queued ${nextOp.type}:${nextOp.action} id=${nextOp.mediaId ?? nextOp.item?.id ?? 'none'} opId=${nextOp.operationId} for user ${user.userId}. Outbox count: ${outbox.length}`);
     });
-    void flushCloudOutbox();
+    void flushCloudOutbox({ ignoreBackoff: true });
   } catch (error: any) {
-    console.warn('Could not queue cloud edit:', error?.message);
+    console.warn('[CloudSync:Outbox] Could not queue cloud edit:', error?.message);
   }
 }
 
@@ -261,7 +308,7 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
     return { flushed: remaining === 0, remaining };
   }
 
-  const run = (async (): Promise<FlushResult> => {
+  const run = async (): Promise<FlushResult> => {
     const [user, token] = await Promise.all([cloudSync.getAuthUser(), cloudSync.getAuthToken()]);
     if (!user || !token) {
       warnSync('Outbox', 'Cannot flush: user not signed in');
@@ -273,9 +320,38 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
       while (true) {
         const operation = await withOutboxLock(async () => {
           const outbox = await readOutboxRaw(user.userId);
-          // Immediately purge unsupported/poison-pill mutations (such as tasteTelemetry)
-          const sanitizedOutbox = outbox.filter((op: any) => op && op.type && op.type !== 'tasteTelemetry');
-          if (sanitizedOutbox.length !== outbox.length) {
+          let modified = false;
+          const sanitizedOutbox: any[] = [];
+          for (const op of outbox) {
+            if (!op || !op.type || op.type === 'tasteTelemetry') {
+              modified = true;
+              continue;
+            }
+            // Auto-compact any oversized pending snapshot merges (e.g. from restored backups)
+            if (op.type === 'librarySnapshotMerge' && op.value?.aiChatData) {
+              const beforeLen = JSON.stringify(op.value.aiChatData).length;
+              const compacted = sanitizeAiChatForSync(op.value.aiChatData);
+              const afterLen = JSON.stringify(compacted).length;
+              if (afterLen < beforeLen) {
+                op.value.aiChatData = compacted;
+                logSync('Outbox', `Auto-compacted oversized snapshot merge ${op.operationId} (chat data: ${(beforeLen / 1024).toFixed(1)} KB -> ${(afterLen / 1024).toFixed(1)} KB)`);
+                modified = true;
+              }
+            }
+            sanitizedOutbox.push(op);
+          }
+
+          // Prioritize granular item mutations (watchlist, history, artists, progress, preferences)
+          // ahead of heavy library snapshot merges so single-item adds/removals upload immediately!
+          sanitizedOutbox.sort((a, b) => {
+            const aIsSnapshot = a.type === 'librarySnapshotMerge';
+            const bIsSnapshot = b.type === 'librarySnapshotMerge';
+            if (aIsSnapshot && !bIsSnapshot) return 1;
+            if (!aIsSnapshot && bIsSnapshot) return -1;
+            return (a.clientTimestamp || 0) - (b.clientTimestamp || 0);
+          });
+
+          if (modified) {
             await writeOutboxRaw(user.userId, sanitizedOutbox);
           }
           return sanitizedOutbox[0] || null;
@@ -311,6 +387,16 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
             await writeOutboxRaw(user.userId, next);
           });
 
+          if (isSnapshotMerge) {
+            lastFlushedSnapshotMergeTime = Date.now();
+            if (response.data?.revision) {
+              await AsyncStorage.setItem('cloud_sync_revision', String(response.data.revision));
+            }
+            if (response.data?.library) {
+              await applyCloudLibrary(response.data.library, Number(response.data.revision || 0));
+            }
+          }
+
           // Keep the last applied revision unchanged. This mutation's revision may
           // follow edits from another device, and jumping to it would skip those
           // deltas (including server side effects such as history removing watchlist items).
@@ -337,6 +423,26 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
             return { flushed: false, remaining: 0, error: 'Session expired. Please sign in again.' };
           }
 
+          if (operation.type === 'librarySnapshotMerge') {
+            const failCount = (operation.failures || 0) + 1;
+            if (failCount >= 3) {
+              warnSync('Outbox', `Snapshot merge ${operation.operationId} failed ${failCount} times (${formattedErr}); dropping from outbox to prevent blocking granular edits. Tap Settings > Sync with Cloud to retry.`);
+              await withOutboxLock(async () => {
+                const current = await readOutboxRaw(user.userId);
+                const next = current.filter((op: any) => op?.operationId !== operation.operationId);
+                await writeOutboxRaw(user.userId, next);
+              });
+              continue;
+            } else {
+              await withOutboxLock(async () => {
+                const current = await readOutboxRaw(user.userId);
+                const target = current.find((op: any) => op?.operationId === operation.operationId);
+                if (target) target.failures = failCount;
+                await writeOutboxRaw(user.userId, current);
+              });
+            }
+          }
+
           retryAfter = Date.now() + retryDelay;
           retryDelay = Math.min(30000, retryDelay * 2);
           lastError = formattedErr;
@@ -355,20 +461,25 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
       inFlightOperationId = null;
       await persistCurrentSnapshotCache(user.userId);
     }
-  })();
+  };
 
-  inFlightFlushPromise = run;
+  const runPromise = run();
+  inFlightFlushPromise = runPromise;
   try {
-    return await run;
+    return await runPromise;
   } finally {
-    if (inFlightFlushPromise === run) inFlightFlushPromise = null;
+    if (inFlightFlushPromise === runPromise) inFlightFlushPromise = null;
   }
 }
 
 const apiType = (type: SavedItemsMutation['type']) => type === 'artist' ? 'favoriteArtists' : type;
 
 export const queueCloudMutation = (mutation: SavedItemsMutation) => {
-  if (applyingRemoteChanges || cloudMutationQueuePaused) return;
+  console.log(`[CloudSync:Queue] queueCloudMutation: type=${mutation.type} action=${mutation.action} id=${mutation.item?.id ?? mutation.mediaId ?? 'none'} (applyingRemoteChanges=${applyingRemoteChanges}, paused=${cloudMutationQueuePaused})`);
+  if (applyingRemoteChanges || cloudMutationQueuePaused) {
+    console.log(`[CloudSync:Queue] Mutation skipped (applyingRemoteChanges=${applyingRemoteChanges}, paused=${cloudMutationQueuePaused})`);
+    return;
+  }
   void enqueueCloudOperation({ ...mutation, type: apiType(mutation.type) });
 };
 
@@ -411,11 +522,11 @@ export async function queueCloudLibrarySnapshotMerge(): Promise<FlushResult> {
     savedCollections: Array.isArray(savedCollections) ? savedCollections : [],
     watchProgress: watchProgress && typeof watchProgress === 'object' ? watchProgress : {},
     preferences: { nsfwFilterEnabled: typeof nsfwFilter === 'boolean' ? nsfwFilter : GLOBAL_CONFIG.nsfwFilterEnabled },
-    aiChatData: {
+    aiChatData: sanitizeAiChatForSync({
       conversations: Array.isArray(conversations) ? conversations : [],
       userMemory: userMemory || '',
       aiName: aiName || 'Cine',
-    },
+    }),
   };
 
   await enqueueCloudOperation({ type: 'librarySnapshotMerge', action: 'merge', value: payload });
@@ -478,14 +589,14 @@ export async function prepareCloudSessionOnStartup(): Promise<void> {
   await pollCloudChanges();
 }
 
-async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean }): Promise<PollResult> {
+export async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean }): Promise<PollResult> {
   if (initialMergeInFlight) {
     logSync('Poll', 'Bailing: initial library merge is already in flight');
     return { ok: false, error: 'Initial library merge is already running' };
   }
   if (inFlightPollPromise) return inFlightPollPromise;
 
-  const run = (async (): Promise<PollResult> => {
+  const run = async (): Promise<PollResult> => {
     const pollStart = Date.now();
     try {
       const [token, user] = await Promise.all([cloudSync.getAuthToken(), cloudSync.getAuthUser()]);
@@ -661,13 +772,14 @@ async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean })
       });
       return { ok: false, error: formattedErr };
     }
-  })();
+  };
 
-  inFlightPollPromise = run;
+  const runPromise = run();
+  inFlightPollPromise = runPromise;
   try {
-    return await run;
+    return await runPromise;
   } finally {
-    if (inFlightPollPromise === run) inFlightPollPromise = null;
+    if (inFlightPollPromise === runPromise) inFlightPollPromise = null;
   }
 }
 
@@ -815,9 +927,19 @@ export const cloudSync = {
     initialMergeInFlight = true;
 
     try {
+      const preMergeStart = Date.now();
       await waitForPendingOutboxWrites();
       logSync('Merge', 'Flushing outbox before snapshot merge...');
       await flushCloudOutbox({ ignoreBackoff: true });
+
+      // If a full snapshot merge was already completed and applied during outbox flush, skip redundant upload
+      if (lastFlushedSnapshotMergeTime >= preMergeStart) {
+        logSync('Merge', 'Full snapshot merge was already completed and applied during outbox flush; skipping redundant upload');
+        return {
+          success: true,
+          message: 'Cloud library synchronized',
+        };
+      }
 
       const knownRevision = Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0);
       if (knownRevision > 0) {
@@ -856,7 +978,11 @@ export const cloudSync = {
         history: localHistory,
         favoriteArtists: localArtists,
         watchProgress: localProgress,
-        aiChatData: { conversations: convStr ? JSON.parse(convStr) : [], userMemory: memStr || '', aiName: aiNameStr || 'Cine' },
+        aiChatData: sanitizeAiChatForSync({
+          conversations: convStr ? JSON.parse(convStr) : [],
+          userMemory: memStr || '',
+          aiName: aiNameStr || 'Cine',
+        }),
         mode: 'merge',
       };
       if (savedNsfwRaw !== null) {

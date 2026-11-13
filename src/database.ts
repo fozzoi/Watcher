@@ -240,6 +240,7 @@ export const setOnWatchlistChangedListener = setOnSavedItemsChangedListener;
 
 const notifySavedItemsChanged = (mutation: SavedItemsMutation) => {
   notifySavedItemsUiListeners(mutation.type);
+  console.log(`[Database:Mutation] notifySavedItemsChanged: type=${mutation.type} action=${mutation.action} id=${mutation.item?.id ?? mutation.mediaId ?? 'none'}`);
   if (onSavedItemsChangedCallback) {
     try {
       onSavedItemsChangedCallback(mutation);
@@ -268,6 +269,7 @@ export const addSavedItem = (item: any, type: SavedItemType) => {
     added_at: item.added_at || item.created_at || now,
     created_at: item.created_at || item.added_at || now,
   };
+  console.log(`[Database] addSavedItem type=${type} id=${stampedItem.id} title="${stampedItem.title || stampedItem.name || 'unnamed'}" (cloudOnlyMode=${cloudOnlyMode})`);
   if (cloudOnlyMode) {
     const rowId = itemRowId(stampedItem, type);
     cloudItems[type] = [stampedItem, ...cloudItems[type].filter(existing => itemRowId(existing, type) !== rowId)];
@@ -290,6 +292,7 @@ export const addSavedItem = (item: any, type: SavedItemType) => {
  * Remove an item from a specific list.
  */
 export const removeSavedItem = (mediaId: number, type: SavedItemType, mediaType?: 'movie' | 'tv' | 'collection') => {
+  console.log(`[Database] removeSavedItem type=${type} mediaId=${mediaId} mediaType=${mediaType || 'any'} (cloudOnlyMode=${cloudOnlyMode})`);
   if (cloudOnlyMode) {
     const removed = cloudItems[type].filter(item =>
       Number(item?.id ?? item?.media_id) === Number(mediaId) &&
@@ -330,6 +333,90 @@ export const clearSavedItems = (type: SavedItemType, notify = true) => {
   } catch (error) {
     console.error(`Failed to clear ${type}:`, error);
   }
+};
+
+/**
+ * Batch restore saved items across watchlist, artist, and history without freezing the JS thread.
+ * Uses a single fast SQLite transaction and bulk deduplication instead of 1,000+ individual disk writes.
+ */
+export const batchRestoreSavedItems = (itemsByType: {
+  watchlist?: any[];
+  artist?: any[];
+  history?: any[];
+}): { restoredCount: number } => {
+  let restoredCount = 0;
+  const now = Date.now();
+  const types: SavedItemType[] = ['watchlist', 'artist', 'history'];
+
+  const processed: Record<SavedItemType, any[]> = {
+    watchlist: [],
+    artist: [],
+    history: [],
+  };
+
+  for (const type of types) {
+    const list = itemsByType[type];
+    if (Array.isArray(list)) {
+      for (const raw of list) {
+        if (!raw || raw.id === undefined) continue;
+        const stamped = {
+          ...raw,
+          id: Number(raw.id),
+          added_at: raw.added_at || raw.created_at || now,
+          created_at: raw.created_at || raw.added_at || now,
+        };
+        processed[type].push(stamped);
+        restoredCount++;
+      }
+    }
+  }
+
+  // 1. If in cloudOnlyMode, batch-merge in-memory cloudItems with Map deduplication
+  if (cloudOnlyMode) {
+    for (const type of types) {
+      if (processed[type].length > 0) {
+        const existingMap = new Map<string, any>();
+        for (const item of cloudItems[type]) {
+          existingMap.set(itemRowId(item, type), item);
+        }
+        for (const item of processed[type]) {
+          existingMap.set(itemRowId(item, type), item);
+        }
+        cloudItems[type] = Array.from(existingMap.values());
+      }
+    }
+  }
+
+  // 2. Always persist into SQLite inside a single fast transaction
+  try {
+    db.withTransactionSync(() => {
+      const stmt = db.prepareSync(
+        'INSERT OR REPLACE INTO saved_items (id, media_id, type, data, created_at) VALUES (?, ?, ?, ?, ?)'
+      );
+      try {
+        for (const type of types) {
+          for (const item of processed[type]) {
+            const rowId = itemRowId(item, type);
+            stmt.executeSync([rowId, Number(item.id), type, JSON.stringify(item), item.created_at]);
+          }
+        }
+      } finally {
+        stmt.finalizeSync();
+      }
+    });
+  } catch (error) {
+    console.error('Failed to batch restore saved items to SQLite:', error);
+  }
+
+  // 3. Notify UI listeners once per non-empty type
+  for (const type of types) {
+    if (processed[type].length > 0) {
+      notifySavedItemsUiListeners(type);
+    }
+  }
+
+  console.log(`[Database] batchRestoreSavedItems: restored ${restoredCount} items across watchlist/artist/history in single transaction (cloudOnlyMode=${cloudOnlyMode})`);
+  return { restoredCount };
 };
 
 /**

@@ -13,6 +13,7 @@ import {
   Pressable,
   PanResponder,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import {
   Host,
@@ -30,7 +31,7 @@ import {
   subscribeToSavedItemsChanges,
 } from '../../src/database';
 import { syncSavedStore } from '../../src/state/savedState';
-import { pollCloudChangesIfStale } from '../../src/cloudSync';
+import { pollCloudChangesIfStale, pollCloudChangesWithResult, cloudSync } from '../../src/cloudSync';
 import { LoadingIndicator } from '../../src/components/shared/LoadingIndicator';
 import { getImageUrl, searchTMDB, GLOBAL_CONFIG, setGlobalConfig } from '../../src/tmdb';
 import { isAdultContent } from '../../src/contentSafety';
@@ -499,6 +500,25 @@ const WatchListPage = () => {
       setLoading(false);
     }
   }, []);
+
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+
+  const handlePullToRefresh = useCallback(async () => {
+    setIsPullRefreshing(true);
+    try {
+      console.log('[Watchlist] Pull to refresh: syncing with cloud...');
+      const user = await cloudSync.getAuthUser();
+      if (user) {
+        const syncRes = await pollCloudChangesWithResult({ ignoreBackoff: true });
+        console.log('[Watchlist] Cloud sync finished:', syncRes);
+      }
+      await loadData();
+    } catch (error) {
+      console.warn('[Watchlist] Pull to refresh sync error:', error);
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }, [loadData]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1018,7 +1038,19 @@ const WatchListPage = () => {
               <LoadingIndicator animating={true} size="large" color={colors.primary} />
             </View>
           ) : !syncing && filteredCurrentList.length === 0 ? (
-            <View style={[styles.emptyContainer, { paddingTop: insets.top + 130 }]}>
+            <ScrollView
+              contentContainerStyle={[styles.emptyContainer, { paddingTop: insets.top + 130, flexGrow: 1 }]}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl
+                  refreshing={isPullRefreshing}
+                  onRefresh={handlePullToRefresh}
+                  colors={[colors.primary]}
+                  progressBackgroundColor={colors.surfaceContainer}
+                  progressViewOffset={insets.top + 60}
+                />
+              }
+            >
               <View style={[styles.emptyIconCircle, { backgroundColor: colors.primaryContainer }]}>
                 {activeTab === 0 ? (
                   <MaterialIcons name="movie-filter" size={38} color={colors.primary} />
@@ -1058,7 +1090,7 @@ const WatchListPage = () => {
                   <Text style={styles.emptyActionText}>Import Existing Watchlist</Text>
                 </TouchableOpacity>
               )}
-            </View>
+            </ScrollView>
           ) : (
             <LegendList
               ref={flatListRef}
@@ -1073,6 +1105,15 @@ const WatchListPage = () => {
               showsVerticalScrollIndicator={false}
               scrollEventThrottle={32}
               onScroll={handleScroll}
+              refreshControl={
+                <RefreshControl
+                  refreshing={isPullRefreshing}
+                  onRefresh={handlePullToRefresh}
+                  colors={[colors.primary]}
+                  progressBackgroundColor={colors.surfaceContainer}
+                  progressViewOffset={insets.top + 60}
+                />
+              }
             />
           )}
         </Animated.View>

@@ -23,6 +23,7 @@ import {
 import { LoadingIndicator as SharedLoadingIndicator } from '../../src/components/shared/LoadingIndicator';
 
 import { toggleWatchlistGlobal, syncSavedStore } from '../../src/state/savedState';
+import { pollCloudChangesWithResult } from '../../src/cloudSync';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Animated, {
   useSharedValue,
@@ -837,6 +838,7 @@ const ExplorePage = () => {
         getTrendingToday('all', 1, { priority: 'high', forceRefresh: true })
           .then((res) => res && setTrendingToday(res.slice(0, 10)))
           .catch(() => null),
+        pollCloudChangesWithResult({ ignoreBackoff: true }).catch(() => null),
       ]);
       stageCancelRef.current?.();
       stageCancelRef.current = runAfterTransition(() => {

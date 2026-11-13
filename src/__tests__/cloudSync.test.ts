@@ -357,4 +357,53 @@ describe('Android cloudSync, database, and progress synchronization', () => {
     await cloudSyncMod.flushCloudOutbox();
     expect(mockAsyncStorage.get('cloud_sync_revision')).toBe('0');
   });
+
+  test('batchRestoreSavedItems restores items in bulk, deduplicates, and allows immediate cloud snapshot sync', async () => {
+    mockAsyncStorage.set('cloud_auth_token', 'token-1');
+    mockAsyncStorage.set('cloud_auth_user', JSON.stringify({ userId: 'u-1', name: 'User 1' }));
+
+    const database = require('../database') as typeof import('../database');
+    const cloudSyncMod = require('../cloudSync') as typeof import('../cloudSync');
+
+    database.setCloudOnlyMode(true, {
+      watchlist: [{ id: 10, media_type: 'movie', title: 'Existing Movie' }],
+      history: [],
+      favoriteArtists: [],
+    });
+
+    const result = database.batchRestoreSavedItems({
+      watchlist: [
+        { id: 10, media_type: 'movie', title: 'Existing Movie (Updated)' },
+        { id: 20, media_type: 'movie', title: 'Restored Movie 20' },
+        { id: 30, media_type: 'tv', name: 'Restored TV 30' },
+      ],
+      artist: [{ id: 40, name: 'Restored Actor' }],
+      history: [{ id: 50, media_type: 'movie', title: 'Watched Movie' }],
+    });
+
+    expect(result.restoredCount).toBe(5);
+
+    const watchlist = database.getSavedItems('watchlist');
+    expect(watchlist).toHaveLength(3);
+    expect(watchlist.some((i: any) => i.id === 20)).toBe(true);
+    expect(watchlist.some((i: any) => i.id === 30)).toBe(true);
+
+    const artists = database.getSavedItems('artist');
+    expect(artists).toHaveLength(1);
+    expect(artists[0].id).toBe(40);
+
+    const history = database.getSavedItems('history');
+    expect(history).toHaveLength(1);
+    expect(history[0].id).toBe(50);
+
+    // Queue cloud snapshot merge
+    mockAxiosPost.mockResolvedValueOnce({
+      status: 200,
+      data: { status: 'synced', revision: 12 },
+    });
+
+    const flushRes = await cloudSyncMod.queueCloudLibrarySnapshotMerge();
+    expect(flushRes.flushed).toBe(true);
+    expect(mockAsyncStorage.get('cloud_sync_revision')).toBe('12');
+  });
 });
