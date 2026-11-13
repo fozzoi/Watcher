@@ -7,6 +7,7 @@ import { GLOBAL_CONFIG, setGlobalConfig } from './tmdb';
 
 const AUTH_API_BASE = 'https://watcher-api-rho.vercel.app';
 let applyingRemoteChanges = false;
+let cloudMutationQueuePaused = false;
 let outboxLock: Promise<unknown> = Promise.resolve();
 let inFlightFlushPromise: Promise<FlushResult> | null = null;
 let inFlightPollPromise: Promise<PollResult> | null = null;
@@ -18,6 +19,7 @@ let lastPollAt = 0;
 
 const outboxKey = (userId: string) => `cloud_sync_outbox_v1:${userId}`;
 const snapshotCacheKey = (userId: string) => `cloud_library_snapshot_v1:${userId}`;
+const revisionRepairKey = (userId: string) => `cloud_sync_revision_repaired_v1:${userId}`;
 
 type FlushResult = { flushed: boolean; remaining: number; error?: string };
 type PollResult = { ok: boolean; updated?: boolean; error?: string };
@@ -235,7 +237,11 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
 
         inFlightOperationId = operation.operationId;
         try {
-          const response = await axios.post(`${AUTH_API_BASE}/api/sync`, { action: 'mutate', mutation: operation }, {
+          const isSnapshotMerge = operation.type === 'librarySnapshotMerge' && operation.action === 'merge';
+          const requestBody = isSnapshotMerge
+            ? { ...(operation.value || {}), mode: 'merge' }
+            : { action: 'mutate', mutation: operation };
+          const response = await axios.post(`${AUTH_API_BASE}/api/sync`, requestBody, {
             headers: { Authorization: `Bearer ${token}` }, timeout: 12000,
           });
           await withOutboxLock(async () => {
@@ -244,11 +250,9 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
             await writeOutboxRaw(user.userId, next);
           });
 
-          const nextRev = Number(response.data?.revision || 0);
-          if (nextRev > 0) {
-            const localRev = Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0);
-            await AsyncStorage.setItem('cloud_sync_revision', String(Math.max(localRev, nextRev)));
-          }
+          // Keep the last applied revision unchanged. This mutation's revision may
+          // follow edits from another device, and jumping to it would skip those
+          // deltas (including server side effects such as history removing watchlist items).
 
           retryAfter = 0;
           retryDelay = 1000;
@@ -294,9 +298,60 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
 const apiType = (type: SavedItemsMutation['type']) => type === 'artist' ? 'favoriteArtists' : type;
 
 export const queueCloudMutation = (mutation: SavedItemsMutation) => {
-  if (applyingRemoteChanges) return;
+  if (applyingRemoteChanges || cloudMutationQueuePaused) return;
   void enqueueCloudOperation({ ...mutation, type: apiType(mutation.type) });
 };
+
+export async function withCloudMutationQueuePaused<T>(fn: () => Promise<T> | T): Promise<T> {
+  const wasPaused = cloudMutationQueuePaused;
+  cloudMutationQueuePaused = true;
+  try {
+    return await fn();
+  } finally {
+    cloudMutationQueuePaused = wasPaused;
+  }
+}
+
+async function readJsonStorage<T>(key: string, fallback: T): Promise<T> {
+  try {
+    const raw = await AsyncStorage.getItem(key);
+    return raw ? JSON.parse(raw) as T : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Persist a full-library merge as one durable outbox operation for backup restore. */
+export async function queueCloudLibrarySnapshotMerge(): Promise<FlushResult> {
+  const user = await cloudSync.getAuthUser();
+  if (!user) return { flushed: true, remaining: 0 };
+
+  const [watchProgress, savedCollections, nsfwFilter, conversations, userMemory, aiName] = await Promise.all([
+    readJsonStorage<Record<string, any>>('@watch_progress', await readJsonStorage('watch_progress_v1', {})),
+    readJsonStorage<any[]>('savedCollections', []),
+    readJsonStorage<boolean>('settings_nsfw', GLOBAL_CONFIG.nsfwFilterEnabled),
+    readJsonStorage<any[]>('watcher.chat.conversations.v1', []),
+    AsyncStorage.getItem('watcher.chat.userMemory.v1'),
+    AsyncStorage.getItem('watcher.chat.aiName.v1'),
+  ]);
+  const payload = {
+    watchlist: getSavedItems('watchlist'),
+    history: getSavedItems('history'),
+    favoriteArtists: getSavedItems('artist'),
+    savedCollections: Array.isArray(savedCollections) ? savedCollections : [],
+    watchProgress: watchProgress && typeof watchProgress === 'object' ? watchProgress : {},
+    preferences: { nsfwFilterEnabled: typeof nsfwFilter === 'boolean' ? nsfwFilter : GLOBAL_CONFIG.nsfwFilterEnabled },
+    aiChatData: {
+      conversations: Array.isArray(conversations) ? conversations : [],
+      userMemory: userMemory || '',
+      aiName: aiName || 'Cine',
+    },
+  };
+
+  await enqueueCloudOperation({ type: 'librarySnapshotMerge', action: 'merge', value: payload });
+  await waitForPendingOutboxWrites();
+  return flushCloudOutbox({ ignoreBackoff: true });
+}
 
 // Permanently wire database mutations to cloud sync queue
 setOnSavedItemsChangedListener(queueCloudMutation);
@@ -370,6 +425,14 @@ async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean })
         return { ok: false, error: flushResult.error || 'Could not upload local edits yet' };
       }
 
+      // Earlier clients advanced this checkpoint on upload and could skip edits
+      // from other devices. Rebuild this account's local view once from the cloud.
+      const repairKey = revisionRepairKey(user.userId);
+      if (await AsyncStorage.getItem(repairKey) === null) {
+        await AsyncStorage.removeItem('cloud_sync_revision');
+        await AsyncStorage.setItem(repairKey, 'true');
+      }
+
       const savedRevision = await AsyncStorage.getItem('cloud_sync_revision');
       if (savedRevision === null) {
         setCloudOnlyMode(true);
@@ -395,11 +458,34 @@ async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean })
       const changes = response.data?.changes;
       const completeDelta = Array.isArray(changes) && changes.length > 0 &&
         changes.length === nextRevision - revision &&
-        changes.every((change: any, index: number) => change.revision === revision + index + 1 && change.type && change.action !== 'snapshot');
+        changes.every((change: any, index: number) =>
+          change.revision === revision + index + 1 &&
+          change.action !== 'snapshot' &&
+          (
+            (['watchlist', 'history', 'favoriteArtists', 'savedCollections'].includes(change.type) && ['add', 'remove', 'clear'].includes(change.action)) ||
+            (change.type === 'watchProgress' && ['set', 'remove'].includes(change.action)) ||
+            (change.type === 'preferences' && change.action === 'set')
+          )
+        );
       if (response.data?.status === 'delta' && completeDelta) {
         applyingRemoteChanges = true;
         try {
+          let savedCollections: any[] | null = null;
           for (const change of changes) {
+            if (change.type === 'savedCollections') {
+              if (savedCollections === null) {
+                const raw = await AsyncStorage.getItem('savedCollections');
+                try { savedCollections = raw ? JSON.parse(raw) : []; } catch { savedCollections = []; }
+                if (!Array.isArray(savedCollections)) savedCollections = [];
+              }
+              if (change.action === 'clear') savedCollections = [];
+              else if (change.action === 'remove') {
+                savedCollections = savedCollections.filter((item: any) => Number(item?.id ?? item?.media_id) !== Number(change.mediaId));
+              } else if (change.action === 'add' && change.item) {
+                savedCollections = [change.item, ...savedCollections.filter((item: any) => Number(item?.id ?? item?.media_id) !== Number(change.item.id))];
+              }
+              continue;
+            }
             const type = (change.type === 'favoriteArtists' ? 'artist' : change.type) as 'watchlist' | 'history' | 'artist';
             if (!['watchlist', 'history', 'artist'].includes(type)) continue;
             if (change.action === 'clear') clearSavedItems(type);
@@ -419,6 +505,9 @@ async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean })
                 if (match) removeSavedItem(Number(change.item.id), 'watchlist', mediaType);
               }
             }
+          }
+          if (savedCollections !== null) {
+            await AsyncStorage.setItem('savedCollections', JSON.stringify(savedCollections));
           }
         } finally { applyingRemoteChanges = false; }
 

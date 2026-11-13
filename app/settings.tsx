@@ -33,7 +33,7 @@ import { ThemedDialog, DialogButton } from '../src/components/shared/ThemedDialo
 import { LoadingIndicator } from '../src/components/shared/LoadingIndicator';
 import { clearUserMemory, getUserMemory } from '../src/chatStorage';
 import { DEFAULT_PLAYER_PREFERENCES, getPlayerPreferences, PlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
-import { cloudSync, MobileUserProfile, queueCloudValue } from '../src/cloudSync';
+import { cloudSync, MobileUserProfile, queueCloudLibrarySnapshotMerge, queueCloudValue, withCloudMutationQueuePaused } from '../src/cloudSync';
 import { signInWithNativeGoogle } from '../src/nativeGoogleAuth';
 import { notifyForYouListeners } from '../src/services/tasteProfile';
 import { useAppTheme } from '../src/theme';
@@ -533,18 +533,20 @@ const Settings = () => {
       const backupData = JSON.parse(fileContent);
 
       let restoredTotal = 0;
-      if (backupData.watchlist && Array.isArray(backupData.watchlist)) {
-        backupData.watchlist.forEach((i: any) => addSavedItem(i, 'watchlist'));
-        restoredTotal += backupData.watchlist.length;
-      }
-      if (backupData.artists && Array.isArray(backupData.artists)) {
-        backupData.artists.forEach((i: any) => addSavedItem(i, 'artist'));
-        restoredTotal += backupData.artists.length;
-      }
-      if (backupData.history && Array.isArray(backupData.history)) {
-        backupData.history.forEach((i: any) => addSavedItem(i, 'history'));
-        restoredTotal += backupData.history.length;
-      }
+      await withCloudMutationQueuePaused(() => {
+        if (backupData.watchlist && Array.isArray(backupData.watchlist)) {
+          backupData.watchlist.forEach((i: any) => addSavedItem(i, 'watchlist'));
+          restoredTotal += backupData.watchlist.length;
+        }
+        if (backupData.artists && Array.isArray(backupData.artists)) {
+          backupData.artists.forEach((i: any) => addSavedItem(i, 'artist'));
+          restoredTotal += backupData.artists.length;
+        }
+        if (backupData.history && Array.isArray(backupData.history)) {
+          backupData.history.forEach((i: any) => addSavedItem(i, 'history'));
+          restoredTotal += backupData.history.length;
+        }
+      });
       if (backupData.tasteEvents && Array.isArray(backupData.tasteEvents)) {
         restoreTasteEvents(backupData.tasteEvents);
         restoredTotal += backupData.tasteEvents.length;
@@ -561,9 +563,16 @@ const Settings = () => {
       }
 
       if (restoredTotal > 0) {
+        let cloudMessage = '';
+        if (await cloudSync.getAuthUser()) {
+          const syncResult = await queueCloudLibrarySnapshotMerge();
+          cloudMessage = syncResult.flushed && syncResult.remaining === 0
+            ? '\n\nMerged into your cloud library.'
+            : `\n\nSaved on this device. Cloud merge is queued for retry${syncResult.error ? `: ${syncResult.error}` : '.'}`;
+        }
         showDialog({
           title: "Backup Restored! 🎉",
-          message: `Successfully restored ${restoredTotal} items.\n\nGo back to your Library to see them.`,
+          message: `Successfully restored ${restoredTotal} items.\n\nGo back to your Library to see them.${cloudMessage}`,
           type: "success",
         });
       } else {

@@ -312,7 +312,7 @@ describe('Android cloudSync, database, and progress synchronization', () => {
     expect(mockAsyncStorage.get('@watch_progress')).toBe('{}');
   });
 
-  test('pollCloudChanges at revision 0 polls delta without pulling snapshot or overwriting library, and non-contiguous revision jumps advance', async () => {
+  test('pollCloudChanges keeps the applied revision when a mutation response contains a newer revision', async () => {
     mockAsyncStorage.set('cloud_auth_token', 'tok-1');
     mockAsyncStorage.set('cloud_auth_user', JSON.stringify({ userId: 'u-1', email: 'a@b.c', name: 'A', picture: '' }));
     mockAsyncStorage.set('cloud_sync_revision', '0');
@@ -346,7 +346,7 @@ describe('Android cloudSync, database, and progress synchronization', () => {
     expect(database.getSavedItems('watchlist')).toHaveLength(1);
     expect(database.getSavedItems('watchlist')[0].id).toBe(888);
 
-    // Non-contiguous jump: server responds with revision 9 while local was 0
+    // A mutation response can include revisions from other devices that this client has not applied yet.
     mockAxiosPost.mockResolvedValueOnce({
       status: 200,
       data: { status: 'mutated', revision: 9 },
@@ -354,6 +354,6 @@ describe('Android cloudSync, database, and progress synchronization', () => {
     database.addSavedItem({ id: 889, media_type: 'movie', title: 'Local Movie 2' }, 'watchlist');
     await cloudSyncMod.waitForPendingOutboxWrites();
     await cloudSyncMod.flushCloudOutbox();
-    expect(mockAsyncStorage.get('cloud_sync_revision')).toBe('9');
+    expect(mockAsyncStorage.get('cloud_sync_revision')).toBe('0');
   });
 });
