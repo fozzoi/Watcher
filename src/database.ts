@@ -261,19 +261,26 @@ const notifySavedItemsChanged = (mutation: SavedItemsMutation) => {
  */
 export const addSavedItem = (item: any, type: SavedItemType) => {
   if (!item || item.id === undefined) return;
+  const now = Date.now();
+  const stampedItem = {
+    ...item,
+    id: Number(item.id),
+    added_at: item.added_at || item.created_at || now,
+    created_at: item.created_at || item.added_at || now,
+  };
   if (cloudOnlyMode) {
-    const rowId = itemRowId(item, type);
-    cloudItems[type] = [item, ...cloudItems[type].filter(existing => itemRowId(existing, type) !== rowId)];
-    notifySavedItemsChanged({ type, action: 'add', item });
+    const rowId = itemRowId(stampedItem, type);
+    cloudItems[type] = [stampedItem, ...cloudItems[type].filter(existing => itemRowId(existing, type) !== rowId)];
+    notifySavedItemsChanged({ type, action: 'add', item: stampedItem });
     return;
   }
   try {
-    const rowId = itemRowId(item, type);
+    const rowId = itemRowId(stampedItem, type);
     db.runSync(
       'INSERT OR REPLACE INTO saved_items (id, media_id, type, data, created_at) VALUES (?, ?, ?, ?, ?)',
-      [rowId, Number(item.id), type, JSON.stringify(item), Date.now()]
+      [rowId, Number(stampedItem.id), type, JSON.stringify(stampedItem), stampedItem.created_at]
     );
-    notifySavedItemsChanged({ type, action: 'add', item });
+    notifySavedItemsChanged({ type, action: 'add', item: stampedItem });
   } catch (error) {
     console.error(`Failed to add item to ${type}:`, error);
   }
