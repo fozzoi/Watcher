@@ -891,7 +891,22 @@ const WatchListPage = () => {
       }
     }
 
-    if (sortBy === 'default') return sortDirection === 'asc' ? [...list].reverse() : list;
+    if (sortBy === 'default') {
+      const hasTimestamps = list.some((item: any) => Boolean(item?.added_at || item?.created_at || item?.watchedAt));
+      if (hasTimestamps) {
+        return [...list].sort((a: any, b: any) => {
+          const tA = Number(a?.added_at || a?.created_at || a?.watchedAt || 0);
+          const tB = Number(b?.added_at || b?.created_at || b?.watchedAt || 0);
+          if (tA && tB && tA !== tB) {
+            return sortDirection === 'asc' ? tA - tB : tB - tA;
+          }
+          if (tA && !tB) return sortDirection === 'asc' ? 1 : -1;
+          if (!tA && tB) return sortDirection === 'asc' ? -1 : 1;
+          return 0;
+        });
+      }
+      return sortDirection === 'asc' ? [...list].reverse() : list;
+    }
 
     return [...list].sort((a, b) => {
       if (sortBy === 'year') {
