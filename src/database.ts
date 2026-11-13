@@ -104,8 +104,8 @@ export const setCloudOnlyMode = (enabled: boolean, library?: any) => {
       notifySavedItemsUiListeners('watchlist');
       notifySavedItemsUiListeners('history');
       notifySavedItemsUiListeners('artist');
+      try { db.runSync('DELETE FROM saved_items'); } catch (error) { console.warn('Could not clear signed-in SQLite cache:', error); }
     }
-    try { db.runSync('DELETE FROM saved_items'); } catch (error) { console.warn('Could not clear signed-in SQLite cache:', error); }
     return;
   }
   if (!cloudOnlyMode) return;
@@ -224,6 +224,12 @@ export const hasSavedItem = (mediaId: number, type: SavedItemType): boolean => {
 
 export type SavedItemsMutation = { type: SavedItemType; action: 'add' | 'remove' | 'clear'; item?: any; mediaId?: number; mediaType?: 'movie' | 'tv' | 'collection' };
 let onSavedItemsChangedCallback: ((mutation: SavedItemsMutation) => void) | null = null;
+const savedItemsChangeListeners = new Set<(mutation: SavedItemsMutation) => void>();
+
+export const addSavedItemsChangeListener = (callback: (mutation: SavedItemsMutation) => void) => {
+  savedItemsChangeListeners.add(callback);
+  return () => { savedItemsChangeListeners.delete(callback); };
+};
 
 export const setOnSavedItemsChangedListener = (callback: ((mutation: SavedItemsMutation) => void) | null) => {
   onSavedItemsChangedCallback = callback;
@@ -239,6 +245,13 @@ const notifySavedItemsChanged = (mutation: SavedItemsMutation) => {
       onSavedItemsChangedCallback(mutation);
     } catch (e) {
       console.error('Error in onSavedItemsChangedCallback:', e);
+    }
+  }
+  for (const listener of savedItemsChangeListeners) {
+    try {
+      listener(mutation);
+    } catch (e) {
+      console.error('Error in saved items change listener:', e);
     }
   }
 };

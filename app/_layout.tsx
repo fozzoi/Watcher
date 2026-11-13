@@ -16,7 +16,7 @@ import { registerForPushNotificationsAsync, syncPushTokenAndWatchlist } from '@/
 import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 import { ThemeProvider, useAppTheme } from '@/src/theme';
-import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, setOnSavedItemsChangedListener } from '@/src/database';
+import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, addSavedItemsChangeListener, setOnSavedItemsChangedListener } from '@/src/database';
 import { loadGlobalConfig, GLOBAL_CONFIG, fetchEmbeddingsBatch } from '@/src/tmdb';
 import { pollCloudChanges, prepareCloudSessionOnStartup, queueCloudMutation } from '@/src/cloudSync';
 
@@ -102,12 +102,11 @@ export default function RootLayout() {
       }
     })();
 
-    // Automatically sync watchlist to remote server whenever changed
-    setOnSavedItemsChangedListener((mutation) => {
+    // Automatically sync push token and watchlist whenever changed
+    const unsubscribeSaved = addSavedItemsChangeListener(() => {
       syncPushTokenAndWatchlist().catch((err) =>
         console.log('Watchlist push sync error:', err)
       );
-      queueCloudMutation(mutation);
     });
     setOnPreferencesChangedListener(() => {
       syncPushTokenAndWatchlist().catch((err) =>
@@ -181,7 +180,7 @@ export default function RootLayout() {
       receivedSubscription.remove();
       clearInterval(syncTimer);
       appStateSubscription.remove();
-      setOnSavedItemsChangedListener(null);
+      unsubscribeSaved();
     };
   }, [router, isReady, databaseReady]);
 

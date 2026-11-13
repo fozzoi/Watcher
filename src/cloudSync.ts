@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import * as Crypto from 'expo-crypto';
 import { DeviceEventEmitter } from 'react-native';
-import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, setCloudOnlyMode, SavedItemsMutation } from './database';
+import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, setCloudOnlyMode, SavedItemsMutation, setOnSavedItemsChangedListener } from './database';
 import { GLOBAL_CONFIG, setGlobalConfig } from './tmdb';
 
 const AUTH_API_BASE = 'https://watcher-api-rho.vercel.app';
@@ -247,9 +247,7 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
           const nextRev = Number(response.data?.revision || 0);
           if (nextRev > 0) {
             const localRev = Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0);
-            if (nextRev === localRev + 1) {
-              await AsyncStorage.setItem('cloud_sync_revision', String(nextRev));
-            }
+            await AsyncStorage.setItem('cloud_sync_revision', String(Math.max(localRev, nextRev)));
           }
 
           retryAfter = 0;
@@ -300,6 +298,9 @@ export const queueCloudMutation = (mutation: SavedItemsMutation) => {
   void enqueueCloudOperation({ ...mutation, type: apiType(mutation.type) });
 };
 
+// Permanently wire database mutations to cloud sync queue
+setOnSavedItemsChangedListener(queueCloudMutation);
+
 export const queueCloudValue = (type: 'preferences' | 'watchProgress', value: any) => {
   if (applyingRemoteChanges) return;
   void enqueueCloudOperation({ type, action: 'set', value });
@@ -343,7 +344,6 @@ async function applyCloudLibrary(library: any, revision: number) {
 export async function prepareCloudSessionOnStartup(): Promise<void> {
   const [token, user] = await Promise.all([cloudSync.getAuthToken(), cloudSync.getAuthUser()]);
   if (!token || !user) return;
-  setCloudOnlyMode(true);
   const cachedLibrary = await readSnapshotCache(user.userId);
   if (cachedLibrary) {
     setCloudOnlyMode(true, cachedLibrary);
@@ -370,8 +370,8 @@ async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean })
         return { ok: false, error: flushResult.error || 'Could not upload local edits yet' };
       }
 
-      const revision = Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0);
-      if (revision <= 0) {
+      const savedRevision = await AsyncStorage.getItem('cloud_sync_revision');
+      if (savedRevision === null) {
         setCloudOnlyMode(true);
         const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
         if (snapshot.data?.library) {
@@ -382,11 +382,12 @@ async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean })
         return { ok: false, error: 'Cloud response did not include a library' };
       }
 
+      const revision = Number(savedRevision || 0);
       const response = await axios.get(`${AUTH_API_BASE}/api/sync?since_revision=${revision}`, {
         headers: { Authorization: `Bearer ${token}` }, timeout: 12000,
       });
       const nextRevision = Number(response.data?.revision || 0);
-      if (!nextRevision || nextRevision === revision) {
+      if (!nextRevision || nextRevision <= revision) {
         lastPollAt = Date.now();
         return { ok: true, updated: false };
       }

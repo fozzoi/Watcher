@@ -311,4 +311,49 @@ describe('Android cloudSync, database, and progress synchronization', () => {
     await cloudSyncMod.cloudSync.loginWithDemo();
     expect(mockAsyncStorage.get('@watch_progress')).toBe('{}');
   });
+
+  test('pollCloudChanges at revision 0 polls delta without pulling snapshot or overwriting library, and non-contiguous revision jumps advance', async () => {
+    mockAsyncStorage.set('cloud_auth_token', 'tok-1');
+    mockAsyncStorage.set('cloud_auth_user', JSON.stringify({ userId: 'u-1', email: 'a@b.c', name: 'A', picture: '' }));
+    mockAsyncStorage.set('cloud_sync_revision', '0');
+
+    const database = require('../database') as typeof import('../database');
+    const cloudSyncMod = require('../cloudSync') as typeof import('../cloudSync');
+
+    // Local items exist
+    database.setCloudOnlyMode(true, {
+      watchlist: [{ id: 888, media_type: 'movie', title: 'Local Movie' }],
+      history: [],
+      favoriteArtists: [],
+    });
+
+    let snapshotCalled = false;
+    let deltaQueryReceived: string | null = null;
+    mockAxiosGet.mockImplementation((url: string) => {
+      if (url.includes('since_revision=')) {
+        const u = new URL(url, 'http://localhost');
+        deltaQueryReceived = u.searchParams.get('since_revision');
+        return Promise.resolve({ data: { status: 'up_to_date', revision: 0, changes: [] } });
+      }
+      snapshotCalled = true;
+      return Promise.resolve({ data: { status: 'ok', revision: 0, library: { watchlist: [] } } });
+    });
+
+    await cloudSyncMod.pollCloudChanges();
+
+    expect(snapshotCalled).toBe(false);
+    expect(deltaQueryReceived).toBe('0');
+    expect(database.getSavedItems('watchlist')).toHaveLength(1);
+    expect(database.getSavedItems('watchlist')[0].id).toBe(888);
+
+    // Non-contiguous jump: server responds with revision 9 while local was 0
+    mockAxiosPost.mockResolvedValueOnce({
+      status: 200,
+      data: { status: 'mutated', revision: 9 },
+    });
+    database.addSavedItem({ id: 889, media_type: 'movie', title: 'Local Movie 2' }, 'watchlist');
+    await cloudSyncMod.waitForPendingOutboxWrites();
+    await cloudSyncMod.flushCloudOutbox();
+    expect(mockAsyncStorage.get('cloud_sync_revision')).toBe('9');
+  });
 });
