@@ -1395,11 +1395,115 @@ export const getSimilarMedia = async (
   }
 };
 
+export const getMediaCredits = async (
+  id: number,
+  mediaType: "movie" | "tv" = "movie",
+  options?: TmdbRequestOptions,
+): Promise<TMDBCastMember[]> => {
+  try {
+    const data = await fetchWithCache(`/${mediaType}/${id}/credits`, {}, options);
+    return Array.isArray(data?.cast) ? data.cast : [];
+  } catch (error) {
+    if (options?.throwOnError) throw error;
+    return [];
+  }
+};
+
 export const getPersonDetails = async (
   personId: number,
   options?: TmdbRequestOptions<TMDBPerson>,
 ): Promise<TMDBPerson> => {
   return await fetchWithCache(`/person/${personId}`, {}, options);
+};
+
+export const isTalkOrSelfShow = (item: any): boolean => {
+  if (!item) return false;
+  const genres = Array.isArray(item.genre_ids) ? item.genre_ids : [];
+  const char = String(item.character || '').trim().toLowerCase();
+  const title = String(item.title || item.name || '').trim().toLowerCase();
+  const overview = String(item.overview || '').toLowerCase();
+
+  // 1. TMDB TV genre 10767 = 'Talk' (Talk Show), 10763 = 'News'
+  if (genres.includes(10767) || genres.includes(10763)) {
+    return true;
+  }
+
+  // 2. Any entry where person appears as Self / Guest / Host / Presenter / Interviewee / Panelist
+  const isSelfRole = 
+    char === 'self' ||
+    char.startsWith('self ') ||
+    char.startsWith('self-') ||
+    char.startsWith('self/') ||
+    char.startsWith('self(') ||
+    char.startsWith('self,') ||
+    char.includes('(self)') ||
+    char.includes('self -') ||
+    char === 'himself' ||
+    char.startsWith('himself ') ||
+    char.startsWith('himself-') ||
+    char.startsWith('himself(') ||
+    char === 'herself' ||
+    char.startsWith('herself ') ||
+    char.startsWith('herself-') ||
+    char.startsWith('herself(') ||
+    char === 'themselves' ||
+    char.startsWith('themselves ') ||
+    char.includes('guest') ||
+    char.includes('host') ||
+    char.includes('presenter') ||
+    char.includes('panelist') ||
+    char.includes('interviewee') ||
+    char.includes('musical guest');
+
+  if (isSelfRole) {
+    return true;
+  }
+
+  // 3. Talk / Late Night / Morning / Chat show titles or keywords
+  const isTalkOrChat = 
+    title.includes('talk show') ||
+    title.includes('chat show') ||
+    title.includes('late show') ||
+    title.includes('late night') ||
+    title.includes('tonight show') ||
+    title.endsWith(' show') ||
+    title.includes(' show starring') ||
+    title.includes(' show with') ||
+    title.includes('the daily show') ||
+    title.includes('the view') ||
+    title.includes('the one show') ||
+    title.includes('today') ||
+    title.includes('saturday night takeaway') ||
+    title.includes('saturday night live') ||
+    title.includes('finding your roots') ||
+    title.includes('watch what happens live') ||
+    title.includes('jimmy kimmel live') ||
+    overview.includes('chat show') ||
+    overview.includes('talk show') ||
+    overview.includes('late-night');
+
+  if (isTalkOrChat) {
+    return true;
+  }
+
+  // 4. Award ceremonies / galas / specials
+  const isAwardOrSpecial = 
+    title.includes('awards') ||
+    title.includes('oscars') ||
+    title.includes('academy award') ||
+    title.includes('golden globe') ||
+    title.includes('grammy') ||
+    title.includes('bafta') ||
+    title.includes('tony award') ||
+    title.includes('emmy') ||
+    title.includes('kamera') ||
+    title.includes('made in hollywood');
+
+  if (isAwardOrSpecial) {
+    return true;
+  }
+
+  return false;
 };
 
 export const getPersonCombinedCredits = async (
@@ -1408,7 +1512,8 @@ export const getPersonCombinedCredits = async (
 ): Promise<TMDBResult[]> => {
   const data = await fetchWithCache(`/person/${personId}/combined_credits`, {}, options);
   
-  const castItems = data.cast || [];
+  const rawCast = Array.isArray(data?.cast) ? data.cast : [];
+  const castItems = rawCast.filter((item: any) => !isTalkOrSelfShow(item));
   const crewItems = data.crew || [];
 
   // Filter the crew array to only get items where they were the Director

@@ -42,6 +42,7 @@ import {
   removeSavedItem,
   hasSavedItem,
   getTmdbResponseCacheSync,
+  saveMediaCastCacheSync,
 } from '../../src/database';
 import { logTasteEvent, TASTE_WEIGHTS } from '../../src/services/tasteProfile';
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
@@ -318,6 +319,9 @@ const MovieActionDock = React.memo(({ movie, isAmbientActive }: MovieActionDockP
         }
       } else {
         addSavedItem(movie, 'history');
+        if (movie.cast) {
+          saveMediaCastCacheSync(movie.id, movie.media_type, movie.cast);
+        }
         logTasteEvent({
           entity_type: movie.media_type === 'tv' ? 'tv' : 'movie',
           entity_id: movie.id,
@@ -1252,6 +1256,9 @@ export default function DetailPage() {
       if (!isActive) return;
 
       const fullData: any = rawFullData || movie;
+      if (fullData?.cast) {
+        saveMediaCastCacheSync(movie.id, movie.media_type, fullData.cast);
+      }
       const mergedDirectors: any[] = [];
       const addDirector = (person: any, defaultRole: string) => {
         if (!person?.id || mergedDirectors.find((entry) => entry.id === person.id)) return;

@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { hasSavedItem, addSavedItem, removeSavedItem, subscribeToSavedItemsChanges } from '../../src/database';
+import { getSavedItems, hasSavedItem, addSavedItem, removeSavedItem, subscribeToSavedItemsChanges } from '../../src/database';
 import { toggleWatchlistGlobal, syncSavedStore } from '../../src/state/savedState';
 import { logTasteEvent, TASTE_WEIGHTS } from '../../src/services/tasteProfile';
 import * as Clipboard from 'expo-clipboard';
@@ -42,7 +42,7 @@ import {
   TMDBImage,
 } from '../../src/tmdb';
 import { CastDetailSkeleton } from '../../src/components/cast/CastDetailSkeleton';
-import { useAppTheme, shadows, getActiveGlowShadow } from '../../src/theme';
+import { useAppTheme, shadows, getActiveGlowShadow, ACCENT_COLOR } from '../../src/theme';
 import { useImagePalette, warmPaletteForMedia, AMBIENT_PENDING_BG } from '../../src/utils/colorExtractor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
@@ -186,7 +186,26 @@ export default function CastDetails() {
   const [error, setError] = useState<string | null>(null);
   const loadRequestRef = useRef(0);
   const [isBioExpanded, setIsBioExpanded] = useState(false);
-  const [sortBy, setSortBy] = useState<'popular' | 'rating' | 'latest'>('popular');
+  const [activeTab, setActiveTab] = useState<'all' | 'movie' | 'tv'>('all');
+  const [sortBy, setSortBy] = useState<'popular' | 'rating' | 'latest' | 'watched'>('popular');
+  const [watchedIds, setWatchedIds] = useState<Set<number>>(() => {
+    const history = getSavedItems('history') || [];
+    return new Set(history.map((h: any) => Number(h.id ?? h.media_id)));
+  });
+
+  useEffect(() => {
+    const unsubscribe = subscribeToSavedItemsChanges((type) => {
+      if (type === 'history') {
+        const history = getSavedItems('history') || [];
+        setWatchedIds(new Set(history.map((h: any) => Number(h.id ?? h.media_id))));
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  const movieCount = useMemo(() => credits.filter((c) => c.media_type === 'movie').length, [credits]);
+  const tvCount = useMemo(() => credits.filter((c) => c.media_type === 'tv').length, [credits]);
+  const watchedCount = useMemo(() => credits.filter((c) => watchedIds.has(c.id)).length, [credits, watchedIds]);
 
   const [isLiked, setIsLiked] = useState(false);
   const likedScale = useSharedValue(1);
@@ -294,7 +313,20 @@ export default function CastDetails() {
   }, [personId, loadData, checkIfLiked]);
 
   const sortedCredits = useMemo(() => {
-    const list = [...credits];
+    let list = credits.filter((item) => {
+      if (activeTab === 'all') return true;
+      return item.media_type === activeTab;
+    });
+
+    if (sortBy === 'watched') {
+      return list
+        .filter((item) => watchedIds.has(item.id))
+        .sort(
+          (a, b) =>
+            (b.vote_average || 0) - (a.vote_average || 0) ||
+            (b.vote_count || 0) - (a.vote_count || 0)
+        );
+    }
     if (sortBy === 'popular') {
       return list.sort(
         (a, b) =>
@@ -318,7 +350,7 @@ export default function CastDetails() {
       });
     }
     return list;
-  }, [credits, sortBy]);
+  }, [credits, activeTab, sortBy, watchedIds]);
 
   const handleLovePress = useCallback(async () => {
     if (!person) return;
@@ -613,12 +645,103 @@ export default function CastDetails() {
             )}
           </View>
 
+          {/* Centered Media Type Filter Pill Container (All, Movies, Shows) */}
+          <View style={styles.mediaTypeTabsWrapper}>
+            <View
+              style={[
+                styles.mediaTypeTabsContainer,
+                {
+                  backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
+                  borderColor: isAmbientActive ? 'rgba(255, 255, 255, 0.12)' : colors.border,
+                },
+              ]}
+            >
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setActiveTab('all');
+                }}
+                style={[
+                  styles.mediaTypeTab,
+                  activeTab === 'all' && styles.mediaTypeTabActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.mediaTypeTabText,
+                    { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
+                    activeTab === 'all' && styles.mediaTypeTabTextActive,
+                  ]}
+                >
+                  All ({credits.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setActiveTab('movie');
+                }}
+                style={[
+                  styles.mediaTypeTab,
+                  activeTab === 'movie' && styles.mediaTypeTabActive,
+                ]}
+              >
+                <Ionicons
+                  name="film-outline"
+                  size={14}
+                  color={activeTab === 'movie' ? '#FFFFFF' : isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary}
+                  style={{ marginRight: 5 }}
+                />
+                <Text
+                  style={[
+                    styles.mediaTypeTabText,
+                    { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
+                    activeTab === 'movie' && styles.mediaTypeTabTextActive,
+                  ]}
+                >
+                  Movies ({movieCount})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setActiveTab('tv');
+                }}
+                style={[
+                  styles.mediaTypeTab,
+                  activeTab === 'tv' && styles.mediaTypeTabActive,
+                ]}
+              >
+                <Ionicons
+                  name="tv-outline"
+                  size={14}
+                  color={activeTab === 'tv' ? '#FFFFFF' : isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary}
+                  style={{ marginRight: 5 }}
+                />
+                <Text
+                  style={[
+                    styles.mediaTypeTabText,
+                    { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
+                    activeTab === 'tv' && styles.mediaTypeTabTextActive,
+                  ]}
+                >
+                  Shows ({tvCount})
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Text style={[styles.sectionHeaderTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>Filmography</Text>
                 <View style={[styles.countBadge, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.12)' : colors.surfaceContainerHigh }]}>
-                  <Text style={[styles.countBadgeText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>{credits.length}</Text>
+                  <Text style={[styles.countBadgeText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>{sortedCredits.length}</Text>
                 </View>
               </View>
 
@@ -661,7 +784,7 @@ export default function CastDetails() {
                   ]}
                 >
                   <Text style={[styles.sortPillText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, sortBy === 'rating' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
-                    Rating
+                    Top Rated
                   </Text>
                 </TouchableOpacity>
 
@@ -685,22 +808,54 @@ export default function CastDetails() {
                     Latest
                   </Text>
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    setSortBy('watched');
+                  }}
+                  style={[
+                    styles.sortPill,
+                    {
+                      backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
+                      borderColor: isAmbientActive ? 'transparent' : colors.border,
+                    },
+                    sortBy === 'watched' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
+                    isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+                  ]}
+                >
+                  <Text style={[styles.sortPillText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, sortBy === 'watched' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
+                    Watched{watchedCount > 0 ? ` (${watchedCount})` : ''}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
 
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-              {sortedCredits.slice(0, creditsLimit).map((item, index) => (
-                <CreditCard
-                  key={`${item.id}-${index}`}
-                  item={item}
-                  index={index}
-                  cardWidth={CARD_WIDTH}
-                  cardGap={CARD_GAP}
-                  isAmbientActive={isAmbientActive}
-                  onPress={handleCreditPress}
-                />
-              ))}
-            </View>
+            {sortedCredits.length === 0 ? (
+              <View style={[styles.emptyWatchedContainer, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.05)' : colors.surfaceContainer, borderColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.border }]}>
+                <Ionicons name="checkmark-circle-outline" size={34} color={colors.textSecondary} />
+                <Text style={[styles.emptyWatchedText, { color: colors.textSecondary }]}>
+                  {sortBy === 'watched'
+                    ? `You haven't logged any watched titles starring ${person?.name || 'this artist'} yet.`
+                    : 'No titles found in this category.'}
+                </Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                {sortedCredits.slice(0, creditsLimit).map((item, index) => (
+                  <CreditCard
+                    key={`${item.id}-${index}`}
+                    item={item}
+                    index={index}
+                    cardWidth={CARD_WIDTH}
+                    cardGap={CARD_GAP}
+                    isAmbientActive={isAmbientActive}
+                    onPress={handleCreditPress}
+                  />
+                ))}
+              </View>
+            )}
           </View>
         </View>
       </ScrollView>
@@ -966,6 +1121,43 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+  mediaTypeTabsWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    marginTop: 6,
+  },
+  mediaTypeTabsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 4,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  mediaTypeTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 13,
+    borderRadius: 12,
+  },
+  mediaTypeTabActive: {
+    backgroundColor: ACCENT_COLOR,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  mediaTypeTabText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  mediaTypeTabTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
   sortPillsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -991,6 +1183,22 @@ const styles = StyleSheet.create({
   sortPillTextActive: {
     color: C.white,
     fontWeight: '700',
+  },
+  emptyWatchedContainer: {
+    width: '100%',
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 8,
+  },
+  emptyWatchedText: {
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
   },
 
   overviewText: { color: C.text, fontSize: 14.5, lineHeight: 23 },

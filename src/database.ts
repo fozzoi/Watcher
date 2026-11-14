@@ -84,9 +84,19 @@ export const initDb = () => {
         updated_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_tmdb_cache_updated ON tmdb_response_cache(updated_at);
+
+      CREATE TABLE IF NOT EXISTS media_cast_cache (
+        media_key TEXT PRIMARY KEY,
+        media_id INTEGER NOT NULL,
+        media_type TEXT NOT NULL,
+        cast_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_cast_media ON media_cast_cache(media_id, media_type);
     `);
     tmdbCacheTableEnsured = true;
     exploreCacheTableEnsured = true;
+    castCacheTableEnsured = true;
   } catch (error) {
     console.error('Failed to initialize SQLite database:', error);
     throw error;
@@ -789,4 +799,143 @@ export const clearTmdbResponseCacheSync = (keyPrefix: string = '') => {
   } catch (error) {
     console.warn('Failed to clear tmdb_response_cache:', error);
   }
+};
+
+export type CompactCastActor = {
+  id: number;
+  name: string;
+  profile_path: string | null;
+};
+
+let castCacheTableEnsured = false;
+export const ensureCastCacheTable = () => {
+  if (castCacheTableEnsured) return;
+  try {
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS media_cast_cache (
+        media_key TEXT PRIMARY KEY,
+        media_id INTEGER NOT NULL,
+        media_type TEXT NOT NULL,
+        cast_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_cast_media ON media_cast_cache(media_id, media_type);
+    `);
+    castCacheTableEnsured = true;
+  } catch (e) {
+    console.warn('Failed to ensure media_cast_cache table:', e);
+  }
+};
+
+export const saveMediaCastCacheSync = (
+  mediaId: number,
+  mediaType: string,
+  rawCast: any[]
+) => {
+  if (!mediaId || !Array.isArray(rawCast) || rawCast.length === 0) return;
+  try {
+    ensureCastCacheTable();
+    const normalizedType = mediaType === 'tv' ? 'tv' : 'movie';
+    const mediaKey = `${normalizedType}_${mediaId}`;
+    const compact: CompactCastActor[] = rawCast.slice(0, 4).map((c: any) => ({
+      id: Number(c.id),
+      name: String(c.name || '').trim(),
+      profile_path: c.profile_path || null,
+    })).filter((c: CompactCastActor) => c.name);
+
+    if (compact.length === 0) return;
+
+    db.runSync(
+      'INSERT OR REPLACE INTO media_cast_cache (media_key, media_id, media_type, cast_json, updated_at) VALUES (?, ?, ?, ?, ?)',
+      [mediaKey, mediaId, normalizedType, JSON.stringify(compact), Date.now()]
+    );
+  } catch (error) {
+    console.warn('Failed to save media_cast_cache:', error);
+  }
+};
+
+export const batchSaveMediaCastCacheSync = (
+  items: Array<{ mediaId: number; mediaType: string; rawCast: any[] }>
+) => {
+  if (!items || items.length === 0) return;
+  try {
+    ensureCastCacheTable();
+    const now = Date.now();
+    db.withTransactionSync(() => {
+      const stmt = db.prepareSync(
+        'INSERT OR REPLACE INTO media_cast_cache (media_key, media_id, media_type, cast_json, updated_at) VALUES (?, ?, ?, ?, ?)'
+      );
+      for (const item of items) {
+        if (!item.mediaId || !Array.isArray(item.rawCast) || item.rawCast.length === 0) continue;
+        const normalizedType = item.mediaType === 'tv' ? 'tv' : 'movie';
+        const mediaKey = `${normalizedType}_${item.mediaId}`;
+        const compact: CompactCastActor[] = item.rawCast.slice(0, 4).map((c: any) => ({
+          id: Number(c.id),
+          name: String(c.name || '').trim(),
+          profile_path: c.profile_path || null,
+        })).filter((c: CompactCastActor) => c.name);
+
+        if (compact.length > 0) {
+          stmt.executeSync([mediaKey, item.mediaId, normalizedType, JSON.stringify(compact), now]);
+        }
+      }
+      stmt.finalizeSync();
+    });
+  } catch (error) {
+    console.warn('Failed to batch save media_cast_cache:', error);
+  }
+};
+
+export const getAllMediaCastCacheSync = (): Record<string, CompactCastActor[]> => {
+  const result: Record<string, CompactCastActor[]> = {};
+  try {
+    ensureCastCacheTable();
+    const rows = db.getAllSync<{ media_key: string; cast_json: string }>(
+      'SELECT media_key, cast_json FROM media_cast_cache'
+    );
+    for (const r of rows) {
+      if (r?.media_key && r?.cast_json) {
+        try {
+          result[r.media_key] = JSON.parse(r.cast_json);
+        } catch {}
+      }
+    }
+
+    // If cache is brand new, scan tmdb_response_cache for existing cast responses to seed immediately
+    if (Object.keys(result).length === 0) {
+      const tmdbRows = db.getAllSync<{ cache_key: string; data_json: string }>(
+        "SELECT cache_key, data_json FROM tmdb_response_cache WHERE cache_key LIKE '/movie/%' OR cache_key LIKE '/tv/%' LIMIT 300"
+      );
+      const toBatch: Array<{ mediaId: number; mediaType: string; rawCast: any[] }> = [];
+      for (const row of tmdbRows) {
+        const match = row.cache_key.match(/^\/(movie|tv)\/(\d+)/);
+        if (!match) continue;
+        try {
+          const parsed = JSON.parse(row.data_json);
+          const cast = parsed?.credits?.cast || parsed?.cast;
+          if (Array.isArray(cast) && cast.length > 0) {
+            const mediaType = match[1];
+            const mediaId = Number(match[2]);
+            const mediaKey = `${mediaType}_${mediaId}`;
+            const compact: CompactCastActor[] = cast.slice(0, 4).map((c: any) => ({
+              id: Number(c.id),
+              name: String(c.name || '').trim(),
+              profile_path: c.profile_path || null,
+            })).filter((c: CompactCastActor) => c.name);
+
+            if (compact.length > 0) {
+              result[mediaKey] = compact;
+              toBatch.push({ mediaId, mediaType, rawCast: cast });
+            }
+          }
+        } catch {}
+      }
+      if (toBatch.length > 0) {
+        batchSaveMediaCastCacheSync(toBatch);
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to get media_cast_cache:', error);
+  }
+  return result;
 };

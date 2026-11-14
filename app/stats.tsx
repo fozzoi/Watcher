@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -8,12 +8,20 @@ import {
   StatusBar,
   Dimensions
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LoadingIndicator } from '../src/components/shared/LoadingIndicator';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { getSavedItems } from '../src/database';
+import { 
+  getSavedItems, 
+  getAllMediaCastCacheSync, 
+  saveMediaCastCacheSync, 
+  batchSaveMediaCastCacheSync,
+  CompactCastActor 
+} from '../src/database';
+import { getMediaCredits } from '../src/tmdb';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useAppTheme, ACCENT_COLOR, palette } from '../src/theme';
 
@@ -59,6 +67,8 @@ type GenreStat = {
 type ActorStat = {
   name: string;
   count: number;
+  id?: number;
+  profile_path?: string | null;
 };
 
 type StatData = {
@@ -86,6 +96,100 @@ export default function StatsPage() {
   const { colors, isDark } = useAppTheme();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<StatData | null>(null);
+  const [indexingProgress, setIndexingProgress] = useState<{ indexed: number; total: number } | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const calculateTopActors = useCallback((
+    history: any[],
+    castCache: Record<string, CompactCastActor[]>,
+    artists: any[]
+  ) => {
+    const actorMap: Record<string, { count: number; id?: number; profile_path?: string | null }> = {};
+    const missing: Array<{ id: number; mediaType: 'movie' | 'tv'; title: string }> = [];
+    const seenMissing = new Set<string>();
+
+    for (const item of history) {
+      const rawId = item?.id ?? item?.media_id;
+      const mediaId = Number(rawId);
+      if (!mediaId || isNaN(mediaId)) continue;
+
+      const isTv = item.media_type === 'tv' || !!item.first_air_date || item.lastSeason !== undefined;
+      const mediaType: 'movie' | 'tv' = isTv ? 'tv' : 'movie';
+      const key = `${mediaType}_${mediaId}`;
+
+      let castList: CompactCastActor[] | undefined = castCache[key];
+
+      if ((!castList || castList.length === 0) && Array.isArray(item.cast) && item.cast.length > 0) {
+        const extracted: CompactCastActor[] = item.cast.slice(0, 4).map((c: any) => ({
+          id: Number(c.id),
+          name: String(c.name || '').trim(),
+          profile_path: c.profile_path || null,
+        })).filter((c: CompactCastActor) => c.name);
+        if (extracted.length > 0) {
+          castList = extracted;
+          castCache[key] = extracted;
+          saveMediaCastCacheSync(mediaId, mediaType, item.cast);
+        }
+      }
+
+      if (castList && castList.length > 0) {
+        for (const actor of castList) {
+          if (!actor.name) continue;
+          if (!actorMap[actor.name]) {
+            actorMap[actor.name] = { count: 0, id: actor.id, profile_path: actor.profile_path };
+          }
+          actorMap[actor.name].count += 1;
+          if (!actorMap[actor.name].profile_path && actor.profile_path) {
+            actorMap[actor.name].profile_path = actor.profile_path;
+          }
+          if (!actorMap[actor.name].id && actor.id) {
+            actorMap[actor.name].id = actor.id;
+          }
+        }
+      } else {
+        if (!seenMissing.has(key)) {
+          seenMissing.add(key);
+          missing.push({
+            id: mediaId,
+            mediaType,
+            title: item.title || item.name || `Title #${mediaId}`,
+          });
+        }
+      }
+    }
+
+    // Merge favorite artists if history list is still sparse
+    if (Object.keys(actorMap).length === 0) {
+      artists.forEach((art: any) => {
+        if (art?.name) {
+          actorMap[art.name] = {
+            count: 1,
+            id: art.id,
+            profile_path: art.profile_path || null,
+          };
+        }
+      });
+    }
+
+    const topActorsList: ActorStat[] = Object.entries(actorMap)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 8)
+      .map(([name, data]) => ({
+        name,
+        count: data.count,
+        id: data.id,
+        profile_path: data.profile_path,
+      }));
+
+    return { topActorsList, missing };
+  }, []);
 
   const loadStats = useCallback(() => {
     try {
@@ -98,7 +202,6 @@ export default function StatsPage() {
       let totalTv = 0;
       let totalRuntimeMinutes = 0;
       const genres: Record<string, number> = {};
-      const actors: Record<string, number> = {};
 
       for (const item of history) {
         const isTv = item.media_type === 'tv' || !!item.first_air_date || item.lastSeason !== undefined;
@@ -121,22 +224,7 @@ export default function StatsPage() {
             if (name) genres[name] = (genres[name] || 0) + 1;
           });
         }
-
-        // Process cast members if available
-        if (item.cast && Array.isArray(item.cast)) {
-          item.cast.slice(0, 4).forEach((actor: any) => {
-            const name = actor?.name;
-            if (name) actors[name] = (actors[name] || 0) + 1;
-          });
-        }
       }
-
-      // Merge saved favorite artists into actors breakdown if list is sparse
-      artists.forEach((art: any) => {
-        if (art?.name) {
-          actors[art.name] = (actors[art.name] || 0) + 1;
-        }
-      });
 
       // Genre sorting
       const sortedGenres = Object.entries(genres).sort((a, b) => b[1] - a[1]);
@@ -149,11 +237,9 @@ export default function StatsPage() {
         percent: Math.round((count / totalGenreHits) * 100),
       }));
 
-      // Actor sorting
-      const topActorsList: ActorStat[] = Object.entries(actors)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([name, count]) => ({ name, count }));
+      // Instant local SQLite credit resolution
+      const castCache = getAllMediaCastCacheSync();
+      const { topActorsList: initialTopActors, missing } = calculateTopActors(history, castCache, artists);
 
       const totalWatched = totalMovies + totalTv;
       const totalTracked = totalWatched + watchlist.length;
@@ -193,7 +279,7 @@ export default function StatsPage() {
         totalRuntimeDays: (totalRuntimeMinutes / (60 * 24)).toFixed(1),
         topGenre,
         topGenresList,
-        topActorsList,
+        topActorsList: initialTopActors,
         watchlistSize: watchlist.length,
         historySize: history.length,
         completionRate,
@@ -203,12 +289,95 @@ export default function StatsPage() {
         milestoneIcon,
         milestoneDesc,
       });
+
+      // Progressively resolve missing credits on the client
+      if (missing.length > 0) {
+        const alreadyIndexed = history.length - missing.length;
+        setIndexingProgress({ indexed: alreadyIndexed, total: history.length });
+
+        (async () => {
+          const BATCH_SIZE = 25;
+          let processed = 0;
+          for (let i = 0; i < missing.length; i += BATCH_SIZE) {
+            if (!isMountedRef.current) break;
+            const chunk = missing.slice(i, i + BATCH_SIZE);
+            let batchSucceeded = false;
+            try {
+              const resp = await fetch('https://watcher-api-rho.vercel.app/api/tmdb', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  endpoint: '/batch_credits',
+                  items: chunk.map((m) => ({ id: m.id, mediaType: m.mediaType })),
+                }),
+              });
+              if (resp.ok) {
+                const json = await resp.json();
+                if (json?.status === 'ok' && json?.results) {
+                  const toBatchSave: Array<{ mediaId: number; mediaType: string; rawCast: any[] }> = [];
+                  for (const m of chunk) {
+                    const key = `${m.mediaType}_${m.id}`;
+                    const cast = json.results[key];
+                    if (Array.isArray(cast) && cast.length > 0) {
+                      castCache[key] = cast;
+                      toBatchSave.push({ mediaId: m.id, mediaType: m.mediaType, rawCast: cast });
+                    }
+                  }
+                  if (toBatchSave.length > 0) {
+                    batchSaveMediaCastCacheSync(toBatchSave);
+                  }
+                  batchSucceeded = true;
+                  processed += chunk.length;
+                }
+              }
+            } catch {
+              batchSucceeded = false;
+            }
+
+            if (!batchSucceeded) {
+              const CONCURRENCY = 4;
+              for (let j = 0; j < chunk.length; j += CONCURRENCY) {
+                if (!isMountedRef.current) break;
+                const subChunk = chunk.slice(j, j + CONCURRENCY);
+                await Promise.all(
+                  subChunk.map(async (m) => {
+                    if (!isMountedRef.current) return;
+                    try {
+                      const rawCast = await getMediaCredits(m.id, m.mediaType, { priority: 'low' });
+                      if (Array.isArray(rawCast) && rawCast.length > 0) {
+                        saveMediaCastCacheSync(m.id, m.mediaType, rawCast);
+                        const compact: CompactCastActor[] = rawCast.slice(0, 4).map((c: any) => ({
+                          id: Number(c.id),
+                          name: String(c.name || '').trim(),
+                          profile_path: c.profile_path || null,
+                        })).filter((c: CompactCastActor) => c.name);
+                        castCache[`${m.mediaType}_${m.id}`] = compact;
+                      }
+                    } catch {}
+                  })
+                );
+                processed += subChunk.length;
+                await new Promise((r) => setTimeout(r, 40));
+              }
+            }
+
+            if (!isMountedRef.current) break;
+            const { topActorsList: updatedTopActors } = calculateTopActors(history, castCache, artists);
+            setIndexingProgress({ indexed: alreadyIndexed + processed, total: history.length });
+            setStats((prev) => (prev ? { ...prev, topActorsList: updatedTopActors } : prev));
+            await new Promise((r) => setTimeout(r, 60));
+          }
+          if (isMountedRef.current) {
+            setIndexingProgress(null);
+          }
+        })();
+      }
     } catch (e) {
       console.error('Failed to calculate stats:', e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [calculateTopActors]);
 
   useEffect(() => {
     loadStats();
@@ -407,9 +576,19 @@ export default function StatsPage() {
 
         {/* Most Watched Stars / Favorite Actors */}
         <Animated.View entering={FadeInDown.delay(400)} style={[styles.sectionCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
-          <View style={styles.sectionTitleRow}>
-            <Ionicons name="star" size={18} color={palette.yellow} />
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Stars & Actors</Text>
+          <View style={[styles.sectionTitleRow, { justifyContent: 'space-between' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="star" size={18} color={palette.yellow} />
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Stars & Actors</Text>
+            </View>
+            {indexingProgress && (
+              <View style={[styles.indexingBadge, { backgroundColor: colors.badgeBg, borderColor: colors.border }]}>
+                <Ionicons name="sparkles" size={12} color={colors.primary} />
+                <Text style={[styles.indexingText, { color: colors.primary }]}>
+                  Analyzing {indexingProgress.indexed}/{indexingProgress.total}
+                </Text>
+              </View>
+            )}
           </View>
 
           {stats.topActorsList.length > 0 ? (
@@ -430,12 +609,34 @@ export default function StatsPage() {
                 const rankTextColor = (isFirst || isSecond || isThird) ? '#0A0A0F' : colors.text;
 
                 return (
-                  <View key={actor.name} style={[styles.actorRow, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
+                  <TouchableOpacity 
+                    key={actor.name} 
+                    activeOpacity={actor.id ? 0.7 : 1}
+                    onPress={() => {
+                      if (actor.id) {
+                        router.push(`/cast/${actor.id}` as any);
+                      }
+                    }}
+                    style={[styles.actorRow, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}
+                  >
                     <View style={[styles.actorRankBadge, { backgroundColor: rankBg }]}>
                       <Text style={[styles.actorRankText, { color: rankTextColor }]}>
                         #{idx + 1}
                       </Text>
                     </View>
+
+                    {actor.profile_path ? (
+                      <Image 
+                        source={{ uri: `https://image.tmdb.org/t/p/w185${actor.profile_path}` }}
+                        style={styles.actorAvatar}
+                        contentFit="cover"
+                        transition={200}
+                      />
+                    ) : (
+                      <View style={[styles.actorAvatarPlaceholder, { backgroundColor: colors.surfaceContainer }]}>
+                        <Ionicons name="person" size={14} color={colors.textSecondary} />
+                      </View>
+                    )}
 
                     <Text style={[styles.actorName, { color: colors.text }]} numberOfLines={1}>
                       {actor.name}
@@ -446,13 +647,15 @@ export default function StatsPage() {
                         {actor.count} {actor.count === 1 ? 'title' : 'titles'}
                       </Text>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
           ) : (
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Watch titles or star your favorite cinema actors to see them ranked here.
+              {indexingProgress 
+                ? `Scanning library credits (${indexingProgress.indexed}/${indexingProgress.total})...` 
+                : 'Watch titles or star your favorite cinema actors to see them ranked here.'}
             </Text>
           )}
         </Animated.View>
@@ -745,6 +948,19 @@ const styles = StyleSheet.create({
   actorsList: {
     gap: 10,
   },
+  indexingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  indexingText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   actorRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -755,6 +971,19 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.04)',
+  },
+  actorAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  actorAvatarPlaceholder: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actorRankBadge: {
     width: 26,
