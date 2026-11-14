@@ -143,8 +143,14 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.warn(
         '[Push] Android standalone builds require google-services.json for remote push notifications via FCM. See: https://docs.expo.dev/push-notifications/fcm-credentials/'
       );
+    } else if (
+      error?.message?.includes('UnknownHostException') ||
+      error?.message?.includes('Network request failed') ||
+      error?.message?.includes('fetch failed')
+    ) {
+      console.warn('[Push] Offline or DNS unavailable; push token will sync once internet is connected.');
     } else {
-      console.error('[Push] Failed to get Expo push token:', error);
+      console.warn('[Push] Could not retrieve push token:', error?.message || error);
     }
     return null;
   }

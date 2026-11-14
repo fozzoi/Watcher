@@ -71,7 +71,7 @@ export const loadGlobalConfig = async (): Promise<void> => {
   }
 };
 
-const REQUEST_TIMEOUT_MS = 10000;
+const REQUEST_TIMEOUT_MS = 15000;
 const AI_REQUEST_TIMEOUT_MS = 25000;
 
 const tmdbApi = axios.create({
@@ -300,8 +300,8 @@ const createCacheKey = (endpoint: string, params: Record<string, any> = {}) => {
 };
 
 const MAX_REQUEST_CACHE_ENTRIES = 300;
-const MAX_CONCURRENT_TOTAL = 6;
-const MAX_CONCURRENT_LOW = 3;
+const MAX_CONCURRENT_TOTAL = 4;
+const MAX_CONCURRENT_LOW = 2;
 
 const inFlightRequests = new Map<string, Promise<any>>();
 const backgroundRevalidations = new Map<string, Promise<void>>();
@@ -465,22 +465,61 @@ const executeHttpWithRetry = async (
   maxRetries: number,
 ) => {
   let lastError: any = null;
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
+  // Build full URL query string
+  const queryParts: string[] = [];
+  for (const [key, val] of Object.entries(params)) {
+    if (val !== undefined && val !== null && val !== '') {
+      queryParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(val))}`);
+    }
+  }
+  const queryString = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+  const fullUrl = `${API_BASE_URL}${cleanEndpoint}${queryString}`;
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const response = await tmdbApi.get(endpoint, {
-        params,
-        timeout: REQUEST_TIMEOUT_MS,
-      });
-      return response.data;
+      // Use native fetch: avoids React Native Axios/XMLHttpRequest OkHttp socket drops
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      try {
+        const response = await fetch(fullUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => '');
+          let parsedError: any;
+          try {
+            parsedError = JSON.parse(errorText);
+          } catch {
+            parsedError = { error: errorText || `HTTP ${response.status}` };
+          }
+          const httpError: any = new Error(parsedError.error || `Request failed with status ${response.status}`);
+          httpError.response = { status: response.status, data: parsedError };
+          throw httpError;
+        }
+
+        const data = await response.json();
+        return data;
+      } catch (innerErr) {
+        clearTimeout(timeoutId);
+        throw innerErr;
+      }
     } catch (error: any) {
       lastError = error;
       const statusCode = error.response?.status;
       const isTimeout =
+        error.name === 'AbortError' ||
         error.code === 'ECONNABORTED' ||
         error.code === 'ETIMEDOUT' ||
         (typeof error.message === 'string' && error.message.toLowerCase().includes('timeout'));
-      // Do not retry after a full timeout wait (prevents 10s -> 20s+ freezes);
-      // only retry fast transient failures (429/5xx/connection resets).
+
       const isRetryable =
         !isTimeout &&
         (!statusCode ||
@@ -489,7 +528,7 @@ const executeHttpWithRetry = async (
           (statusCode >= 500 && statusCode < 600));
 
       if (attempt < maxRetries && isRetryable) {
-        const delay = Math.min(1200, 350 * Math.pow(2, attempt) + Math.floor(Math.random() * 150));
+        const delay = Math.min(600, 150 * Math.pow(2, attempt) + Math.floor(Math.random() * 100));
         console.warn(`[TMDB] ${endpoint} attempt ${attempt + 1} failed (${error.message}). Retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
@@ -1246,7 +1285,7 @@ export const getFullDetails = async (
   options?: TmdbRequestOptions<TMDBResult>,
 ): Promise<TMDBResult> => {
   let resolvedMediaType: "movie" | "tv" = item.media_type || (item.first_air_date ? "tv" : "movie");
-  const append = "credits,release_dates,content_ratings,external_ids,videos,images";
+  const append = "credits,release_dates,content_ratings,external_ids,videos";
 
   const makeFetchOptions = (targetType: "movie" | "tv"): TmdbRequestOptions | undefined => {
     if (!options) return undefined;

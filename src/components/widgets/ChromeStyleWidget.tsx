@@ -138,7 +138,18 @@ export const ChromeStyleWidget = memo(({ onOpenSearch, onSelectTrending }: Chrom
       const randomItem = trendingItems[randomIndex];
       warmPaletteForMedia(randomItem);
       const mediaType = randomItem.media_type || (randomItem.first_air_date ? 'tv' : 'movie');
-      router.push(`/movie/${randomItem.id}?media_type=${mediaType}`);
+      router.push({
+        pathname: `/movie/${randomItem.id}`,
+        params: {
+          media_type: mediaType,
+          title: randomItem.title || randomItem.name || '',
+          poster_path: randomItem.poster_path || '',
+          backdrop_path: randomItem.backdrop_path || '',
+          overview: randomItem.overview || '',
+          release_date: randomItem.release_date || randomItem.first_air_date || '',
+          vote_average: randomItem.vote_average ? String(randomItem.vote_average) : '',
+        },
+      });
     }
   }, [trendingItems, router]);
 
@@ -168,7 +179,18 @@ export const ChromeStyleWidget = memo(({ onOpenSearch, onSelectTrending }: Chrom
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     warmPaletteForMedia(currentItem);
     const mediaType = currentItem.media_type || (currentItem.first_air_date ? 'tv' : 'movie');
-    router.push(`/movie/${currentItem.id}?media_type=${mediaType}`);
+    router.push({
+      pathname: `/movie/${currentItem.id}`,
+      params: {
+        media_type: mediaType,
+        title: currentItem.title || currentItem.name || '',
+        poster_path: currentItem.poster_path || '',
+        backdrop_path: currentItem.backdrop_path || '',
+        overview: currentItem.overview || '',
+        release_date: currentItem.release_date || currentItem.first_air_date || '',
+        vote_average: currentItem.vote_average ? String(currentItem.vote_average) : '',
+      },
+    });
   }, [trendingItems, currentIndex, router]);
 
   const currentItem = trendingItems[currentIndex];

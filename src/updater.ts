@@ -87,8 +87,17 @@ export const fetchLatestGitHubRelease = async (): Promise<GitHubRelease | null> 
     }
 
     return await response.json();
-  } catch (error) {
-    console.error('Failed to fetch latest GitHub release:', error);
+  } catch (error: any) {
+    const isNetworkError =
+      error?.message?.includes('UnknownHostException') ||
+      error?.message?.includes('Network request failed') ||
+      error?.message?.includes('fetch failed') ||
+      error?.name === 'TypeError';
+    if (isNetworkError) {
+      console.warn('[Updater] Could not reach GitHub to check updates (offline or DNS resolving).');
+    } else {
+      console.warn('[Updater] Failed to fetch latest GitHub release:', error?.message || error);
+    }
     return null;
   }
 };
@@ -206,8 +215,8 @@ export const checkAndNotifyUpdate = async (): Promise<UpdateCheckResult | null> 
       return result;
     }
     return null;
-  } catch (error) {
-    console.error('Auto update check failed:', error);
+  } catch (error: any) {
+    console.warn('[Updater] Auto update check skipped:', error?.message || error);
     return null;
   }
 };

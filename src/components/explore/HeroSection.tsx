@@ -214,7 +214,18 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
   const open = useCallback((item: TMDBResult) => {
     warmPaletteForMedia(item);
     const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
-    router.push(`/movie/${item.id}?media_type=${mediaType}`);
+    router.push({
+      pathname: `/movie/${item.id}`,
+      params: {
+        media_type: mediaType,
+        title: item.title || item.name || '',
+        poster_path: item.poster_path || '',
+        backdrop_path: item.backdrop_path || '',
+        overview: item.overview || '',
+        release_date: item.release_date || item.first_air_date || '',
+        vote_average: item.vote_average ? String(item.vote_average) : '',
+      },
+    });
   }, [router]);
 
   if (isLoading) return <View style={[styles.root, styles.skeleton, { width, height: HERO_HEIGHT }]} accessibilityLabel="Loading featured films" />;

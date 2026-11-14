@@ -36,12 +36,12 @@ import {
   getCollectionDetails,
 } from '../../src/tmdb';
 import { getProgress, isEpisodeCompleted } from '../../src/utils/progress';
-import { pollCloudChangesIfStale } from '../../src/cloudSync';
 import {
   getSavedItems,
   addSavedItem,
   removeSavedItem,
   hasSavedItem,
+  getTmdbResponseCacheSync,
 } from '../../src/database';
 import { logTasteEvent, TASTE_WEIGHTS } from '../../src/services/tasteProfile';
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
@@ -957,14 +957,60 @@ const MovieEpisodesSection = React.memo(({
 export default function DetailPage() {
   const router = useRouter();
   const { colors, isDark, ambientTheming } = useAppTheme();
-  const { id, media_type } = useLocalSearchParams();
+  const searchParams = useLocalSearchParams<{
+    id: string;
+    media_type?: string;
+    title?: string;
+    name?: string;
+    poster_path?: string;
+    backdrop_path?: string;
+    overview?: string;
+    release_date?: string;
+    first_air_date?: string;
+    vote_average?: string;
+  }>();
+  const { id, media_type } = searchParams;
   const { width, height } = useWindowDimensions();
   const isTablet = width >= 768;
   const isLandscape = width > height;
 
   const HEADER_HEIGHT = isLandscape ? height * 0.55 : height * 0.60;
 
-  const [movie, setMovie] = useState<any>(null);
+  const [movie, setMovie] = useState<any>(() => {
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId) || numericId <= 0) return null;
+
+    // 1. Check synchronous SQLite response cache
+    const targetMediaType = (media_type as string) || (searchParams.first_air_date ? 'tv' : 'movie');
+    const cacheKey = `/${targetMediaType}/${numericId}-{"append_to_response":"credits,release_dates,content_ratings,external_ids,videos"}`;
+    const cached = getTmdbResponseCacheSync(cacheKey);
+    if (cached?.data) return cached.data;
+
+    // 2. Check route search params passed from card press
+    if (searchParams.title || searchParams.name || searchParams.poster_path) {
+      return {
+        id: numericId,
+        media_type: targetMediaType,
+        title: searchParams.title || searchParams.name || '',
+        name: searchParams.name || searchParams.title || '',
+        poster_path: searchParams.poster_path || null,
+        backdrop_path: searchParams.backdrop_path || null,
+        overview: searchParams.overview || '',
+        release_date: searchParams.release_date || null,
+        first_air_date: searchParams.first_air_date || null,
+        vote_average: searchParams.vote_average ? Number(searchParams.vote_average) : null,
+      };
+    }
+
+    // 3. Check local saved items (watchlist / history in SQLite)
+    try {
+      const saved = [...getSavedItems('watchlist'), ...getSavedItems('history')];
+      const matched = saved.find((item: any) => Number(item.id ?? item.media_id) === numericId);
+      if (matched) return matched;
+    } catch {}
+
+    return null;
+  });
   const [detailsError, setDetailsError] = useState<string | null>(null);
 
   // Progressive Staging: Tier 1 (Cast/Directors) lands at 200ms; Tier 2 (Gallery/AI/Similar) pre-mounts at 450ms in the background
@@ -1095,7 +1141,7 @@ export default function DetailPage() {
       return;
     }
 
-    setMovie(null);
+    setMovie((prev: any) => (prev?.id === numericId ? prev : null));
     setDetailsError(null);
     setExtras({
       directors: [],
@@ -1294,7 +1340,6 @@ export default function DetailPage() {
         prefetchSources(movie.id, movie.media_type, movie.title || movie.name || '', s, e);
       });
       syncSavedStore();
-      void pollCloudChangesIfStale(10000);
       return () => {
         isActive = false;
       };

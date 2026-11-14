@@ -126,7 +126,18 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
                       weight: TASTE_WEIGHTS.SEARCH_CLICK,
                     });
                     warmPaletteForMedia(result);
-                    router.push(`/movie/${result.id}?media_type=${mType}`);
+                    router.push({
+                      pathname: `/movie/${result.id}`,
+                      params: {
+                        media_type: mType,
+                        title: result.title || result.name || '',
+                        poster_path: result.poster_path || '',
+                        backdrop_path: result.backdrop_path || '',
+                        overview: result.overview || '',
+                        release_date: result.release_date || result.first_air_date || '',
+                        vote_average: result.vote_average ? String(result.vote_average) : '',
+                      },
+                    });
                   }}
                 />
               ))}

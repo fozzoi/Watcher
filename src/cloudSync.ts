@@ -231,6 +231,31 @@ async function prepareLocalLibraryForAccount(userId: string) {
   await AsyncStorage.setItem('cloud_local_library_owner', userId);
 }
 
+function compactMediaItemForSync(raw: any) {
+  if (!raw || typeof raw !== 'object') return raw;
+  const id = Number(raw.id ?? raw.media_id);
+  if (!Number.isFinite(id) || id <= 0) return raw;
+  const fallbackType = raw.first_air_date && !raw.release_date ? 'tv' : 'movie';
+  return {
+    id,
+    media_type: raw.media_type || fallbackType,
+    title: String(raw.title || raw.name || '').slice(0, 300),
+    name: String(raw.name || raw.title || '').slice(0, 300),
+    poster_path: raw.poster_path ? String(raw.poster_path).slice(0, 200) : null,
+    backdrop_path: raw.backdrop_path ? String(raw.backdrop_path).slice(0, 200) : null,
+    release_date: raw.release_date ? String(raw.release_date).slice(0, 30) : null,
+    first_air_date: raw.first_air_date ? String(raw.first_air_date).slice(0, 30) : null,
+    vote_average: typeof raw.vote_average === 'number' ? Number(raw.vote_average.toFixed(1)) : null,
+    genre_ids: Array.isArray(raw.genre_ids) ? raw.genre_ids.slice(0, 10).map(Number).filter(Number.isFinite) : [],
+    overview: raw.overview ? String(raw.overview).slice(0, 600) : '',
+    runtime: typeof raw.runtime === 'number' ? raw.runtime : null,
+    added_at: raw.added_at || raw.created_at || Date.now(),
+    created_at: raw.created_at || raw.added_at || Date.now(),
+    watchedAt: typeof raw.watchedAt === 'number' ? raw.watchedAt : undefined,
+    statusUpdatedAt: typeof raw.statusUpdatedAt === 'number' ? raw.statusUpdatedAt : undefined,
+  };
+}
+
 async function enqueueCloudOperation(operation: any): Promise<void> {
   try {
     const user = await cloudSync.getAuthUser();
@@ -241,6 +266,9 @@ async function enqueueCloudOperation(operation: any): Promise<void> {
     await withOutboxLock(async () => {
       const outbox = await readOutboxRaw(user.userId);
       const nextOp = { ...operation, operationId: Crypto.randomUUID(), clientTimestamp: Date.now() };
+      if (nextOp.item && typeof nextOp.item === 'object') {
+        nextOp.item = compactMediaItemForSync(nextOp.item);
+      }
 
       // Coalesce pending non-in-flight librarySnapshotMerge so multiple restores/merges don't queue multiple full payloads
       if (nextOp.type === 'librarySnapshotMerge') {
@@ -366,11 +394,14 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
         inFlightOperationId = operation.operationId;
         const opStart = Date.now();
         try {
+          if (operation.item && typeof operation.item === 'object') {
+            operation.item = compactMediaItemForSync(operation.item);
+          }
           const isSnapshotMerge = operation.type === 'librarySnapshotMerge' && operation.action === 'merge';
           const requestBody = isSnapshotMerge
             ? { ...(operation.value || {}), mode: 'merge' }
             : { action: 'mutate', mutation: operation };
-          const timeout = isSnapshotMerge ? 45000 : 30000;
+          const timeout = isSnapshotMerge ? 30000 : 15000;
           const bodySizeKb = (JSON.stringify(requestBody).length / 1024).toFixed(1);
           logSync('Outbox', `Flushing op type=${operation.type} action=${operation.action} mediaId=${operation.mediaId ?? operation.item?.id ?? 'none'} opId=${operation.operationId} (~${bodySizeKb} KB, timeout ${timeout}ms)...`);
 
@@ -441,9 +472,27 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
                 await writeOutboxRaw(user.userId, current);
               });
             }
+          } else {
+            const failCount = (operation.failures || 0) + 1;
+            if (failCount >= 4) {
+              warnSync('Outbox', `Mutation ${operation.operationId} (${operation.type}:${operation.action}) failed ${failCount} times (${formattedErr}); dropping from outbox to unblock sync queue.`);
+              await withOutboxLock(async () => {
+                const current = await readOutboxRaw(user.userId);
+                const next = current.filter((op: any) => op?.operationId !== operation.operationId);
+                await writeOutboxRaw(user.userId, next);
+              });
+              continue;
+            } else {
+              await withOutboxLock(async () => {
+                const current = await readOutboxRaw(user.userId);
+                const target = current.find((op: any) => op?.operationId === operation.operationId);
+                if (target) target.failures = failCount;
+                await writeOutboxRaw(user.userId, current);
+              });
+            }
           }
 
-          retryAfter = Date.now() + retryDelay;
+          retryAfter = Date.now() + Math.max(5000, retryDelay);
           retryDelay = Math.min(30000, retryDelay * 2);
           lastError = formattedErr;
           warnSync('Outbox', `Failed to flush edit after ${elapsed}ms (retry in ${retryDelay / 1000}s): ${formattedErr}`, {
