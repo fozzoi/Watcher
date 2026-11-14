@@ -1235,9 +1235,14 @@ export default function DetailPage() {
     const collectionPromise = movie.belongs_to_collection?.id
       ? getCollectionDetails(movie.belongs_to_collection.id, { priority: 'high' }).catch(() => null)
       : Promise.resolve(null);
-    const similarPromise = getSimilarMedia(movie.id, movie.media_type, 1, { priority: 'high', throwOnError: true })
-      .then((items) => ({ items, failed: false }))
-      .catch(() => ({ items: [], failed: true }));
+    const similarPromise = fullDetailsPromise.then((fd) => {
+      if (fd?.recommendations && fd.recommendations.length > 0) {
+        return { items: fd.recommendations, failed: false };
+      }
+      return getSimilarMedia(movie.id, movie.media_type, 1, { priority: 'high', throwOnError: true })
+        .then((items) => ({ items, failed: false }))
+        .catch(() => ({ items: [], failed: true }));
+    });
 
     Promise.all([
       fullDetailsPromise,

@@ -222,6 +222,7 @@ export interface TMDBResult {
    
   production_companies?: TMDBProductionCompany[];
   belongs_to_collection?: TMDBCollection | null;
+  recommendations?: TMDBResult[];
 }
 
 export interface TMDBSeason {
@@ -1258,6 +1259,11 @@ const buildFullDetailsResult = (
     seasonsData = data.seasons || [];
   }
 
+  const recommendations = (data.recommendations?.results || []).map((r: any) => ({
+    ...formatBasicItemData(r),
+    media_type: resolvedMediaType,
+  }));
+
   return {
     ...item,
     ...formatBasicItemData(data),
@@ -1276,6 +1282,7 @@ const buildFullDetailsResult = (
     posters: data.images?.posters || [],
     production_companies: data.production_companies || [],
     belongs_to_collection: data.belongs_to_collection || null,
+    recommendations,
   };
 };
 
@@ -1285,7 +1292,7 @@ export const getFullDetails = async (
   options?: TmdbRequestOptions<TMDBResult>,
 ): Promise<TMDBResult> => {
   let resolvedMediaType: "movie" | "tv" = item.media_type || (item.first_air_date ? "tv" : "movie");
-  const append = "credits,release_dates,content_ratings,external_ids,videos";
+  const append = "credits,release_dates,content_ratings,external_ids,videos,recommendations";
 
   const makeFetchOptions = (targetType: "movie" | "tv"): TmdbRequestOptions | undefined => {
     if (!options) return undefined;
