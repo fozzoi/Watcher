@@ -33,7 +33,7 @@ import {
 import { syncSavedStore } from '../../src/state/savedState';
 import { pollCloudChangesIfStale, pollCloudChangesWithResult, cloudSync } from '../../src/cloudSync';
 import { LoadingIndicator } from '../../src/components/shared/LoadingIndicator';
-import { getImageUrl, searchTMDB, GLOBAL_CONFIG, setGlobalConfig } from '../../src/tmdb';
+import { getImageUrl, getPersonDetails, getPersonImages, searchTMDB, GLOBAL_CONFIG, setGlobalConfig } from '../../src/tmdb';
 import { isAdultContent } from '../../src/contentSafety';
 import { GENRE_OPTIONS } from '../../src/userPreferences';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -117,7 +117,9 @@ const WatchlistCard = React.memo(({
     </View>
   );
 }, (prevProps, nextProps) => {
-  return prevProps.item.id === nextProps.item.id && prevProps.activeTab === nextProps.activeTab;
+  return prevProps.item.id === nextProps.item.id &&
+    prevProps.item.profile_path === nextProps.item.profile_path &&
+    prevProps.activeTab === nextProps.activeTab;
 });
 
 /* =========================================================================
@@ -401,6 +403,7 @@ const WatchListPage = () => {
 
   const [watchlist, setWatchlist] = useState<any[]>([]);
   const [artists, setArtists] = useState<any[]>([]);
+  const attemptedArtistImageLookups = useRef(new Set<number>());
   const [watched, setWatched] = useState<any[]>([]);
   const [nsfwFilterEnabled, setNsfwFilterEnabled] = useState(GLOBAL_CONFIG.nsfwFilterEnabled);
   const [loading, setLoading] = useState(true);
@@ -532,6 +535,63 @@ const WatchListPage = () => {
     else if (type === 'artist') setArtists(getSavedItems('artist'));
     else if (type === 'history') setWatched(getSavedItems('history'));
   }), []);
+
+  useEffect(() => {
+    if (activeTab !== 1) return;
+
+    const pending = artists.slice(0, 24).filter((artist) => {
+      const id = Number(artist?.id);
+      if (artist?.profile_path || !Number.isInteger(id) || id <= 0 || attemptedArtistImageLookups.current.has(id)) {
+        return false;
+      }
+      attemptedArtistImageLookups.current.add(id);
+      return true;
+    });
+    if (pending.length === 0) return;
+
+    let nextIndex = 0;
+    const resolveImages = async () => {
+      while (nextIndex < pending.length) {
+        const artist = pending[nextIndex++];
+        const id = Number(artist.id);
+        let profilePath: string | null = null;
+        let detailsError: unknown;
+
+        try {
+          profilePath = (await getPersonDetails(id, { priority: 'low', forceRefresh: true })).profile_path;
+        } catch (error) {
+          detailsError = error;
+        }
+
+        if (!profilePath) {
+          try {
+            const images = await getPersonImages(id, { priority: 'low', forceRefresh: true, throwOnError: true });
+            profilePath = images.find((image) => image.file_path)?.file_path || null;
+          } catch (error) {
+            console.warn(`[Watchlist] Failed to load TMDB profile image for person ${id}:`, error);
+            attemptedArtistImageLookups.current.delete(id);
+            continue;
+          }
+        }
+
+        if (!profilePath) {
+          if (detailsError) {
+            console.warn(`[Watchlist] Could not resolve TMDB profile image for person ${id}:`, detailsError);
+            attemptedArtistImageLookups.current.delete(id);
+          }
+          continue;
+        }
+
+        const savedArtist = getSavedItems('artist').find((item) => Number(item.id) === id);
+        if (savedArtist && !savedArtist.profile_path) {
+          addSavedItem({ ...savedArtist, profile_path: profilePath }, 'artist');
+        }
+      }
+    };
+
+    const workers = Array.from({ length: Math.min(3, pending.length) }, () => resolveImages());
+    void Promise.all(workers).catch((error) => console.warn('[Watchlist] TMDB artist image lookup failed:', error));
+  }, [activeTab, artists]);
 
   const runDailyAutoSync = async () => {
     try {

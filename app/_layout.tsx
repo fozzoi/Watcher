@@ -18,7 +18,7 @@ import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 import { ThemeProvider, useAppTheme } from '@/src/theme';
 import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, addSavedItemsChangeListener, setOnSavedItemsChangedListener } from '@/src/database';
 import { loadGlobalConfig, GLOBAL_CONFIG, fetchEmbeddingsBatch } from '@/src/tmdb';
-import { pollCloudChanges, prepareCloudSessionOnStartup, queueCloudMutation } from '@/src/cloudSync';
+import { CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS, pollCloudChangesIfStale, prepareCloudSessionOnStartup, queueCloudMutation, setCloudSyncAutoFlushPaused } from '@/src/cloudSync';
 
 // Disable non-critical warnings
 LogBox.ignoreLogs([
@@ -75,6 +75,8 @@ const performAiBackgroundSync = async () => {
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
+  const isWatchlistRoute = segments.includes('watchlist');
+  const isPlayerRoute = segments.includes('player');
 
   const [isReady, setIsReady] = useState(false);
   const [databaseReady, setDatabaseReady] = useState(false);
@@ -115,14 +117,6 @@ export default function RootLayout() {
 
     const unsubscribeSaved = addSavedItemsChangeListener(triggerDebouncedPushSync);
     setOnPreferencesChangedListener(triggerDebouncedPushSync);
-
-    const syncIfActive = () => {
-      if (AppState.currentState === 'active') pollCloudChanges();
-    };
-    const syncTimer = setInterval(syncIfActive, 150000);
-    const appStateSubscription = AppState.addEventListener('change', state => {
-      if (state === 'active') pollCloudChanges();
-    });
 
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
       const data: any = response?.notification?.request?.content?.data;
@@ -180,11 +174,35 @@ export default function RootLayout() {
     return () => {
       subscription.remove();
       receivedSubscription.remove();
-      clearInterval(syncTimer);
-      appStateSubscription.remove();
       unsubscribeSaved();
     };
   }, [router, isReady, databaseReady]);
+
+  useEffect(() => {
+    setCloudSyncAutoFlushPaused(isPlayerRoute);
+  }, [isPlayerRoute]);
+
+  useEffect(() => {
+    if (!isReady || !databaseReady || !isWatchlistRoute) return;
+
+    const syncIfStale = () => {
+      if (AppState.currentState === 'active') {
+        void pollCloudChangesIfStale(CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS);
+      }
+    };
+    syncIfStale();
+    const syncTimer = setInterval(syncIfStale, CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS);
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        void pollCloudChangesIfStale(CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS);
+      }
+    });
+
+    return () => {
+      clearInterval(syncTimer);
+      appStateSubscription.remove();
+    };
+  }, [isReady, databaseReady, isWatchlistRoute]);
 
   // Check for app updates on launch
   useEffect(() => {

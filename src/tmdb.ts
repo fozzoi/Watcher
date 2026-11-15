@@ -1278,8 +1278,8 @@ const buildFullDetailsResult = (
     seasons: seasonsData,
     external_ids: data.external_ids,
     videos: data.videos?.results || [],
-    images: data.images?.backdrops || [],
-    posters: data.images?.posters || [],
+    images: data.images?.backdrops || data.backdrops || [],
+    posters: data.images?.posters || data.posters || [],
     production_companies: data.production_companies || [],
     belongs_to_collection: data.belongs_to_collection || null,
     recommendations,
@@ -1292,7 +1292,7 @@ export const getFullDetails = async (
   options?: TmdbRequestOptions<TMDBResult>,
 ): Promise<TMDBResult> => {
   let resolvedMediaType: "movie" | "tv" = item.media_type || (item.first_air_date ? "tv" : "movie");
-  const append = "credits,release_dates,content_ratings,external_ids,videos,recommendations";
+  const append = "credits,release_dates,content_ratings,external_ids,videos,recommendations,images";
 
   const makeFetchOptions = (targetType: "movie" | "tv"): TmdbRequestOptions | undefined => {
     if (!options) return undefined;
@@ -1306,7 +1306,11 @@ export const getFullDetails = async (
 
   let data: any;
   try {
-    data = await fetchWithCache(`/${resolvedMediaType}/${item.id}`, { append_to_response: append }, makeFetchOptions(resolvedMediaType));
+    data = await fetchWithCache(
+      `/${resolvedMediaType}/${item.id}`,
+      { append_to_response: append, include_image_language: 'en,null' },
+      makeFetchOptions(resolvedMediaType)
+    );
   } catch (err: any) {
     // Only fall back to the opposite media type on a genuine 404 / not-found,
     // never on timeouts, rate limits, or server/network errors.
@@ -1316,7 +1320,11 @@ export const getFullDetails = async (
       throw err;
     }
     const fallbackType: "movie" | "tv" = resolvedMediaType === "tv" ? "movie" : "tv";
-    data = await fetchWithCache(`/${fallbackType}/${item.id}`, { append_to_response: append }, makeFetchOptions(fallbackType));
+    data = await fetchWithCache(
+      `/${fallbackType}/${item.id}`,
+      { append_to_response: append, include_image_language: 'en,null' },
+      makeFetchOptions(fallbackType)
+    );
     resolvedMediaType = fallbackType;
   }
 
@@ -1329,7 +1337,7 @@ export const getMediaImages = async (
   options?: TmdbRequestOptions,
 ): Promise<{ backdrops: TMDBImage[]; posters: TMDBImage[] }> => {
   try {
-    const data = await fetchWithCache(`/${mediaType}/${id}/images`, {}, options);
+    const data = await fetchWithCache(`/${mediaType}/${id}/images`, { include_image_language: 'en,null' }, options);
     return {
       backdrops: data.backdrops || [],
       posters: data.posters || [],
@@ -1547,7 +1555,7 @@ export const getPersonImages = async (
 
 export const getMovieImages = async (movieId: number, mediaType: "movie" | "tv"): Promise<TMDBImage[]> => {
   try {
-    const data = await fetchWithCache(`/${mediaType}/${movieId}/images`);
+    const data = await fetchWithCache(`/${mediaType}/${movieId}/images`, { include_image_language: 'en,null' });
     const images = [...(data.posters || []), ...(data.backdrops || [])];
     return images.slice(0, 20);
   } catch (error) { return []; }

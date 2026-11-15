@@ -179,6 +179,15 @@ export default function CastDetails() {
   const CARD_GAP = 12;
   const CARD_WIDTH = (width - 40 - CARD_GAP) / 2;
 
+  // Responsive layout values so the header & pills fit on all screen sizes without scrolling or clipping
+  const isNarrow = width < 375;
+  const isMedium = width >= 375 && width < 410;
+  const headerTitleSize = isNarrow ? 15 : isMedium ? 16 : 18;
+  const pillFontSize = isNarrow ? 9.5 : isMedium ? 10.5 : 11;
+  const pillPaddingH = isNarrow ? 5.5 : isMedium ? 7 : 8.5;
+  const pillPaddingV = isNarrow ? 3.5 : 4.5;
+  const pillGap = isNarrow ? 3.5 : isMedium ? 4.5 : 6;
+
   const [person, setPerson] = useState<TMDBPerson | null>(null);
   const [credits, setCredits] = useState<TMDBResult[]>([]);
   const [personImages, setPersonImages] = useState<TMDBImage[]>([]);
@@ -270,6 +279,14 @@ export default function CastDetails() {
 
       setPerson(personData);
       setPersonImages(imagesData);
+
+      const favoriteProfilePath = personData.profile_path || imagesData.find(image => image.file_path)?.file_path;
+      if (favoriteProfilePath) {
+        const savedArtist = getSavedItems('artist').find(item => Number(item.id) === personId);
+        if (savedArtist && !savedArtist.profile_path) {
+          addSavedItem({ ...savedArtist, profile_path: favoriteProfilePath }, 'artist');
+        }
+      }
 
       if (personData?.id) {
         logTasteEvent({
@@ -366,14 +383,14 @@ export default function CastDetails() {
       toggleWatchlistGlobal({
         id: person.id,
         name: person.name,
-        profile_path: person.profile_path,
+        profile_path: person.profile_path || personImages.find(image => image.file_path)?.file_path || null,
         known_for_department: person.known_for_department,
         popularity: person.popularity,
       });
     } catch {
       setIsLiked(!newValue);
     }
-  }, [isLiked, person, likedScale]);
+  }, [isLiked, person, personImages, likedScale]);
 
   const animatedHeartStyle = useAnimatedStyle(() => ({
     transform: [{ scale: likedScale.value }],
@@ -645,14 +662,14 @@ export default function CastDetails() {
             )}
           </View>
 
-          {/* Centered Media Type Filter Pill Container (All, Movies, Shows) */}
+          {/* Centered Media Type Filter Pill Container (All, Movies, Shows) - concentric & zero clipping */}
           <View style={styles.mediaTypeTabsWrapper}>
             <View
               style={[
                 styles.mediaTypeTabsContainer,
                 {
-                  backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
-                  borderColor: isAmbientActive ? 'rgba(255, 255, 255, 0.12)' : colors.border,
+                  backgroundColor: isAmbientActive ? 'rgba(0, 0, 0, 0.35)' : (isDark ? '#18181B' : '#F3F4F6'),
+                  borderColor: isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : (isDark ? '#27272A' : '#E5E7EB'),
                 },
               ]}
             >
@@ -664,15 +681,20 @@ export default function CastDetails() {
                 }}
                 style={[
                   styles.mediaTypeTab,
-                  activeTab === 'all' && styles.mediaTypeTabActive,
+                  { paddingHorizontal: isNarrow ? 9 : isMedium ? 12 : 14 },
+                  activeTab === 'all' && [styles.mediaTypeTabActive, { backgroundColor: colors.primary }],
                 ]}
               >
                 <Text
                   style={[
                     styles.mediaTypeTabText,
-                    { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
-                    activeTab === 'all' && styles.mediaTypeTabTextActive,
+                    {
+                      fontSize: isNarrow ? 11.5 : 12.5,
+                      color: activeTab === 'all' ? '#575656' : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#374151')),
+                      fontWeight: activeTab === 'all' ? '700' : '600',
+                    },
                   ]}
+                  numberOfLines={1}
                 >
                   All ({credits.length})
                 </Text>
@@ -686,21 +708,26 @@ export default function CastDetails() {
                 }}
                 style={[
                   styles.mediaTypeTab,
-                  activeTab === 'movie' && styles.mediaTypeTabActive,
+                  { paddingHorizontal: isNarrow ? 9 : isMedium ? 12 : 14 },
+                  activeTab === 'movie' && [styles.mediaTypeTabActive, { backgroundColor: colors.primary }],
                 ]}
               >
                 <Ionicons
                   name="film-outline"
-                  size={14}
-                  color={activeTab === 'movie' ? '#FFFFFF' : isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary}
-                  style={{ marginRight: 5 }}
+                  size={isNarrow ? 12 : 13.5}
+                  color={activeTab === 'movie' ? '#575656' : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#4B5563'))}
+                  style={{ marginRight: 4 }}
                 />
                 <Text
                   style={[
                     styles.mediaTypeTabText,
-                    { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
-                    activeTab === 'movie' && styles.mediaTypeTabTextActive,
+                    {
+                      fontSize: isNarrow ? 11.5 : 12.5,
+                      color: activeTab === 'movie' ? '#575656' : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#374151')),
+                      fontWeight: activeTab === 'movie' ? '700' : '600',
+                    },
                   ]}
+                  numberOfLines={1}
                 >
                   Movies ({movieCount})
                 </Text>
@@ -714,21 +741,26 @@ export default function CastDetails() {
                 }}
                 style={[
                   styles.mediaTypeTab,
-                  activeTab === 'tv' && styles.mediaTypeTabActive,
+                  { paddingHorizontal: isNarrow ? 9 : isMedium ? 12 : 14 },
+                  activeTab === 'tv' && [styles.mediaTypeTabActive, { backgroundColor: colors.primary }],
                 ]}
               >
                 <Ionicons
                   name="tv-outline"
-                  size={14}
-                  color={activeTab === 'tv' ? '#FFFFFF' : isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary}
-                  style={{ marginRight: 5 }}
+                  size={isNarrow ? 12 : 13.5}
+                  color={activeTab === 'tv' ? '#575656' : (isAmbientActive ? '#E4E4E7' : colors.text)}
+                  style={{ marginRight: 4 }}
                 />
                 <Text
                   style={[
                     styles.mediaTypeTabText,
-                    { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
-                    activeTab === 'tv' && styles.mediaTypeTabTextActive,
+                    {
+                      fontSize: isNarrow ? 11.5 : 12.5,
+                      color: activeTab === 'tv' ? '#575656' : (isAmbientActive ? '#E4E4E7' : colors.text),
+                      fontWeight: activeTab === 'tv' ? '700' : '600',
+                    },
                   ]}
+                  numberOfLines={1}
                 >
                   Shows ({tvCount})
                 </Text>
@@ -736,16 +768,17 @@ export default function CastDetails() {
             </View>
           </View>
 
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[styles.sectionHeaderTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>Filmography</Text>
-                <View style={[styles.countBadge, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.12)' : colors.surfaceContainerHigh }]}>
-                  <Text style={[styles.countBadgeText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>{sortedCredits.length}</Text>
-                </View>
+          <View style={[styles.filmographyTitleGroup, { marginBottom: 12 }]}>
+            <Text style={[styles.sectionHeaderTitle, { fontSize: headerTitleSize, color: isAmbientActive ? '#FFFFFF' : colors.text }]}>Filmography</Text>
+              <View style={[styles.countBadge, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.14)' : colors.surfaceContainerHigh }]}>
+                <Text style={[styles.countBadgeText, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>{sortedCredits.length}</Text>
               </View>
+          </View>
 
-              <View style={styles.sortPillsRow}>
+          <View style={styles.section}>
+            {/* Filmography Header & Responsive Non-Scrollable Sort Row */}
+            <View style={styles.sectionHeaderRow}>
+              <View style={[styles.sortPillsRow, { gap: pillGap }]}>
                 <TouchableOpacity
                   activeOpacity={0.8}
                   onPress={() => {
@@ -755,14 +788,29 @@ export default function CastDetails() {
                   style={[
                     styles.sortPill,
                     {
-                      backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
-                      borderColor: isAmbientActive ? 'transparent' : colors.border,
+                      paddingHorizontal: pillPaddingH,
+                      paddingVertical: pillPaddingV,
+                      backgroundColor: sortBy === 'popular'
+                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.10)' : (isDark ? '#202024' : '#F1F3F5')),
+                      borderColor: sortBy === 'popular'
+                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : (isDark ? '#2E2E34' : '#E5E7EB')),
                     },
-                    sortBy === 'popular' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
-                    isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
                   ]}
                 >
-                  <Text style={[styles.sortPillText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, sortBy === 'popular' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
+                  <Text
+                    style={[
+                      styles.sortPillText,
+                      {
+                        fontSize: pillFontSize,
+                        color: sortBy === 'popular'
+                          ? (isDark || isAmbientActive ? '#000000' : '#FFFFFF')
+                          : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#374151')),
+                        fontWeight: sortBy === 'popular' ? '700' : '600',
+                      },
+                    ]}
+                  >
                     Popular
                   </Text>
                 </TouchableOpacity>
@@ -776,14 +824,29 @@ export default function CastDetails() {
                   style={[
                     styles.sortPill,
                     {
-                      backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
-                      borderColor: isAmbientActive ? 'transparent' : colors.border,
+                      paddingHorizontal: pillPaddingH,
+                      paddingVertical: pillPaddingV,
+                      backgroundColor: sortBy === 'rating'
+                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.10)' : (isDark ? '#202024' : '#F1F3F5')),
+                      borderColor: sortBy === 'rating'
+                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : (isDark ? '#2E2E34' : '#E5E7EB')),
                     },
-                    sortBy === 'rating' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
-                    isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
                   ]}
                 >
-                  <Text style={[styles.sortPillText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, sortBy === 'rating' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
+                  <Text
+                    style={[
+                      styles.sortPillText,
+                      {
+                        fontSize: pillFontSize,
+                        color: sortBy === 'rating'
+                          ? (isDark || isAmbientActive ? '#000000' : '#FFFFFF')
+                          : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#374151')),
+                        fontWeight: sortBy === 'rating' ? '700' : '600',
+                      },
+                    ]}
+                  >
                     Top Rated
                   </Text>
                 </TouchableOpacity>
@@ -797,14 +860,29 @@ export default function CastDetails() {
                   style={[
                     styles.sortPill,
                     {
-                      backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
-                      borderColor: isAmbientActive ? 'transparent' : colors.border,
+                      paddingHorizontal: pillPaddingH,
+                      paddingVertical: pillPaddingV,
+                      backgroundColor: sortBy === 'latest'
+                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.10)' : (isDark ? '#202024' : '#F1F3F5')),
+                      borderColor: sortBy === 'latest'
+                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : (isDark ? '#2E2E34' : '#E5E7EB')),
                     },
-                    sortBy === 'latest' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
-                    isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
                   ]}
                 >
-                  <Text style={[styles.sortPillText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, sortBy === 'latest' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
+                  <Text
+                    style={[
+                      styles.sortPillText,
+                      {
+                        fontSize: pillFontSize,
+                        color: sortBy === 'latest'
+                          ? (isDark || isAmbientActive ? '#000000' : '#FFFFFF')
+                          : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#374151')),
+                        fontWeight: sortBy === 'latest' ? '700' : '600',
+                      },
+                    ]}
+                  >
                     Latest
                   </Text>
                 </TouchableOpacity>
@@ -818,15 +896,30 @@ export default function CastDetails() {
                   style={[
                     styles.sortPill,
                     {
-                      backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer,
-                      borderColor: isAmbientActive ? 'transparent' : colors.border,
+                      paddingHorizontal: pillPaddingH,
+                      paddingVertical: pillPaddingV,
+                      backgroundColor: sortBy === 'watched'
+                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.10)' : (isDark ? '#202024' : '#F1F3F5')),
+                      borderColor: sortBy === 'watched'
+                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : (isDark ? '#2E2E34' : '#E5E7EB')),
                     },
-                    sortBy === 'watched' && { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.22)' : colors.primary },
-                    isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
                   ]}
                 >
-                  <Text style={[styles.sortPillText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, sortBy === 'watched' && { color: isAmbientActive ? '#FFFFFF' : colors.onPrimary, fontWeight: '700' }]}>
-                    Watched{watchedCount > 0 ? ` (${watchedCount})` : ''}
+                  <Text
+                    style={[
+                      styles.sortPillText,
+                      {
+                        fontSize: pillFontSize,
+                        color: sortBy === 'watched'
+                          ? (isDark || isAmbientActive ? '#000000' : '#FFFFFF')
+                          : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#374151')),
+                        fontWeight: sortBy === 'watched' ? '700' : '600',
+                      },
+                    ]}
+                  >
+                    {isNarrow ? 'Watched' : (watchedCount > 0 && width < 390 ? `Watched•${watchedCount}` : (watchedCount > 0 ? `Watched (${watchedCount})` : 'Watched'))}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1090,12 +1183,13 @@ const styles = StyleSheet.create({
   },
   actionBtnText: { color: C.mutedSoft, fontSize: 11, fontWeight: '600' },
 
-  section: { marginBottom: 32 },
+  section: { marginBottom: 28 },
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: 16,
+    width: '100%',
   },
   sectionHeaderTitle: {
     fontSize: 15,
@@ -1124,64 +1218,55 @@ const styles = StyleSheet.create({
   mediaTypeTabsWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
-    marginTop: 6,
+    marginBottom: 16,
   },
   mediaTypeTabsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 4,
-    borderRadius: 16,
+    padding: 3.5,
+    borderRadius: 22,
     borderWidth: 1,
+    overflow: 'hidden',
   },
   mediaTypeTab: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 13,
-    borderRadius: 12,
+    paddingVertical: 5.5,
+    borderRadius: 18.5,
   },
   mediaTypeTabActive: {
-    backgroundColor: ACCENT_COLOR,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 0,
   },
   mediaTypeTabText: {
-    fontSize: 12.5,
     fontWeight: '600',
   },
-  mediaTypeTabTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+  filmographyTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flexShrink: 0,
   },
   sortPillsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    flexShrink: 1,
+    justifyContent: 'flex-end',
   },
   sortPill: {
-    paddingHorizontal: 9,
-    paddingVertical: 4.5,
-    borderRadius: 12,
-    backgroundColor: C.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: C.border,
-  },
-  sortPillActive: {
-    backgroundColor: C.surface2,
-    borderColor: 'rgba(255, 255, 255, 0.28)',
   },
   sortPillText: {
-    color: C.muted,
-    fontSize: 11,
     fontWeight: '600',
   },
   sortPillTextActive: {
-    color: C.white,
     fontWeight: '700',
   },
   emptyWatchedContainer: {

@@ -121,6 +121,17 @@ describe('Android cloudSync, database, and progress synchronization', () => {
     jest.useRealTimers();
   });
 
+  test('does not poll cloud during startup outside the watchlist route', async () => {
+    mockAsyncStorage.set('cloud_auth_token', 'tok-1');
+    mockAsyncStorage.set('cloud_auth_user', JSON.stringify({ userId: 'u-1', email: 'a@b.c', name: 'A', picture: '' }));
+
+    const cloudSyncMod = require('../cloudSync') as typeof import('../cloudSync');
+    await cloudSyncMod.prepareCloudSessionOnStartup();
+
+    expect(mockAxiosGet).not.toHaveBeenCalled();
+    expect(mockAxiosPost).not.toHaveBeenCalled();
+  });
+
   test('preserves concurrent outbox mutation added while another mutation is in flight', async () => {
     mockAsyncStorage.set('cloud_auth_token', 'tok-1');
     mockAsyncStorage.set('cloud_auth_user', JSON.stringify({ userId: 'u-1', email: 'a@b.c', name: 'A', picture: '' }));
@@ -177,6 +188,149 @@ describe('Android cloudSync, database, and progress synchronization', () => {
     expect(res.success).toBe(false);
     expect(mockAxiosGet).not.toHaveBeenCalled();
     expect(database.getSavedItems('watchlist').map(i => i.id)).toEqual([555]);
+  });
+
+  test('keeps edits queued without network requests while player sync is paused', async () => {
+    mockAsyncStorage.set('cloud_auth_token', 'tok-1');
+    mockAsyncStorage.set('cloud_auth_user', JSON.stringify({ userId: 'u-1', email: 'a@b.c', name: 'A', picture: '' }));
+
+    const database = require('../database') as typeof import('../database');
+    const cloudSyncMod = require('../cloudSync') as typeof import('../cloudSync');
+    database.setCloudOnlyMode(true, { watchlist: [], history: [], favoriteArtists: [] });
+    database.setOnSavedItemsChangedListener((mutation) => cloudSyncMod.queueCloudMutation(mutation));
+    cloudSyncMod.setCloudSyncAutoFlushPaused(true);
+
+    database.addSavedItem({ id: 556, media_type: 'movie', title: 'Saved during playback' }, 'watchlist');
+    await cloudSyncMod.waitForPendingOutboxWrites();
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(mockAxiosPost).not.toHaveBeenCalled();
+    expect(JSON.parse(mockAsyncStorage.get('cloud_sync_outbox_v1:u-1') || '[]')).toHaveLength(1);
+
+    cloudSyncMod.setCloudSyncAutoFlushPaused(false);
+    mockAxiosPost.mockResolvedValueOnce({ status: 200, data: { status: 'mutated', revision: 1 } });
+    await cloudSyncMod.flushCloudOutbox({ ignoreBackoff: true });
+    expect(mockAxiosPost).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(mockAsyncStorage.get('cloud_sync_outbox_v1:u-1') || '[]')).toEqual([]);
+  });
+
+  test('keeps mutations queued through repeated network failures and flushes them after recovery', async () => {
+    mockAsyncStorage.set('cloud_auth_token', 'tok-1');
+    mockAsyncStorage.set('cloud_auth_user', JSON.stringify({ userId: 'u-1', email: 'a@b.c', name: 'A', picture: '' }));
+    mockAsyncStorage.set('cloud_sync_outbox_v1:u-1', JSON.stringify([{
+      type: 'favoriteArtists',
+      action: 'remove',
+      mediaId: 1231,
+      operationId: 'offline-remove',
+      clientTimestamp: 1,
+    }]));
+
+    const cloudSyncMod = require('../cloudSync') as typeof import('../cloudSync');
+    mockAxiosPost.mockRejectedValue(new Error('Network offline'));
+
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const result = await cloudSyncMod.flushCloudOutbox({ ignoreBackoff: true });
+      expect(result.flushed).toBe(false);
+      expect(JSON.parse(mockAsyncStorage.get('cloud_sync_outbox_v1:u-1') || '[]')).toHaveLength(1);
+    }
+
+    mockAxiosPost.mockResolvedValueOnce({ status: 200, data: { status: 'mutated', revision: 2 } });
+    const recovered = await cloudSyncMod.flushCloudOutbox({ ignoreBackoff: true });
+
+    expect(recovered).toMatchObject({ flushed: true, remaining: 0 });
+    expect(mockAxiosPost).toHaveBeenCalledTimes(5);
+    expect(JSON.parse(mockAsyncStorage.get('cloud_sync_outbox_v1:u-1') || '[]')).toEqual([]);
+  });
+
+  test('honors the server retry hint without dropping a rate-limited edit', async () => {
+    mockAsyncStorage.set('cloud_auth_token', 'tok-1');
+    mockAsyncStorage.set('cloud_auth_user', JSON.stringify({ userId: 'u-1', email: 'a@b.c', name: 'A', picture: '' }));
+    mockAsyncStorage.set('cloud_sync_outbox_v1:u-1', JSON.stringify([{
+      type: 'favoriteArtists',
+      action: 'remove',
+      mediaId: 1231,
+      operationId: 'rate-limited-remove',
+      clientTimestamp: 1,
+    }]));
+
+    const cloudSyncMod = require('../cloudSync') as typeof import('../cloudSync');
+    mockAxiosPost.mockRejectedValueOnce({
+      response: { status: 429, headers: { 'retry-after': '30' }, data: { error: 'Rate limited' } },
+    });
+    await cloudSyncMod.flushCloudOutbox({ ignoreBackoff: true });
+
+    await cloudSyncMod.flushCloudOutbox();
+    expect(mockAxiosPost).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(mockAsyncStorage.get('cloud_sync_outbox_v1:u-1') || '[]')).toHaveLength(1);
+
+    mockAxiosPost.mockResolvedValueOnce({ status: 200, data: { status: 'mutated', revision: 2 } });
+    await cloudSyncMod.flushCloudOutbox({ ignoreBackoff: true });
+    expect(JSON.parse(mockAsyncStorage.get('cloud_sync_outbox_v1:u-1') || '[]')).toEqual([]);
+  });
+
+  test('compacts superseded list edits without crossing a clear boundary', async () => {
+    mockAsyncStorage.set('cloud_auth_token', 'tok-1');
+    mockAsyncStorage.set('cloud_auth_user', JSON.stringify({ userId: 'u-1', email: 'a@b.c', name: 'A', picture: '' }));
+    mockAsyncStorage.set('cloud_sync_outbox_v1:u-1', JSON.stringify([
+      { type: 'watchlist', action: 'add', item: { id: 11, media_type: 'movie' }, operationId: 'old-11', clientTimestamp: 1 },
+      { type: 'watchlist', action: 'add', item: { id: 12, media_type: 'movie' }, operationId: 'old-12', clientTimestamp: 2 },
+      { type: 'watchlist', action: 'clear', operationId: 'clear-list', clientTimestamp: 3 },
+      { type: 'watchlist', action: 'add', item: { id: 13, media_type: 'movie' }, operationId: 'new-13', clientTimestamp: 4 },
+    ]));
+
+    const cloudSyncMod = require('../cloudSync') as typeof import('../cloudSync');
+    const firstPost = deferred<any>();
+    mockAxiosPost
+      .mockImplementationOnce(() => firstPost.promise)
+      .mockResolvedValue({ status: 200, data: { status: 'mutated', revision: 1 } });
+    cloudSyncMod.queueCloudMutation({
+      type: 'watchlist',
+      action: 'add',
+      item: { id: 14, media_type: 'movie', title: 'After clear' },
+    });
+    await cloudSyncMod.waitForPendingOutboxWrites();
+    await new Promise(res => setTimeout(res, 10));
+
+    const compacted = JSON.parse(mockAsyncStorage.get('cloud_sync_outbox_v1:u-1') || '[]');
+    expect(compacted.map((operation: any) => operation.type)).toEqual(['watchlist', 'watchlist', 'watchlist']);
+    expect(compacted.map((operation: any) => operation.action)).toEqual(['clear', 'add', 'add']);
+    expect(compacted.slice(0, 2).map((operation: any) => operation.operationId)).toEqual(['clear-list', 'new-13']);
+    expect(compacted[2].item.id).toBe(14);
+
+    firstPost.resolve({ status: 200, data: { status: 'mutated', revision: 1 } });
+    await cloudSyncMod.flushCloudOutbox({ ignoreBackoff: true });
+    expect(JSON.parse(mockAsyncStorage.get('cloud_sync_outbox_v1:u-1') || '[]')).toEqual([]);
+  });
+
+  test('keeps and warns about pending edits beyond the configured outbox bounds', async () => {
+    mockAsyncStorage.set('cloud_auth_token', 'tok-1');
+    mockAsyncStorage.set('cloud_auth_user', JSON.stringify({ userId: 'u-1', email: 'a@b.c', name: 'A', picture: '' }));
+    const agedAt = Date.now() - 91 * 24 * 60 * 60 * 1000;
+    mockAsyncStorage.set('cloud_sync_outbox_v1:u-1', JSON.stringify(
+      Array.from({ length: 5000 }, (_, index) => ({
+        type: 'watchlist',
+        action: 'add',
+        item: { id: 10000 + index, media_type: 'movie', title: `Movie ${index}` },
+        operationId: `seed-${index}`,
+        clientTimestamp: agedAt,
+      }))
+    ));
+
+    const cloudSyncMod = require('../cloudSync') as typeof import('../cloudSync');
+    mockAxiosPost.mockRejectedValue(new Error('Network offline'));
+    cloudSyncMod.queueCloudMutation({
+      type: 'watchlist',
+      action: 'add',
+      item: { id: 99999, media_type: 'movie', title: 'Newest item' },
+    });
+    await cloudSyncMod.waitForPendingOutboxWrites();
+    await new Promise(res => setTimeout(res, 10));
+
+    const outbox = JSON.parse(mockAsyncStorage.get('cloud_sync_outbox_v1:u-1') || '[]');
+    const warning = mockAsyncStorage.get('cloud_sync_outbox_warning_v1:u-1') || '';
+    expect(outbox).toHaveLength(5001);
+    expect(warning).toContain('5001 pending edits');
+    expect(warning).toContain('oldest edit is 91 days old');
   });
 
   test('restores cloudItems to SQLite and clears session on HTTP 401', async () => {

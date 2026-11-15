@@ -126,6 +126,7 @@ const Settings = () => {
   // Cloud Sync State
   const [cloudUser, setCloudUser] = useState<MobileUserProfile | null>(null);
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [cloudSyncWarning, setCloudSyncWarning] = useState<string | null>(null);
 
   // ── Google OAuth Setup ──────────────────────────────────────────
   const discovery: AuthSession.DiscoveryDocument = {
@@ -223,9 +224,25 @@ const Settings = () => {
   useEffect(() => {
     loadSettings();
     handleCheckUpdate(true); // Silent check on mount
-    cloudSync.getAuthUser().then(u => setCloudUser(u));
+    cloudSync.getAuthUser().then(async (u) => {
+      setCloudUser(u);
+      if (u) {
+        const warning = await AsyncStorage.getItem(`cloud_sync_outbox_warning_v1:${u.userId}`);
+        setCloudSyncWarning(warning);
+      }
+    }).catch(error => console.warn('Could not load cloud sync account:', error));
     const authListener = DeviceEventEmitter.addListener('watcher_cloud_auth_changed', (user: MobileUserProfile | null) => {
       setCloudUser(user);
+      if (user) {
+        AsyncStorage.getItem(`cloud_sync_outbox_warning_v1:${user.userId}`)
+          .then(setCloudSyncWarning)
+          .catch(error => console.warn('Could not load cloud sync warning:', error));
+      } else {
+        setCloudSyncWarning(null);
+      }
+    });
+    const syncWarningListener = DeviceEventEmitter.addListener('watcher_cloud_sync_warning', (warning: string | null) => {
+      setCloudSyncWarning(warning);
     });
     const nsfwListener = DeviceEventEmitter.addListener('watcher_nsfw_setting_changed', (value: boolean) => {
       setIsNsfwFilter(value);
@@ -234,6 +251,7 @@ const Settings = () => {
     return () => {
       authListener.remove();
       nsfwListener.remove();
+      syncWarningListener.remove();
     };
   }, []);
 
@@ -837,6 +855,14 @@ const Settings = () => {
                 subtitle={isSyncingCloud ? "Synchronizing library data..." : "Merge Watchlist & History with cloud"}
                 onPress={handleManualCloudSync}
               />
+              {cloudSyncWarning && (
+                <>
+                  <SettingSeparator />
+                  <Text style={{ color: colors.error, fontSize: 13, lineHeight: 18, paddingHorizontal: 12, paddingVertical: 8 }}>
+                    {cloudSyncWarning}
+                  </Text>
+                </>
+              )}
               <SettingSeparator />
               <ActionRow
                 title="Sign Out"

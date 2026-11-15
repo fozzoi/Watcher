@@ -986,8 +986,9 @@ export default function DetailPage() {
 
     // 1. Check synchronous SQLite response cache
     const targetMediaType = (media_type as string) || (searchParams.first_air_date ? 'tv' : 'movie');
-    const cacheKey = `/${targetMediaType}/${numericId}-{"append_to_response":"credits,release_dates,content_ratings,external_ids,videos"}`;
-    const cached = getTmdbResponseCacheSync(cacheKey);
+    const newCacheKey = `/${targetMediaType}/${numericId}-{"append_to_response":"credits,release_dates,content_ratings,external_ids,videos,recommendations,images","include_adult":${GLOBAL_CONFIG.nsfwFilterEnabled ? 'false' : 'true'},"include_image_language":"en,null"}`;
+    const oldCacheKey = `/${targetMediaType}/${numericId}-{"append_to_response":"credits,release_dates,content_ratings,external_ids,videos"}`;
+    const cached = getTmdbResponseCacheSync(newCacheKey) || getTmdbResponseCacheSync(oldCacheKey);
     if (cached?.data) return cached.data;
 
     // 2. Check route search params passed from card press
@@ -1061,8 +1062,8 @@ export default function DetailPage() {
   }>({
     directors: [],
     cast: [],
-    images: [],
-    posters: [],
+    images: Array.isArray(movie?.images) ? movie.images : [],
+    posters: Array.isArray(movie?.posters) ? movie.posters : [],
     collectionData: null,
     similarMovies: [],
   });
@@ -1171,6 +1172,13 @@ export default function DetailPage() {
           onBackgroundUpdate: (freshData) => {
             if (reqId === initialRequestRef.current && freshData?.id) {
               setMovie(freshData);
+              if ((Array.isArray(freshData.images) && freshData.images.length > 0) || (Array.isArray(freshData.posters) && freshData.posters.length > 0)) {
+                setExtras((prev) => ({
+                  ...prev,
+                  images: (Array.isArray(freshData.images) && freshData.images.length > 0) ? freshData.images : prev.images,
+                  posters: (Array.isArray(freshData.posters) && freshData.posters.length > 0) ? freshData.posters : prev.posters,
+                }));
+              }
               if (freshData.media_type === 'tv' && freshData.seasons && freshData.seasons.length > 0) {
                 const validSeasons = freshData.seasons.filter((s: any) => s.season_number > 0);
                 const fallbackSeason = validSeasons[0]?.season_number ?? freshData.seasons[0]?.season_number;
@@ -1189,6 +1197,13 @@ export default function DetailPage() {
       setLastWatched(progress);
       lastSyncedProgressSeasonRef.current = progress?.lastSeason ?? null;
       setMovie(data);
+      if ((Array.isArray(data.images) && data.images.length > 0) || (Array.isArray(data.posters) && data.posters.length > 0)) {
+        setExtras((prev) => ({
+          ...prev,
+          images: (Array.isArray(data.images) && data.images.length > 0) ? data.images : prev.images,
+          posters: (Array.isArray(data.posters) && data.posters.length > 0) ? data.posters : prev.posters,
+        }));
+      }
 
       if (data.media_type === 'tv' && data.seasons && data.seasons.length > 0) {
         const validSeasons = data.seasons.filter((s: any) => s.season_number > 0);
@@ -1282,15 +1297,20 @@ export default function DetailPage() {
       );
       [...creators, ...dirFromCrew].forEach((person: any) => addDirector(person, defaultRole));
 
-      let extraImages = fullData?.images || [];
-      let extraPosters = fullData?.posters || [];
+      let extraImages = (Array.isArray(fullData?.images) && fullData.images.length > 0)
+        ? fullData.images
+        : (Array.isArray(movie?.images) && movie.images.length > 0 ? movie.images : []);
+      let extraPosters = (Array.isArray(fullData?.posters) && fullData.posters.length > 0)
+        ? fullData.posters
+        : (Array.isArray(movie?.posters) && movie.posters.length > 0 ? movie.posters : []);
 
-      if (!Array.isArray(fullData?.images) && !Array.isArray(fullData?.posters)) {
+      if (extraImages.length === 0 || extraPosters.length === 0) {
         try {
-          const imgs = await getMediaImages(movie.id, movie.media_type, { priority: 'high' });
+          const targetMediaType = movie.media_type || (movie.first_air_date ? 'tv' : 'movie');
+          const imgs = await getMediaImages(movie.id, targetMediaType, { priority: 'high' });
           if (isActive) {
-            extraImages = imgs.backdrops || [];
-            extraPosters = imgs.posters || [];
+            if (extraImages.length === 0) extraImages = imgs.backdrops || [];
+            if (extraPosters.length === 0) extraPosters = imgs.posters || [];
           }
         } catch {}
       }
@@ -1299,14 +1319,15 @@ export default function DetailPage() {
 
       setSimilarError(similarRes.failed ? "Couldn't load similar titles." : null);
       // Commit secondary metadata atomically into extras; NEVER mutate movie
-      setExtras({
+      setExtras((prev) => ({
+        ...prev,
         directors: mergedDirectors,
         cast: fullData?.cast || [],
-        images: extraImages,
-        posters: extraPosters,
+        images: extraImages.length > 0 ? extraImages : prev.images,
+        posters: extraPosters.length > 0 ? extraPosters : prev.posters,
         collectionData: colData,
         similarMovies: similarRes.items || [],
-      });
+      }));
       setExtrasLoaded(true);
     }).catch(() => {
       if (isActive) setExtrasLoaded(true);

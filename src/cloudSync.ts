@@ -80,6 +80,7 @@ function sanitizeAiChatForSync(chatData: any) {
 
 let applyingRemoteChanges = false;
 let cloudMutationQueuePaused = false;
+let cloudSyncAutoFlushPaused = false;
 let outboxLock: Promise<unknown> = Promise.resolve();
 let inFlightFlushPromise: Promise<FlushResult> | null = null;
 let inFlightPollPromise: Promise<PollResult> | null = null;
@@ -87,15 +88,99 @@ let inFlightOperationId: string | null = null;
 let initialMergeInFlight = false;
 let retryDelay = 1000;
 let retryAfter = 0;
+let pollRetryDelay = 5000;
+let pollRetryAfter = 0;
 let lastPollAt = 0;
 let lastFlushedSnapshotMergeTime = 0;
 
 const outboxKey = (userId: string) => `cloud_sync_outbox_v1:${userId}`;
+const outboxWarningKey = (userId: string) => `cloud_sync_outbox_warning_v1:${userId}`;
 const snapshotCacheKey = (userId: string) => `cloud_library_snapshot_v1:${userId}`;
 const revisionRepairKey = (userId: string) => `cloud_sync_revision_repaired_v1:${userId}`;
+const MAX_OUTBOX_OPERATIONS = 5000;
+const MAX_OUTBOX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+export const CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS = 5 * 60 * 1000;
+
+export function setCloudSyncAutoFlushPaused(paused: boolean) {
+  cloudSyncAutoFlushPaused = paused;
+}
 
 type FlushResult = { flushed: boolean; remaining: number; error?: string };
 type PollResult = { ok: boolean; updated?: boolean; error?: string };
+
+function compactPendingOperations(outbox: any[], protectedOperationId: string | null): any[] {
+  const compacted: Array<{ operation: any; listType?: string; epoch?: number; active: boolean; protected: boolean }> = [];
+  const epochs: Record<string, number> = {};
+  const latestByKey = new Map<string, number>();
+  const listTypes = ['watchlist', 'history', 'favoriteArtists', 'savedCollections'];
+
+  for (const operation of outbox) {
+    const type = operation?.type;
+    const protectedOperation = operation?.operationId === protectedOperationId;
+    if (!listTypes.includes(type) || protectedOperation) {
+      compacted.push({ operation, active: true, protected: protectedOperation });
+      continue;
+    }
+
+    const epoch = epochs[type] || 0;
+    if (operation.action === 'clear') {
+      epochs[type] = epoch + 1;
+      compacted.push({ operation, listType: type, epoch: epoch + 1, active: true, protected: false });
+      continue;
+    }
+    if (operation.action !== 'add' && operation.action !== 'remove') {
+      compacted.push({ operation, listType: type, epoch, active: true, protected: false });
+      continue;
+    }
+
+    const item = operation.item;
+    const id = operation.action === 'remove' ? operation.mediaId : (item?.id ?? item?.media_id);
+    if (id === undefined || id === null) {
+      compacted.push({ operation, listType: type, epoch, active: true, protected: false });
+      continue;
+    }
+    const mediaType = type === 'watchlist' || type === 'history'
+      ? (operation.mediaType || (item ? (item.media_type || (item.first_air_date && !item.release_date ? 'tv' : 'movie')) : ''))
+      : '';
+    const key = `${type}:${epoch}:${mediaType}:${String(id)}`;
+    const previousIndex = latestByKey.get(key);
+    if (previousIndex !== undefined) compacted[previousIndex].active = false;
+    latestByKey.set(key, compacted.length);
+    compacted.push({ operation, listType: type, epoch, active: true, protected: false });
+  }
+
+  return compacted
+    .filter((entry) => entry.protected || !entry.listType || (entry.active && entry.epoch === (epochs[entry.listType] || 0)))
+    .map((entry) => entry.operation);
+}
+
+async function updateOutboxWarning(userId: string, outbox: any[]) {
+  try {
+    const oldestTimestamp = outbox.reduce((oldest, operation) => {
+      const timestamp = Number(operation?.clientTimestamp || operation?.createdAt || 0);
+      return timestamp > 0 && (oldest === 0 || timestamp < oldest) ? timestamp : oldest;
+    }, 0);
+    const ageDays = oldestTimestamp ? Math.floor((Date.now() - oldestTimestamp) / 86400000) : 0;
+    const warnings: string[] = [];
+    if (outbox.length > MAX_OUTBOX_OPERATIONS) {
+      warnings.push(`${outbox.length} pending edits (limit ${MAX_OUTBOX_OPERATIONS})`);
+    }
+    if (oldestTimestamp && Date.now() - oldestTimestamp >= MAX_OUTBOX_AGE_MS) {
+      warnings.push(`oldest edit is ${ageDays} days old`);
+    }
+    const warning = warnings.length
+      ? `Cloud sync has ${warnings.join(' and ')}. Your local library is preserved; connect and sync to clear the backlog.`
+      : null;
+    const key = outboxWarningKey(userId);
+    const previous = await AsyncStorage.getItem(key);
+    if (warning === previous) return;
+    if (warning) await AsyncStorage.setItem(key, warning);
+    else await AsyncStorage.removeItem(key);
+    DeviceEventEmitter.emit('watcher_cloud_sync_warning', warning);
+  } catch (error) {
+    console.warn('[CloudSync:Outbox] Could not update pending-edit warning:', error);
+  }
+}
 
 function withOutboxLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = outboxLock.then(fn, fn);
@@ -114,7 +199,9 @@ async function readOutboxRaw(userId: string): Promise<any[]> {
 }
 
 async function writeOutboxRaw(userId: string, outbox: any[]): Promise<void> {
-  await AsyncStorage.setItem(outboxKey(userId), JSON.stringify(outbox));
+  const compacted = compactPendingOperations(outbox, inFlightOperationId);
+  await AsyncStorage.setItem(outboxKey(userId), JSON.stringify(compacted));
+  await updateOutboxWarning(userId, compacted);
 }
 
 function mergeWatchProgressMaps(localProg: Record<string, any>, remoteProg: Record<string, any>) {
@@ -203,6 +290,8 @@ async function handleExpiredSession() {
   ]);
   retryAfter = 0;
   retryDelay = 1000;
+  pollRetryAfter = 0;
+  pollRetryDelay = 5000;
   DeviceEventEmitter.emit('watcher_cloud_auth_changed', null);
 }
 
@@ -318,7 +407,7 @@ async function enqueueCloudOperation(operation: any): Promise<void> {
       await persistCurrentSnapshotCache(user.userId);
       console.log(`[CloudSync:Outbox] Queued ${nextOp.type}:${nextOp.action} id=${nextOp.mediaId ?? nextOp.item?.id ?? 'none'} opId=${nextOp.operationId} for user ${user.userId}. Outbox count: ${outbox.length}`);
     });
-    void flushCloudOutbox({ ignoreBackoff: true });
+    if (!cloudSyncAutoFlushPaused) void flushCloudOutbox();
   } catch (error: any) {
     console.warn('[CloudSync:Outbox] Could not queue cloud edit:', error?.message);
   }
@@ -346,6 +435,11 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
     let lastError: string | undefined;
     try {
       while (true) {
+        if (cloudSyncAutoFlushPaused) {
+          const remaining = await withOutboxLock(async () => (await readOutboxRaw(user.userId)).length);
+          return { flushed: remaining === 0, remaining };
+        }
+
         const operation = await withOutboxLock(async () => {
           const outbox = await readOutboxRaw(user.userId);
           let modified = false;
@@ -454,48 +548,22 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
             return { flushed: false, remaining: 0, error: 'Session expired. Please sign in again.' };
           }
 
-          if (operation.type === 'librarySnapshotMerge') {
-            const failCount = (operation.failures || 0) + 1;
-            if (failCount >= 3) {
-              warnSync('Outbox', `Snapshot merge ${operation.operationId} failed ${failCount} times (${formattedErr}); dropping from outbox to prevent blocking granular edits. Tap Settings > Sync with Cloud to retry.`);
-              await withOutboxLock(async () => {
-                const current = await readOutboxRaw(user.userId);
-                const next = current.filter((op: any) => op?.operationId !== operation.operationId);
-                await writeOutboxRaw(user.userId, next);
-              });
-              continue;
-            } else {
-              await withOutboxLock(async () => {
-                const current = await readOutboxRaw(user.userId);
-                const target = current.find((op: any) => op?.operationId === operation.operationId);
-                if (target) target.failures = failCount;
-                await writeOutboxRaw(user.userId, current);
-              });
-            }
-          } else {
-            const failCount = (operation.failures || 0) + 1;
-            if (failCount >= 4) {
-              warnSync('Outbox', `Mutation ${operation.operationId} (${operation.type}:${operation.action}) failed ${failCount} times (${formattedErr}); dropping from outbox to unblock sync queue.`);
-              await withOutboxLock(async () => {
-                const current = await readOutboxRaw(user.userId);
-                const next = current.filter((op: any) => op?.operationId !== operation.operationId);
-                await writeOutboxRaw(user.userId, next);
-              });
-              continue;
-            } else {
-              await withOutboxLock(async () => {
-                const current = await readOutboxRaw(user.userId);
-                const target = current.find((op: any) => op?.operationId === operation.operationId);
-                if (target) target.failures = failCount;
-                await writeOutboxRaw(user.userId, current);
-              });
-            }
-          }
+          const failCount = (operation.failures || 0) + 1;
+          await withOutboxLock(async () => {
+            const current = await readOutboxRaw(user.userId);
+            const target = current.find((op: any) => op?.operationId === operation.operationId);
+            if (target) target.failures = failCount;
+            await writeOutboxRaw(user.userId, current);
+          });
 
-          retryAfter = Date.now() + Math.max(5000, retryDelay);
-          retryDelay = Math.min(30000, retryDelay * 2);
+          const retryAfterSeconds = Number(error?.response?.headers?.['retry-after']);
+          const retryInMs = status === 429 && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+            ? Math.max(5000, retryAfterSeconds * 1000)
+            : Math.max(5000, retryDelay);
+          retryAfter = Date.now() + retryInMs;
+          retryDelay = Math.min(30000, Math.max(retryDelay * 2, retryInMs));
           lastError = formattedErr;
-          warnSync('Outbox', `Failed to flush edit after ${elapsed}ms (retry in ${retryDelay / 1000}s): ${formattedErr}`, {
+          warnSync('Outbox', `Failed to flush edit after ${elapsed}ms (attempt ${failCount}; keeping it queued, retry in ${retryInMs / 1000}s): ${formattedErr}`, {
             status,
             code: error?.code,
             details: error?.response?.data,
@@ -634,14 +702,15 @@ export async function prepareCloudSessionOnStartup(): Promise<void> {
     setCloudOnlyMode(true, cachedLibrary);
     await applyNsfwPreference(cachedLibrary.preferences?.nsfwFilterEnabled);
   }
-
-  await pollCloudChanges();
 }
 
 export async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boolean }): Promise<PollResult> {
   if (initialMergeInFlight) {
     logSync('Poll', 'Bailing: initial library merge is already in flight');
     return { ok: false, error: 'Initial library merge is already running' };
+  }
+  if (!options?.ignoreBackoff && Date.now() < pollRetryAfter) {
+    return { ok: false, error: 'Cloud sync is backing off after a recent network failure.' };
   }
   if (inFlightPollPromise) return inFlightPollPromise;
 
@@ -687,7 +756,7 @@ export async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boo
           const lib = snapshot.data.library;
           logSync('Poll', `Full snapshot received in ${Date.now() - snapStart}ms: rev=${snapshot.data.revision} watchlist=${lib.watchlist?.length ?? 0} history=${lib.history?.length ?? 0}`);
           await applyCloudLibrary(snapshot.data.library, Number(snapshot.data.revision || 0));
-          lastPollAt = Date.now();
+          markCloudPollSucceeded();
           return { ok: true, updated: true };
         }
         return { ok: false, error: 'Cloud response did not include a library' };
@@ -704,7 +773,7 @@ export async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boo
 
       if (!nextRevision || nextRevision <= revision) {
         logSync('Poll', `Up to date (local rev=${revision}, server rev=${nextRevision}) in ${Date.now() - pollStart}ms`);
-        lastPollAt = Date.now();
+        markCloudPollSucceeded();
         return { ok: true, updated: false };
       }
 
@@ -787,7 +856,7 @@ export async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boo
         }
         await AsyncStorage.setItem('cloud_sync_revision', String(nextRevision));
         await persistCurrentSnapshotCache(user.userId);
-        lastPollAt = Date.now();
+        markCloudPollSucceeded();
         logSync('Poll', `Delta applied successfully (rev=${nextRevision}) in ${Date.now() - pollStart}ms`);
         return { ok: true, updated: true };
       }
@@ -802,7 +871,7 @@ export async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boo
         const lib = snapshot.data.library;
         logSync('Poll', `Full snapshot applied in ${Date.now() - snapStart}ms: rev=${snapshot.data.revision || nextRevision} watchlist=${lib.watchlist?.length ?? 0} history=${lib.history?.length ?? 0}`);
         await applyCloudLibrary(snapshot.data.library, Number(snapshot.data.revision || nextRevision));
-        lastPollAt = Date.now();
+        markCloudPollSucceeded();
         return { ok: true, updated: true };
       }
       return { ok: false, error: 'Cloud response did not include a library' };
@@ -814,6 +883,12 @@ export async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boo
         await handleExpiredSession();
         return { ok: false, error: 'Session expired. Please sign in again.' };
       }
+      const retryAfterSeconds = Number(error?.response?.headers?.['retry-after']);
+      const delay = error?.response?.status === 429 && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+        ? retryAfterSeconds * 1000
+        : pollRetryDelay;
+      pollRetryAfter = Date.now() + delay;
+      pollRetryDelay = Math.min(60000, Math.max(5000, delay * 2));
       warnSync('Poll', `Poll failed after ${elapsed}ms: ${formattedErr}`, {
         status: error?.response?.status,
         code: error?.code,
@@ -830,6 +905,12 @@ export async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boo
   } finally {
     if (inFlightPollPromise === runPromise) inFlightPollPromise = null;
   }
+}
+
+function markCloudPollSucceeded() {
+  lastPollAt = Date.now();
+  pollRetryAfter = 0;
+  pollRetryDelay = 5000;
 }
 
 export async function pollCloudChanges(): Promise<void> {
@@ -1070,7 +1151,7 @@ export const cloudSync = {
       logSync('Merge', `Applying merged library (revision ${response.data?.revision}): watchlist=${merged.watchlist?.length ?? 0}, history=${merged.history?.length ?? 0}`);
       await applyCloudLibrary(merged, Number(response.data?.revision || 0));
       await AsyncStorage.setItem('last_cloud_sync_time', new Date().toISOString());
-      lastPollAt = Date.now();
+      markCloudPollSucceeded();
 
       logSync('Merge', `Full merge completed successfully in ${Date.now() - mergeStart}ms`);
       return {
