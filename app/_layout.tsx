@@ -16,7 +16,7 @@ import { registerForPushNotificationsAsync, syncPushTokenAndWatchlist } from '@/
 import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 import { ThemeProvider, useAppTheme } from '@/src/theme';
-import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, addSavedItemsChangeListener, setOnSavedItemsChangedListener } from '@/src/database';
+import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, pruneAiEmbeddings, addSavedItemsChangeListener, setOnSavedItemsChangedListener } from '@/src/database';
 import { loadGlobalConfig, GLOBAL_CONFIG, fetchEmbeddingsBatch } from '@/src/tmdb';
 import { CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS, pollCloudChangesIfStale, prepareCloudSessionOnStartup, queueCloudMutation, setCloudSyncAutoFlushPaused } from '@/src/cloudSync';
 
@@ -30,24 +30,37 @@ LogBox.ignoreLogs([
 ]);
 SplashScreen.preventAutoHideAsync();
 
+// Must not exceed MAX_BATCH in watcher-api/api/embed.js — the server rejects
+// (not truncates) larger arrays, which silently killed the whole backfill.
+const EMBEDDING_BATCH_SIZE = 50;
+
 const performAiBackgroundSync = async () => {
   if (!GLOBAL_CONFIG.aiEnabled) return;
   try {
     const watchlist = getSavedItems('watchlist');
+
+    // Nothing to index. Bail out before pruning: an empty watchlist here usually
+    // means the cloud snapshot has not loaded yet, not that everything was removed.
+    if (watchlist.length === 0) return;
+
+    // 0. Drop embeddings for items that left the watchlist. Removal, clear and
+    // cloud restores all funnel through here, so no mutation hook is needed.
+    pruneAiEmbeddings(watchlist.map((item: any) => Number(item.id)));
+
     const missingItems = [];
-    
+
     // 1. Instantly scan for missing embeddings locally
     for (let i = 0; i < watchlist.length; i++) {
       if (!getAiEmbedding(watchlist[i].id)) {
         missingItems.push(watchlist[i]);
       }
     }
-    
-    // 2. Batch process missing items (100 at a time) to dramatically reduce API requests
-    const chunkSize = 100;
+
+    // 2. Batch process missing items to dramatically reduce API requests
+    const chunkSize = EMBEDDING_BATCH_SIZE;
     for (let i = 0; i < missingItems.length; i += chunkSize) {
       const chunk = missingItems.slice(i, i + chunkSize);
-      
+
       const textsToEmbed = chunk.map((item: any) => {
         const title = item.title || item.name || '';
         const type = item.media_type || (item.first_air_date ? 'tv' : 'movie');
@@ -57,12 +70,16 @@ const performAiBackgroundSync = async () => {
       });
 
       const embeddings = await fetchEmbeddingsBatch(textsToEmbed);
-      if (embeddings && embeddings.length === chunk.length) {
+      if (!embeddings) {
+        console.warn(`[AiSync] embedding batch of ${chunk.length} failed; will retry next launch`);
+      } else if (embeddings.length !== chunk.length) {
+        console.warn(`[AiSync] embedding batch returned ${embeddings.length}/${chunk.length} vectors; skipping`);
+      } else {
         chunk.forEach((item, index) => {
           insertAiEmbedding(item.id, embeddings[index]);
         });
       }
-      
+
       if (i + chunkSize < missingItems.length) {
         await new Promise(res => setTimeout(res, 500));
       }

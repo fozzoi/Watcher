@@ -7,6 +7,7 @@
 
 import axios from 'axios';
 import { searchTMDB, searchPeople, GLOBAL_CONFIG } from './tmdb';
+import { withApiAuth } from './apiAuth';
 
 const API_URL = 'https://watcher-api-rho.vercel.app/api/gemini';
 
@@ -50,7 +51,7 @@ export async function getGeminiChatReply(
       userPreferences,
       customApiKey: GLOBAL_CONFIG.customApiKey,
     },
-    { timeout: 25000 }
+    await withApiAuth({ timeout: 25000 })
   );
 
   const parsed: RawReply = response.data.reply;
@@ -129,7 +130,7 @@ export async function updateUserMemory(existingMemory: string, userMessage: stri
         userMessage,
         customApiKey: GLOBAL_CONFIG.customApiKey,
       },
-      { timeout: 25000 }
+      await withApiAuth({ timeout: 25000 })
     );
     return response.data.memory ?? existingMemory;
   } catch {

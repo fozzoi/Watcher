@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { searchTMDB, TMDBResult, GLOBAL_CONFIG } from './tmdb';
+import { withApiAuth } from './apiAuth';
 
 export const getGeminiRecommendations = async (userPrompt: string): Promise<TMDBResult[]> => {
   try {
@@ -10,7 +11,7 @@ export const getGeminiRecommendations = async (userPrompt: string): Promise<TMDB
         userPrompt: userPrompt,
         customApiKey: GLOBAL_CONFIG.customApiKey
       },
-      { timeout: 25000 }
+      await withApiAuth({ timeout: 25000 })
     );
     
     if (!response.data.results || response.data.results.length === 0) return [];

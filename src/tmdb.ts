@@ -11,6 +11,7 @@ import {
   clearTmdbResponseCacheSync,
 } from './database';
 import { getUserPreferences } from './userPreferences';
+import { withApiAuth } from './apiAuth';
 
 // ==========================================
 // 1. GLOBAL CONFIGURATION & SETUP
@@ -2214,7 +2215,7 @@ export const getGeminiRecommendations = async (userPrompt: string): Promise<TMDB
       action: 'search',
       userPrompt: userPrompt,
       customApiKey: GLOBAL_CONFIG.customApiKey
-    }, { timeout: AI_REQUEST_TIMEOUT_MS });
+    }, await withApiAuth({ timeout: AI_REQUEST_TIMEOUT_MS }));
     
     if (!response.data.results || response.data.results.length === 0) return [];
 
@@ -2258,7 +2259,7 @@ export const getGeminiMoviesSimilarTo = async (
       mediaType: mediaType,
       tmdbId: tmdbId,
       customApiKey: GLOBAL_CONFIG.customApiKey
-    }, { timeout: AI_REQUEST_TIMEOUT_MS });
+    }, await withApiAuth({ timeout: AI_REQUEST_TIMEOUT_MS }));
     
     if (!response.data.results || response.data.results.length === 0) return [];
 
@@ -2383,7 +2384,7 @@ export const fetchChatGemini = async (
       userPreferences,
       timezone: tz,
       customApiKey: GLOBAL_CONFIG.customApiKey,
-    }, { timeout: AI_REQUEST_TIMEOUT_MS });
+    }, await withApiAuth({ timeout: AI_REQUEST_TIMEOUT_MS }));
 
     let reply = response.data?.reply || { kind: 'text', text: "I'm not sure how to answer that." };
 
@@ -2466,7 +2467,7 @@ export const updateUserMemoryWithAi = async (existingMemory: string, userMessage
       existingMemory,
       userMessage,
       customApiKey: GLOBAL_CONFIG.customApiKey,
-    }, { timeout: AI_REQUEST_TIMEOUT_MS });
+    }, await withApiAuth({ timeout: AI_REQUEST_TIMEOUT_MS }));
     return response.data?.memory || existingMemory;
   } catch (e) {
     return existingMemory;
@@ -2479,7 +2480,7 @@ export const fetchEmbedding = async (text: string): Promise<number[] | null> => 
     const response = await axios.post('https://watcher-api-rho.vercel.app/api/embed', {
       text,
       customApiKey: GLOBAL_CONFIG.customApiKey,
-    }, { timeout: AI_REQUEST_TIMEOUT_MS });
+    }, await withApiAuth({ timeout: AI_REQUEST_TIMEOUT_MS }));
     return response.data?.embedding || null;
   } catch (error: any) {
     console.warn('fetchEmbedding error:', error.message);
@@ -2493,7 +2494,7 @@ export const fetchEmbeddingsBatch = async (texts: string[]): Promise<number[][] 
     const response = await axios.post('https://watcher-api-rho.vercel.app/api/embed', {
       texts,
       customApiKey: GLOBAL_CONFIG.customApiKey,
-    }, { timeout: AI_REQUEST_TIMEOUT_MS });
+    }, await withApiAuth({ timeout: AI_REQUEST_TIMEOUT_MS }));
     return response.data?.embeddings || null;
   } catch (error: any) {
     console.warn('fetchEmbeddingsBatch error:', error.message);

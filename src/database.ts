@@ -470,6 +470,45 @@ export const getAiEmbedding = (mediaId: number): number[] | null => {
 
 export const insertAiEmbedding = saveAiEmbedding;
 
+/**
+ * Delete embeddings for media that is no longer in the watchlist.
+ *
+ * `validMediaIds` must be the *complete* current watchlist, because anything
+ * missing from it is treated as orphaned. Callers should skip the call when the
+ * watchlist is empty: an empty list usually means the cloud snapshot has not
+ * arrived yet, not that the user removed everything.
+ *
+ * Returns the number of rows deleted.
+ */
+export const pruneAiEmbeddings = (validMediaIds: number[]): number => {
+  try {
+    const valid = new Set(validMediaIds.map(id => Number(id)));
+    if (valid.size === 0) return 0;
+
+    const rows = db.getAllSync<{ media_id: number }>('SELECT media_id FROM ai_embeddings');
+    const orphans = rows
+      .map(row => Number(row.media_id))
+      .filter(mediaId => !valid.has(mediaId));
+    if (orphans.length === 0) return 0;
+
+    // Chunked so the statement stays under SQLite's bound-variable limit.
+    const deleteChunkSize = 400;
+    for (let i = 0; i < orphans.length; i += deleteChunkSize) {
+      const chunk = orphans.slice(i, i + deleteChunkSize);
+      db.runSync(
+        `DELETE FROM ai_embeddings WHERE media_id IN (${chunk.map(() => '?').join(', ')})`,
+        chunk
+      );
+    }
+
+    console.log(`[Database] pruneAiEmbeddings: removed ${orphans.length} orphaned embedding(s)`);
+    return orphans.length;
+  } catch (error) {
+    console.error('Failed to prune AI embeddings:', error);
+    return 0;
+  }
+};
+
 // ==========================================
 // USER TASTE EVENTS & FOR-YOU SHELF CACHE
 // ==========================================

@@ -4,6 +4,7 @@ import * as Crypto from 'expo-crypto';
 import { DeviceEventEmitter } from 'react-native';
 import { getSavedItems, addSavedItem, removeSavedItem, clearSavedItems, setCloudOnlyMode, SavedItemsMutation, setOnSavedItemsChangedListener, addSavedItemsChangeListener } from './database';
 import { GLOBAL_CONFIG, setGlobalConfig } from './tmdb';
+import { invalidateApiAuthCache } from './apiAuth';
 
 const AUTH_API_BASE = 'https://watcher-api-rho.vercel.app';
 
@@ -100,7 +101,9 @@ const revisionRepairKey = (userId: string) => `cloud_sync_revision_repaired_v1:$
 const MAX_OUTBOX_OPERATIONS = 5000;
 const MAX_OUTBOX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 // Keep a lightweight revision/delta check running while the app is active.
-export const CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS = 15 * 1000;
+// 60s is frequent enough for "another device changed something" and keeps the
+// sync endpoint's read budget comfortable on a device left open all day.
+export const CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS = 60 * 1000;
 
 export function setCloudSyncAutoFlushPaused(paused: boolean) {
   cloudSyncAutoFlushPaused = paused;
@@ -293,6 +296,7 @@ async function handleExpiredSession() {
   retryDelay = 1000;
   pollRetryAfter = 0;
   pollRetryDelay = 5000;
+  invalidateApiAuthCache();
   DeviceEventEmitter.emit('watcher_cloud_auth_changed', null);
 }
 
@@ -990,6 +994,7 @@ export const cloudSync = {
         AsyncStorage.setItem('cloud_auth_token', token),
         AsyncStorage.setItem('cloud_auth_user', JSON.stringify(user)),
       ]);
+      invalidateApiAuthCache();
       DeviceEventEmitter.emit('watcher_cloud_auth_changed', user);
 
       // Immediate sync upon login
@@ -1023,6 +1028,7 @@ export const cloudSync = {
         AsyncStorage.setItem('cloud_auth_token', token),
         AsyncStorage.setItem('cloud_auth_user', JSON.stringify(user)),
       ]);
+      invalidateApiAuthCache();
       DeviceEventEmitter.emit('watcher_cloud_auth_changed', user);
 
       await this.mergeLocalWithCloud();
@@ -1053,6 +1059,7 @@ export const cloudSync = {
       AsyncStorage.removeItem('cloud_auth_user'),
       AsyncStorage.removeItem('last_cloud_sync_time'),
     ]);
+    invalidateApiAuthCache();
     DeviceEventEmitter.emit('watcher_cloud_auth_changed', null);
   },
 
