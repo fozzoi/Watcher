@@ -99,7 +99,8 @@ const snapshotCacheKey = (userId: string) => `cloud_library_snapshot_v1:${userId
 const revisionRepairKey = (userId: string) => `cloud_sync_revision_repaired_v1:${userId}`;
 const MAX_OUTBOX_OPERATIONS = 5000;
 const MAX_OUTBOX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
-export const CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS = 5 * 60 * 1000;
+// Keep a lightweight revision/delta check running while the app is active.
+export const CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS = 15 * 1000;
 
 export function setCloudSyncAutoFlushPaused(paused: boolean) {
   cloudSyncAutoFlushPaused = paused;
@@ -644,6 +645,7 @@ export async function queueCloudLibrarySnapshotMerge(): Promise<FlushResult> {
       userMemory: userMemory || '',
       aiName: aiName || 'Cine',
     }),
+    baseRevision: Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0),
   };
 
   await enqueueCloudOperation({ type: 'librarySnapshotMerge', action: 'merge', value: payload });
@@ -1114,6 +1116,7 @@ export const cloudSync = {
           aiName: aiNameStr || 'Cine',
         }),
         mode: 'merge',
+        baseRevision: Number((await AsyncStorage.getItem('cloud_sync_revision')) || 0),
       };
       if (savedNsfwRaw !== null) {
         try {

@@ -75,7 +75,6 @@ const performAiBackgroundSync = async () => {
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
-  const isWatchlistRoute = segments.includes('watchlist');
   const isPlayerRoute = segments.includes('player');
 
   const [isReady, setIsReady] = useState(false);
@@ -183,7 +182,7 @@ export default function RootLayout() {
   }, [isPlayerRoute]);
 
   useEffect(() => {
-    if (!isReady || !databaseReady || !isWatchlistRoute) return;
+    if (!isReady || !databaseReady) return;
 
     const syncIfStale = () => {
       if (AppState.currentState === 'active') {
@@ -202,7 +201,7 @@ export default function RootLayout() {
       clearInterval(syncTimer);
       appStateSubscription.remove();
     };
-  }, [isReady, databaseReady, isWatchlistRoute]);
+  }, [isReady, databaseReady]);
 
   // Check for app updates on launch
   useEffect(() => {
