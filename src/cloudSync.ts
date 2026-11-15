@@ -496,7 +496,9 @@ export async function flushCloudOutbox(options?: { ignoreBackoff?: boolean }): P
           const requestBody = isSnapshotMerge
             ? { ...(operation.value || {}), mode: 'merge' }
             : { action: 'mutate', mutation: operation };
-          const timeout = isSnapshotMerge ? 30000 : 15000;
+          // API mutations can take >20s during observed Mongo latency; keep
+          // the idempotent operation in flight long enough to receive its ack.
+          const timeout = 45000;
           const bodySizeKb = (JSON.stringify(requestBody).length / 1024).toFixed(1);
           logSync('Outbox', `Flushing op type=${operation.type} action=${operation.action} mediaId=${operation.mediaId ?? operation.item?.id ?? 'none'} opId=${operation.operationId} (~${bodySizeKb} KB, timeout ${timeout}ms)...`);
 
@@ -725,14 +727,18 @@ export async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boo
         return { ok: false, error: 'Sign in to sync your library' };
       }
 
-      // Ensure pending local mutations are serialized and flushed before pulling
-      // remote state so snapshots never clobber unsynced local edits.
-      await waitForPendingOutboxWrites();
-      const flushResult = await flushCloudOutbox({ ignoreBackoff: options?.ignoreBackoff });
-      if (!flushResult.flushed || flushResult.remaining > 0) {
-        warnSync('Poll', `Outbox has ${flushResult.remaining} pending edits that could not be uploaded`, flushResult.error);
-        return { ok: false, error: flushResult.error || 'Could not upload local edits yet' };
-      }
+      // Pull deltas while an upload is retrying. Waiting for a large or slow
+      // outbox here starves cross-device updates. Full snapshots still wait for
+      // the outbox so they cannot replace unsynced local edits.
+      const outboxFlushPromise = (async (): Promise<FlushResult> => {
+        await waitForPendingOutboxWrites();
+        return flushCloudOutbox({ ignoreBackoff: options?.ignoreBackoff });
+      })().then((result) => {
+        if (!result.flushed || result.remaining > 0) {
+          warnSync('Poll', `Outbox has ${result.remaining} pending edits that could not be uploaded`, result.error);
+        }
+        return result;
+      }).catch((error: any) => ({ flushed: false, remaining: -1, error: error?.message || 'Could not upload local edits yet' }));
 
       // Earlier clients advanced this checkpoint on upload and could skip edits
       // from other devices. Rebuild this account's local view once from the cloud.
@@ -747,6 +753,10 @@ export async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boo
       logSync('Poll', `Checking cloud changes... localRev=${savedRevision ?? 'none'}`);
 
       if (savedRevision === null) {
+        const flushResult = await outboxFlushPromise;
+        if (!flushResult.flushed || flushResult.remaining > 0) {
+          return { ok: false, error: flushResult.error || 'Waiting to upload local edits before the first cloud snapshot' };
+        }
         logSync('Poll', 'Local revision is null; fetching full snapshot...');
         setCloudOnlyMode(true);
         const snapStart = Date.now();
@@ -864,6 +874,10 @@ export async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boo
       }
 
       logSync('Poll', 'Delta incomplete or fell through; downloading full snapshot...');
+      const flushResult = await outboxFlushPromise;
+      if (!flushResult.flushed || flushResult.remaining > 0) {
+        return { ok: false, error: flushResult.error || 'Waiting to upload local edits before refreshing the cloud snapshot' };
+      }
       const snapStart = Date.now();
       const snapshot = await axios.get(`${AUTH_API_BASE}/api/sync`, {
         headers: { Authorization: `Bearer ${token}` },
