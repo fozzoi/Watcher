@@ -1,5 +1,6 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import {
   getForYouCachedShelves,
   getExploreContentCacheEntrySync,
@@ -311,6 +312,8 @@ const cacheWriteVersions = new Map<string, number>();
 
 interface QueuedTask<T> {
   cacheKey: string;
+  requestLabel: string;
+  enqueuedAt: number;
   priority: RequestPriority;
   run: () => Promise<T>;
   resolve: (value: T) => void;
@@ -333,6 +336,10 @@ const removeQueuedTaskReference = (task: QueuedTask<any>) => {
 
 const dispatchTask = (task: QueuedTask<any>) => {
   removeQueuedTaskReference(task);
+  const queueWaitMs = Date.now() - task.enqueuedAt;
+  if (Platform.OS === 'android' && queueWaitMs >= 1500) {
+    console.warn(`[TMDB][Android] ${task.requestLabel} waited ${queueWaitMs}ms in request queue`);
+  }
   const dispatchedAsLow = task.priority === 'low';
   activeTotal++;
   if (dispatchedAsLow) activeLow++;
@@ -366,11 +373,12 @@ const drainRequestQueue = () => {
 
 const enqueueRequest = <T>(
   cacheKey: string,
+  requestLabel: string,
   priority: RequestPriority,
   run: () => Promise<T>,
 ): Promise<T> => {
   return new Promise<T>((resolve, reject) => {
-    const task: QueuedTask<T> = { cacheKey, priority, run, resolve, reject };
+    const task: QueuedTask<T> = { cacheKey, requestLabel, enqueuedAt: Date.now(), priority, run, resolve, reject };
     let set = queuedTasksByKey.get(cacheKey);
     if (!set) {
       set = new Set();
@@ -479,42 +487,64 @@ const executeHttpWithRetry = async (
   const fullUrl = `${API_BASE_URL}${cleanEndpoint}${queryString}`;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const attemptStartedAt = Date.now();
     try {
-      // Use native fetch: avoids React Native Axios/XMLHttpRequest OkHttp socket drops
+      // Keep the deadline active through body download and JSON parsing. On
+      // Android, fetch can resolve its headers while the response body stalls;
+      // clearing the timeout after fetch() leaves the queued request pending forever.
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
-        const response = await fetch(fullUrl, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-          },
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
+        const requestPromise = (async () => {
+          const response = await fetch(fullUrl, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            signal: controller.signal,
+          });
+          const responseText = await response.text();
 
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => '');
-          let parsedError: any;
-          try {
-            parsedError = JSON.parse(errorText);
-          } catch {
-            parsedError = { error: errorText || `HTTP ${response.status}` };
+          if (!response.ok) {
+            let parsedError: any;
+            try {
+              parsedError = JSON.parse(responseText);
+            } catch {
+              parsedError = { error: responseText || `HTTP ${response.status}` };
+            }
+            const httpError: any = new Error(parsedError.error || `Request failed with status ${response.status}`);
+            httpError.response = { status: response.status, data: parsedError };
+            throw httpError;
           }
-          const httpError: any = new Error(parsedError.error || `Request failed with status ${response.status}`);
-          httpError.response = { status: response.status, data: parsedError };
-          throw httpError;
-        }
 
-        const data = await response.json();
+          return JSON.parse(responseText);
+        })();
+
+        const timeoutPromise = new Promise<never>((_resolve, reject) => {
+          timeoutId = setTimeout(() => {
+            controller.abort();
+            const timeoutError: any = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS}ms while reading ${endpoint}`);
+            timeoutError.name = 'AbortError';
+            reject(timeoutError);
+          }, REQUEST_TIMEOUT_MS);
+        });
+
+        const data = await Promise.race([requestPromise, timeoutPromise]);
+        const durationMs = Date.now() - attemptStartedAt;
+        if (Platform.OS === 'android' && durationMs >= 1500) {
+          console.log(`[TMDB][Android] ${cleanEndpoint} succeeded attempt=${attempt + 1} duration=${durationMs}ms`);
+        }
         return data;
-      } catch (innerErr) {
-        clearTimeout(timeoutId);
-        throw innerErr;
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
     } catch (error: any) {
       lastError = error;
+      const durationMs = Date.now() - attemptStartedAt;
       const statusCode = error.response?.status;
+      if (Platform.OS === 'android') {
+        console.warn(
+          `[TMDB][Android] ${cleanEndpoint} failed attempt=${attempt + 1} duration=${durationMs}ms status=${statusCode ?? 'none'} code=${error.code ?? 'none'} name=${error.name ?? 'Error'} message=${String(error.message ?? error).slice(0, 180)}`
+        );
+      }
       const isTimeout =
         error.name === 'AbortError' ||
         error.code === 'ECONNABORTED' ||
@@ -530,7 +560,7 @@ const executeHttpWithRetry = async (
 
       if (attempt < maxRetries && isRetryable) {
         const delay = Math.min(600, 150 * Math.pow(2, attempt) + Math.floor(Math.random() * 100));
-        console.warn(`[TMDB] ${endpoint} attempt ${attempt + 1} failed (${error.message}). Retrying in ${delay}ms...`);
+        console.warn(`[TMDB] ${cleanEndpoint} attempt ${attempt + 1} failed (${error.message}). Retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -583,7 +613,7 @@ const scheduleBackgroundRevalidation = (
   const startEpoch = cacheEpoch;
   const startVersion = cacheWriteVersions.get(cacheKey) || 0;
 
-  const bgPromise = enqueueRequest(cacheKey, 'low', () => executeHttpWithRetry(endpoint, params, 0))
+  const bgPromise = enqueueRequest(cacheKey, endpoint, 'low', () => executeHttpWithRetry(endpoint, params, 0))
     .then((freshData) => {
       const callbacks = pendingRevalidationCallbacks.get(cacheKey);
       pendingRevalidationCallbacks.delete(cacheKey);
@@ -664,7 +694,7 @@ const fetchWithCache = async (
 
   const maxRetries = 1;
 
-  const fetchPromise = enqueueRequest(cacheKey, priority, async () => {
+  const fetchPromise = enqueueRequest(cacheKey, endpoint, priority, async () => {
     try {
       const data = await executeHttpWithRetry(endpoint, params, maxRetries);
       if (startEpoch === cacheEpoch) {
