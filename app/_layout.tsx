@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Platform, LogBox, View, AppState, StatusBar } from 'react-native';
 import { LoadingIndicator } from '@/src/components/shared/LoadingIndicator';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Brightness from 'expo-brightness';
 import { Image as ExpoImage } from 'expo-image';
@@ -16,6 +16,7 @@ import { registerForPushNotificationsAsync, syncPushTokenAndWatchlist } from '@/
 import { checkAndNotifyUpdate, UpdateCheckResult } from '@/src/updater';
 import AppUpdateModal from '@/src/components/shared/AppUpdateModal';
 import { ThemeProvider, useAppTheme } from '@/src/theme';
+import { GradientBlur } from '@/src/components/shared/GradientBlur';
 import { initDb, performMigration, getSavedItems, getAiEmbedding, insertAiEmbedding, pruneAiEmbeddings, addSavedItemsChangeListener, setOnSavedItemsChangedListener } from '@/src/database';
 import { loadGlobalConfig, GLOBAL_CONFIG, fetchEmbeddingsBatch } from '@/src/tmdb';
 import { CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS, pollCloudChangesIfStale, prepareCloudSessionOnStartup, queueCloudMutation, setCloudSyncAutoFlushPaused } from '@/src/cloudSync';
@@ -364,11 +365,39 @@ function RootNavigator({ showUpdateModal, setShowUpdateModal, updateResult }: an
         <Stack.Screen name="viewall" options={{ presentation: 'card' }} />
       </Stack>
 
+      {/* Inside SafeAreaProvider so the insets are real */}
+      <ScreenEdgeFades />
+
       <AppUpdateModal
         visible={showUpdateModal}
         onClose={() => setShowUpdateModal(false)}
         updateResult={updateResult}
       />
     </SafeAreaProvider>
+  );
+}
+
+/**
+ * Soft top/bottom edges for screens that do not own the tab bar: cast,
+ * collection, view-all and stats. Tabs, the movie hero, the player and
+ * onboarding paint their own, so they are skipped.
+ *
+ * Scrim-only on purpose: a real blur needs a BlurTargetView, and wrapping the
+ * root navigator in one would leave the tab layout's own blur target nested
+ * inside another snapshot (Dimezis recursion).
+ */
+function ScreenEdgeFades() {
+  const insets = useSafeAreaInsets();
+  const segments = useSegments();
+  const route = segments[0] as string | undefined;
+  const hidden = route === '(tabs)' || route === 'movie' || route === 'player' || route === 'onboarding';
+
+  if (hidden) return null;
+
+  return (
+    <>
+      <GradientBlur position="top" height={insets.top + 22} intensity={60} />
+      <GradientBlur position="bottom" height={insets.bottom + 24} intensity={60} />
+    </>
   );
 }

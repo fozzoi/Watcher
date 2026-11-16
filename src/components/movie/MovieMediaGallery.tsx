@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Image } from 'expo-image';
+import { BlurTargetView, BlurView } from 'expo-blur';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { LegendList } from '@legendapp/list/react-native';
@@ -62,6 +63,7 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
   const [downloading, setDownloading] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const previewListRef = useRef<FlatList>(null);
+  const previewBlurTarget = useRef<any>(null);
 
   const showToast = useCallback((msg: string) => {
     if (Platform.OS === 'android') {
@@ -328,14 +330,14 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
       <Animated.View
         key={activeTab}
         entering={FadeIn.duration(260)}
-        style={styles.carouselWrapper}
+        style={[styles.carouselWrapper, styles.fullBleedCarousel]}
       >
         <LegendList
           horizontal
           data={currentList}
           recycleItems={false}
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, styles.fullBleedCarouselContent]}
           keyExtractor={(item, index) => `${activeTab}-${item.file_path}-${index}`}
           estimatedItemSize={activeTab === 'scenes' ? 332 : 132}
           decelerationRate="normal"
@@ -383,7 +385,32 @@ const MovieMediaGallery: React.FC<MovieMediaGalleryProps> = ({
         onRequestClose={handleClosePreview}
       >
         <View style={styles.modalBackdrop}>
-          <StatusBar barStyle="light-content" backgroundColor="#000" />
+          <StatusBar barStyle="light-content" backgroundColor="transparent" />
+
+          {selectedPreviewIndex !== null && currentList[selectedPreviewIndex] ? (
+            <>
+              <BlurTargetView
+                ref={previewBlurTarget}
+                style={StyleSheet.absoluteFill}
+                collapsable={false}
+              >
+                <Image
+                  source={{ uri: getImageUrl(currentList[selectedPreviewIndex].file_path, 'w780') }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                />
+              </BlurTargetView>
+              <BlurView
+                intensity={85}
+                tint="dark"
+                blurMethod="dimezisBlurView"
+                blurTarget={previewBlurTarget}
+                style={StyleSheet.absoluteFill}
+              />
+              <View pointerEvents="none" style={styles.previewScrim} />
+            </>
+          ) : null}
 
           {selectedPreviewIndex !== null ? (
             <View style={styles.modalContent}>
@@ -566,6 +593,9 @@ const styles = StyleSheet.create({
   carouselWrapper: {
     height: GALLERY_CARD_HEIGHT,
   },
+  // The movie detail card is inset by 20px; let only the media rail span the screen.
+  fullBleedCarousel: { marginHorizontal: -20 },
+  fullBleedCarouselContent: { paddingHorizontal: 20 },
   listContent: {
     gap: 12,
   },
@@ -594,7 +624,11 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.96)',
+    backgroundColor: 'transparent',
+  },
+  previewScrim: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0,0,0,0.18)',
   },
   modalContent: {
     flex: 1,

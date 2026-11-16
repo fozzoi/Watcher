@@ -213,6 +213,9 @@ export default RankedTop10Carousel;
 const styles = StyleSheet.create({
   sectionContainer: {
     marginBottom: 28,
+    // Matches MovieCard's radius so the section edge curves with the cards.
+    borderRadius: 14,
+    overflow: 'hidden',
   },
   headerRow: {
     flexDirection: 'row',

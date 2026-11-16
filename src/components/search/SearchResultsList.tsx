@@ -47,13 +47,14 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
             <Text style={[styles.searchHeading, { color: colors.text }]}>People</Text>
             <FlatList
               horizontal 
+              style={{ marginHorizontal: -HORIZONTAL_MARGIN }}
               data={peopleResults} 
               keyExtractor={item => `person-${item.id}`} 
               showsHorizontalScrollIndicator={false} 
               decelerationRate="fast"
               snapToInterval={106} // 90 width + 16 margin
               snapToAlignment="start"
-              contentContainerStyle={{ paddingHorizontal: 4 }}
+              contentContainerStyle={{ paddingHorizontal: HORIZONTAL_MARGIN }}
               keyboardDismissMode="on-drag"
               renderItem={({ item }) => (
                 <TouchableOpacity
@@ -83,13 +84,14 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
             <Text style={[styles.searchHeading, { color: colors.text }]}>Collections</Text>
             <FlatList
               horizontal 
+              style={{ marginHorizontal: -HORIZONTAL_MARGIN }}
               data={collections} 
               keyExtractor={item => `collection-${item.id}`} 
               showsHorizontalScrollIndicator={false} 
               decelerationRate="fast"
               snapToInterval={172} // Chip width 160 + 12 gap
               snapToAlignment="start"
-              contentContainerStyle={{ paddingHorizontal: 4 }}
+              contentContainerStyle={{ paddingHorizontal: HORIZONTAL_MARGIN }}
               keyboardDismissMode="on-drag"
               renderItem={({ item }) => (
                 <TouchableOpacity 

@@ -267,6 +267,9 @@ export default WorldCinemaHub;
 const styles = StyleSheet.create({
   sectionContainer: {
     marginBottom: 15,
+    // Matches MovieCard's radius so the section edge curves with the cards.
+    borderRadius: 14,
+    overflow: 'hidden',
   },
   headerRow: {
     flexDirection: 'row',

@@ -115,6 +115,10 @@ export default MediaCarousel;
 const styles = StyleSheet.create({
   sectionContainer: {
     marginBottom: 14,
+    // Rounds the section's own edge to the same 14dp as MovieCard, so a card
+    // sliding past the screen boundary curves instead of cutting square.
+    borderRadius: 14,
+    overflow: 'hidden',
   },
   sectionHeader: {
     flexDirection: 'row',

@@ -134,7 +134,7 @@ const SkeletonSection = ({ numItems = 6, itemWidth = width * 0.25, itemHeight = 
       <View style={[styles.skeletonLine, { width: '100%', height: 20, backgroundColor: placeholderColor }]} />
     </SkeletonShimmer>
     
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -18 }} contentContainerStyle={{ paddingHorizontal: 18 }}>
       {Array(numItems).fill(0).map((_, index) => (
         <View key={index} style={[styles.skeletonItem, { width: itemWidth, height: itemHeight }]}>
           <SkeletonShimmer containerStyle={[styles.skeletonItemShimmer, { backgroundColor: placeholderColor }]}>
@@ -503,6 +503,7 @@ const ListDetails = ({ route }: any) => {
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Cast</Text>
             <FlatList
               horizontal
+              style={{ marginHorizontal: -18 }}
               data={castData.slice(0, 6)} 
               keyExtractor={(item) => `cast-${item.id}`} 
               renderItem={({ item }) => ( 
@@ -526,6 +527,7 @@ const ListDetails = ({ route }: any) => {
                 </TouchableOpacity>
               )}
               showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 18 }}
               nestedScrollEnabled={true} 
             />
           </View>
@@ -539,6 +541,7 @@ const ListDetails = ({ route }: any) => {
               horizontal 
               showsHorizontalScrollIndicator={false}
               style={styles.seasonTabsContainer}
+              contentContainerStyle={{ paddingHorizontal: 18 }}
               nestedScrollEnabled={true} 
             >
               {(selectedMovie.seasons.filter((s: any) => s.season_number > 0).length > 0
@@ -639,9 +642,11 @@ const ListDetails = ({ route }: any) => {
       ) : similarMovies.length > 0 ? (
         <FlatList
           horizontal
+          style={{ marginHorizontal: -18 }}
           data={similarMovies.slice(0, 10)}
           keyExtractor={(item) => `similar-${item.id}`}
           showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 18 }}
           renderItem={({ item }) => (
             <TouchableOpacity activeOpacity={0.95} 
               style={styles.similarItem}
@@ -700,11 +705,12 @@ const ListDetails = ({ route }: any) => {
           <View style={styles.listSection}>
             <FlatList
               horizontal
+              style={{ marginHorizontal: -16 }}
               data={movies}
               renderItem={renderMovieCard}
               keyExtractor={(item) => `movie-${item.id}`}
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.listContent}
+              contentContainerStyle={[styles.listContent, { paddingLeft: 16 }]}
               onScrollToIndexFailed={() => {}}
               nestedScrollEnabled={true} 
             />
@@ -1007,6 +1013,7 @@ const styles = StyleSheet.create({
   },
   seasonTabsContainer: {
     marginVertical: 8,
+    marginHorizontal: -18,
   },
   seasonTab: {
     paddingHorizontal: 20,

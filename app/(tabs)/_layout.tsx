@@ -2,10 +2,11 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform, Dimensions, View, StyleSheet, TouchableOpacity, DeviceEventEmitter, Animated } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { BlurView, BlurTargetView } from 'expo-blur';
 import { useAppTheme, shadows } from '../../src/theme';
+import { GradientBlur } from '../../src/components/shared/GradientBlur';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DOCK_MARGIN_BOTTOM = Platform.OS === 'ios' ? 40 : 35;
@@ -132,10 +133,11 @@ const CustomTabBar = ({ targetRef, targetReady }: { targetRef: any; targetReady:
 
     return (
         <View style={localStyles.overlayContainer} pointerEvents="box-none">
-            <LinearGradient
-                colors={isDark ? ['transparent', 'rgba(10,10,10,0.3)', 'rgba(10,10,10,0.75)'] : ['transparent', 'rgba(240,240,242,0.3)', 'rgba(240,240,242,0.85)']}
-                style={localStyles.bottomGradient}
-                pointerEvents="none"
+            <GradientBlur
+                position="bottom"
+                height={DOCK_MARGIN_BOTTOM + TAB_BAR_HEIGHT + 20}
+                intensity={60}
+                blurTarget={blurEnabled ? targetRef : null}
             />
             <Animated.View
                 style={[
@@ -149,7 +151,7 @@ const CustomTabBar = ({ targetRef, targetReady }: { targetRef: any; targetReady:
                     {blurEnabled && (
                         <BlurView
                             key="tab-bar-blur"
-                            intensity={40}
+                            intensity={60}
                             tint={isDark ? 'dark' : 'light'}
                             style={StyleSheet.absoluteFill}
                             blurTarget={targetRef}
@@ -207,13 +209,6 @@ const localStyles = StyleSheet.create({
         right: 0,
         alignItems: 'center',
     },
-    bottomGradient: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: 50,
-    },
     pillContainer: {
         width: TAB_BAR_WIDTH,
         height: TAB_BAR_HEIGHT,
@@ -246,6 +241,7 @@ const localStyles = StyleSheet.create({
 
 export default function TabLayout() {
     const { colors } = useAppTheme();
+    const insets = useSafeAreaInsets();
     const targetRef = useRef<any>(null);
     const [targetReady, setTargetReady] = useState(false);
 
@@ -280,6 +276,14 @@ export default function TabLayout() {
 
             {/* Sibling: Completely outside BlurTargetView to prevent native Dimezis recursion */}
             <CustomTabBar targetRef={targetRef} targetReady={targetReady} />
+
+            {/* Status-bar edge: content scrolls under a frosted fade instead of a hard cut */}
+            <GradientBlur
+                position="top"
+                height={insets.top + 16}
+                intensity={40}
+                blurTarget={targetReady ? targetRef : null}
+            />
         </View>
     );
 }

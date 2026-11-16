@@ -14,7 +14,6 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LegendList } from '@legendapp/list/react-native';
 import { getImageUrl, TMDBResult, getDiscoverMedia, fetchMoreContentByType } from '../src/tmdb';
 import { Ionicons, Feather } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import { ShimmerBlock } from '../src/components/shared/Shimmer';
 import { useAppTheme } from '../src/theme';
 import { warmPaletteForMedia } from '../src/utils/colorExtractor';
@@ -292,7 +291,15 @@ const ViewAllPage = () => {
 
       {/* FILTER MODAL */}
       <Modal visible={showFilters} animationType="slide" transparent={true}>
-        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={styles.modalOverlay}>
+        {/* Plain scrim: an RN Modal renders in its own window on Android, so a
+            BlurView here has no BlurTargetView to sample and would silently do
+            nothing (it only tinted the overlay). */}
+        <View
+          style={[
+            styles.modalOverlay,
+            { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.66)' : 'rgba(255, 255, 255, 0.66)' },
+          ]}
+        >
           <View style={[styles.modalContent, { backgroundColor: colors.surfaceContainer }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Filters</Text>
@@ -305,7 +312,7 @@ const ViewAllPage = () => {
               {/* Year Filter */}
               <View>
                 <Text style={[styles.filterSectionTitle, { color: colors.textSecondary }]}>Release Year</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -24 }} contentContainerStyle={[styles.filterRow, { paddingHorizontal: 24 }]}>
                   {years.map(y => (
                     <TouchableOpacity activeOpacity={0.95} 
                       key={y} 
@@ -329,7 +336,7 @@ const ViewAllPage = () => {
               {/* Language Filter */}
               <View>
                 <Text style={[styles.filterSectionTitle, { color: colors.textSecondary }]}>Language</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -24 }} contentContainerStyle={[styles.filterRow, { paddingHorizontal: 24 }]}>
                   {languages.map(lang => (
                     <TouchableOpacity activeOpacity={0.95} 
                       key={lang.code} 
@@ -353,7 +360,7 @@ const ViewAllPage = () => {
               {/* Rating Filter */}
               <View>
                 <Text style={[styles.filterSectionTitle, { color: colors.textSecondary }]}>Minimum Rating</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -24 }} contentContainerStyle={[styles.filterRow, { paddingHorizontal: 24 }]}>
                   {ratings.map(r => (
                     <TouchableOpacity activeOpacity={0.95} 
                       key={r} 
@@ -395,7 +402,7 @@ const ViewAllPage = () => {
               </TouchableOpacity>
             </View>
           </View>
-        </BlurView>
+        </View>
       </Modal>
     </View>
   );

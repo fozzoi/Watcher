@@ -435,7 +435,7 @@ const styles = StyleSheet.create({
   },
   actorSearchInput: { flex: 1, color: '#fff', fontSize: 15 },
 
-  selectedRow: { marginBottom: 16, flexGrow: 0 },
+  selectedRow: { marginBottom: 16, flexGrow: 0, marginHorizontal: -20 },
   selectedActor: { alignItems: 'center', width: 60 },
   selectedActorImg: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#222', borderWidth: 2, borderColor: ACCENT },
   selectedActorBadge: {

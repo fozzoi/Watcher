@@ -48,6 +48,8 @@ import { logTasteEvent, TASTE_WEIGHTS } from '../../src/services/tasteProfile';
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurTargetView } from 'expo-blur';
+import { GradientBlur } from '../../src/components/shared/GradientBlur';
 import { getGenreIcon } from '../../src/components/explore/ExploreConstants';
 import MovieChatSection from '../../src/components/movie/MovieChatSection';
 import { MovieDetailSkeleton } from '../../src/components/movie/MovieDetailSkeleton';
@@ -773,6 +775,8 @@ const MovieAIPanel = React.memo(({
           ) : aiRecommendations && aiRecommendations.length > 0 ? (
             <LegendList
               horizontal
+              style={styles.panelFullBleedRail}
+              contentContainerStyle={styles.panelFullBleedRailContent}
               data={aiRecommendations}
               recycleItems={false}
               showsHorizontalScrollIndicator={false}
@@ -859,7 +863,8 @@ const MovieEpisodesSection = React.memo(({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 8, paddingBottom: 14 }}
+        style={styles.fullBleedRail}
+        contentContainerStyle={[styles.fullBleedRailContent, { gap: 8, paddingBottom: 14 }]}
       >
         {seasons
           .filter((s: any) => s.season_number > 0)
@@ -961,6 +966,7 @@ const MovieEpisodesSection = React.memo(({
 export default function DetailPage() {
   const router = useRouter();
   const { colors, isDark, ambientTheming } = useAppTheme();
+  const topBlurTarget = useRef<any>(null);
   const searchParams = useLocalSearchParams<{
     id: string;
     media_type?: string;
@@ -1608,6 +1614,9 @@ export default function DetailPage() {
     <View style={[styles.root, { backgroundColor: detailsBg }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle={isAmbientActive || isDark ? "light-content" : "dark-content"} />
 
+      {/* Hero + scrolling content are the blur source for the coloured status-bar edge */}
+      <BlurTargetView ref={topBlurTarget} style={styles.fill} collapsable={false}>
+
       {/* Lightweight Static Hero Backdrop */}
       <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: detailsBg }]} pointerEvents="none">
         <Image
@@ -1625,22 +1634,9 @@ export default function DetailPage() {
         />
       </View>
 
-      {/* Top Bar HUD */}
-      <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => {
-            if (router.canGoBack()) router.back();
-            else router.replace('/(tabs)');
-          }}
-          style={styles.glassBtn}
-        >
-          <Ionicons name="chevron-back" size={22} color="#FFF" />
-        </TouchableOpacity>
-      </View>
-
       {/* Main Single Scroll Container */}
       <ScrollView
+        style={styles.fill}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 }}
         onScroll={handleScroll}
@@ -1703,7 +1699,7 @@ export default function DetailPage() {
               horizontal
               showsHorizontalScrollIndicator={false}
               style={styles.genreRow}
-              contentContainerStyle={{ gap: 8 }}
+              contentContainerStyle={[styles.fullBleedRailContent, { gap: 8 }]}
             >
               {genres.map((g) => {
                 const iconName = getGenreIcon(g.id, g.name);
@@ -1782,7 +1778,7 @@ export default function DetailPage() {
                   {movie.media_type === 'tv' ? 'Created by' : 'Directed by'}
                 </Text>
                 {!extrasLoaded ? (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fullBleedRail} contentContainerStyle={[styles.fullBleedRailContent, { gap: 10 }]}>
                     {[1, 2, 3].map((i) => (
                       <View key={i} style={[styles.directorCard, { paddingRight: 16 }]}>
                         <ShimmerBlock width={38} height={38} borderRadius={19} />
@@ -1797,7 +1793,8 @@ export default function DetailPage() {
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: 10 }}
+                    style={styles.fullBleedRail}
+                    contentContainerStyle={[styles.fullBleedRailContent, { gap: 10 }]}
                   >
                     {directors.map((director: any) => (
                       <MemoizedDirectorCard
@@ -1836,7 +1833,7 @@ export default function DetailPage() {
                   ) : null}
                 </View>
                 {!extrasLoaded ? (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fullBleedRail} contentContainerStyle={[styles.fullBleedRailContent, { gap: 12 }]}>
                     {[1, 2, 3, 4].map((i) => (
                       <CardShimmer key={i} width={castCardWidth} height={castCardWidth * 1.35} />
                     ))}
@@ -1845,7 +1842,8 @@ export default function DetailPage() {
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: 12 }}
+                    style={styles.fullBleedRail}
+                    contentContainerStyle={[styles.fullBleedRailContent, { gap: 12 }]}
                   >
                     {cast.slice(0, castLimit).map((castMember: any) => (
                       <MemoizedCastCard
@@ -1973,7 +1971,7 @@ export default function DetailPage() {
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: isAmbientActive ? '#FFFFFF' : colors.text }]}>More like this</Text>
                 {(!extrasLoaded || loadingSimilar) ? (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fullBleedRail} contentContainerStyle={[styles.fullBleedRailContent, { gap: 12 }]}>
                     {[1, 2, 3, 4].map((i) => (
                       <CardShimmer key={i} width={similarCardWidth} height={similarCardWidth * 1.5} />
                     ))}
@@ -1995,6 +1993,8 @@ export default function DetailPage() {
                 ) : (
                   <LegendList
                     horizontal
+                    style={styles.fullBleedRail}
+                    contentContainerStyle={styles.fullBleedRailContent}
                     data={similarMovies}
                     recycleItems={true}
                     showsHorizontalScrollIndicator={false}
@@ -2011,6 +2011,30 @@ export default function DetailPage() {
           )}
         </View>
       </ScrollView>
+      </BlurTargetView>
+
+      {/* Coloured status-bar edge: palette tint plus real blur over the hero */}
+      <GradientBlur
+        position="top"
+        height={TOP_BAR_PADDING + 56}
+        intensity={55}
+        color={detailsBg}
+        blurTarget={topBlurTarget}
+      />
+
+      {/* Top Bar HUD */}
+      <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => {
+            if (router.canGoBack()) router.back();
+            else router.replace('/(tabs)');
+          }}
+          style={styles.glassBtn}
+        >
+          <Ionicons name="chevron-back" size={22} color="#FFF" />
+        </TouchableOpacity>
+      </View>
 
       {/* In-Page Torrent Downloads Overlay */}
       <MovieTorrentModal
@@ -2028,6 +2052,7 @@ export default function DetailPage() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
+  fill: { flex: 1 },
   heroContainer: {
     position: 'absolute',
     top: 0,
@@ -2068,6 +2093,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 24,
   },
+  // The detail card has a 20px gutter. Extend each carousel to the screen edge,
+  // then restore that gutter inside the scroll content for aligned first cards.
+  fullBleedRail: { marginHorizontal: -20 },
+  fullBleedRailContent: { paddingHorizontal: 20 },
+  // AI content adds its own 16px panel inset on top of the detail card's 20px.
+  panelFullBleedRail: { marginHorizontal: -36 },
+  panelFullBleedRailContent: { paddingHorizontal: 36 },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2096,7 +2128,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   certText: { color: C.mutedSoft, fontSize: 10, fontWeight: '700' },
-  genreRow: { marginBottom: 18 },
+  genreRow: { marginBottom: 18, marginHorizontal: -20 },
   genreCard: {
     flexDirection: 'row',
     alignItems: 'center',

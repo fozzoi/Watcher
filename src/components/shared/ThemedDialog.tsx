@@ -2,7 +2,6 @@ import React from 'react';
 import { 
   View, Text, Modal, TouchableOpacity, StyleSheet, Dimensions, Platform 
 } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme, shadows } from '../../theme';
 
