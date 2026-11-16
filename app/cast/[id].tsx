@@ -33,9 +33,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import {
-  getPersonDetails,
-  getPersonCombinedCredits,
-  getPersonImages,
+  getPersonBundle,
   getImageUrl,
   TMDBPerson,
   TMDBResult,
@@ -260,22 +258,19 @@ export default function CastDetails() {
     setPersonImages([]);
 
     try {
-      const [personRes, creditsRes, imagesRes] = await Promise.allSettled([
-        getPersonDetails(personId, { priority: 'high', throwOnError: true }),
-        getPersonCombinedCredits(personId, { priority: 'high' }),
-        getPersonImages(personId, { priority: 'high' }),
-      ]);
+      // One request: profile + credits + photos via append_to_response.
+      const bundle = await getPersonBundle(personId, { priority: 'high', throwOnError: true });
 
       if (reqId !== loadRequestRef.current) return;
 
-      if (personRes.status === 'rejected' || !personRes.value) {
+      const personData = bundle.person;
+      if (!personData?.id) {
         setError('Could not load profile details. Please check your connection and try again.');
         return;
       }
 
-      const personData = personRes.value;
-      const creditsData = creditsRes.status === 'fulfilled' && Array.isArray(creditsRes.value) ? creditsRes.value : [];
-      const imagesData = imagesRes.status === 'fulfilled' && Array.isArray(imagesRes.value) ? imagesRes.value : [];
+      const creditsData = bundle.credits;
+      const imagesData = bundle.images;
 
       setPerson(personData);
       setPersonImages(imagesData);

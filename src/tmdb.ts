@@ -12,13 +12,13 @@ import {
 } from './database';
 import { getUserPreferences } from './userPreferences';
 import { withApiAuth } from './apiAuth';
+import { isKnownOffline, subscribeToNetwork } from './network';
 
 // ==========================================
 // 1. GLOBAL CONFIGURATION & SETUP
 // ==========================================
 
 const API_BASE_URL = "https://watcher-api-rho.vercel.app/api/tmdb";
-const GEMINI_MODEL = "gemini-flash-latest";
 
 export type RequestPriority = 'high' | 'low';
 
@@ -75,19 +75,6 @@ export const loadGlobalConfig = async (): Promise<void> => {
 
 const REQUEST_TIMEOUT_MS = 15000;
 const AI_REQUEST_TIMEOUT_MS = 25000;
-
-const tmdbApi = axios.create({
-  baseURL: API_BASE_URL,
-  params: { api_key: "" }, // Backend handles this
-  timeout: REQUEST_TIMEOUT_MS,
-});
-
-tmdbApi.interceptors.response.use(
-  response => response,
-  error => {
-    return Promise.reject(error);
-  }
-);
 
 // --- CACHE SETUP WITH TTL (Time-To-Live) & SWR ---
 const CACHE_TTL_MS = 1000 * 60 * 60 * 4; // 4 Hours fresh
@@ -303,8 +290,13 @@ const createCacheKey = (endpoint: string, params: Record<string, any> = {}) => {
 };
 
 const MAX_REQUEST_CACHE_ENTRIES = 300;
-const MAX_CONCURRENT_TOTAL = 4;
-const MAX_CONCURRENT_LOW = 2;
+
+// 6 total / 3 low is the policy the queue tests and the pre-b21a550 history
+// encode. A navigation commit silently dropped this to 4 / 2, which cut
+// throughput by a third and made a slow request block the next screen for
+// noticeably longer.
+const MAX_CONCURRENT_TOTAL = 6;
+const MAX_CONCURRENT_LOW = 3;
 
 const inFlightRequests = new Map<string, Promise<any>>();
 const backgroundRevalidations = new Map<string, Promise<void>>();
@@ -326,6 +318,31 @@ const lowQueue: QueuedTask<any>[] = [];
 const queuedTasksByKey = new Map<string, Set<QueuedTask<any>>>();
 let activeTotal = 0;
 let activeLow = 0;
+
+const OFFLINE_ERROR_CODE = 'ERR_OFFLINE';
+
+const createOfflineError = (): any => {
+  const error: any = new Error('Device is offline');
+  error.code = OFFLINE_ERROR_CODE;
+  error.isOffline = true;
+  return error;
+};
+
+/**
+ * When connectivity drops, everything still waiting for a slot is already
+ * doomed. Rejecting now frees the queue instead of letting each task pay its
+ * own 15s timeout when a slot eventually frees up.
+ */
+const rejectQueuedRequestsForOffline = () => {
+  if (highQueue.length === 0 && lowQueue.length === 0) return;
+  const pending = [...highQueue, ...lowQueue];
+  highQueue.length = 0;
+  lowQueue.length = 0;
+  queuedTasksByKey.clear();
+  for (const task of pending) {
+    task.reject(createOfflineError());
+  }
+};
 
 const removeQueuedTaskReference = (task: QueuedTask<any>) => {
   const set = queuedTasksByKey.get(task.cacheKey);
@@ -372,6 +389,16 @@ const drainRequestQueue = () => {
   }
 };
 
+// Registered after drainRequestQueue exists: NetInfo can emit the current
+// state as soon as a listener attaches.
+subscribeToNetwork((onlineNow) => {
+  if (onlineNow) {
+    drainRequestQueue();
+    return;
+  }
+  rejectQueuedRequestsForOffline();
+});
+
 const enqueueRequest = <T>(
   cacheKey: string,
   requestLabel: string,
@@ -379,6 +406,12 @@ const enqueueRequest = <T>(
   run: () => Promise<T>,
 ): Promise<T> => {
   return new Promise<T>((resolve, reject) => {
+    // Nothing new should join the queue while the device is offline; it would
+    // only wait to fail. Callers with cached data fall back to it.
+    if (isKnownOffline()) {
+      reject(createOfflineError());
+      return;
+    }
     const task: QueuedTask<T> = { cacheKey, requestLabel, enqueuedAt: Date.now(), priority, run, resolve, reject };
     let set = queuedTasksByKey.get(cacheKey);
     if (!set) {
@@ -477,6 +510,13 @@ const executeHttpWithRetry = async (
   let lastError: any = null;
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
+  // Fail fast when the device reports no connectivity. Waiting out the full
+  // timeout per request is what turns a plane-mode phone into a minute of
+  // "loading" instead of an instant cached render.
+  if (isKnownOffline()) {
+    throw createOfflineError();
+  }
+
   // Build full URL query string
   const queryParts: string[] = [];
   for (const [key, val] of Object.entries(params)) {
@@ -488,6 +528,10 @@ const executeHttpWithRetry = async (
   const fullUrl = `${API_BASE_URL}${cleanEndpoint}${queryString}`;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // Connectivity can drop between attempts (retry backoff, radio handover).
+    if (attempt > 0 && isKnownOffline()) {
+      throw createOfflineError();
+    }
     const attemptStartedAt = Date.now();
     try {
       // Keep the deadline active through body download and JSON parsing. On
@@ -541,7 +585,8 @@ const executeHttpWithRetry = async (
       lastError = error;
       const durationMs = Date.now() - attemptStartedAt;
       const statusCode = error.response?.status;
-      if (Platform.OS === 'android') {
+      const isOfflineError = error.code === OFFLINE_ERROR_CODE;
+      if (Platform.OS === 'android' && !isOfflineError) {
         console.warn(
           `[TMDB][Android] ${cleanEndpoint} failed attempt=${attempt + 1} duration=${durationMs}ms status=${statusCode ?? 'none'} code=${error.code ?? 'none'} name=${error.name ?? 'Error'} message=${String(error.message ?? error).slice(0, 180)}`
         );
@@ -554,6 +599,7 @@ const executeHttpWithRetry = async (
 
       const isRetryable =
         !isTimeout &&
+        !isOfflineError &&
         (!statusCode ||
           statusCode === 408 ||
           statusCode === 429 ||
@@ -1545,22 +1591,22 @@ export const isTalkOrSelfShow = (item: any): boolean => {
   return false;
 };
 
-export const getPersonCombinedCredits = async (
-  personId: number,
-  options?: TmdbRequestOptions,
-): Promise<TMDBResult[]> => {
-  const data = await fetchWithCache(`/person/${personId}/combined_credits`, {}, options);
-  
-  const rawCast = Array.isArray(data?.cast) ? data.cast : [];
+/**
+ * Shared post-processing for a TMDB credits block (`combined_credits`,
+ * `movie_credits`, or `tv_credits`). Used both by the standalone
+ * `/person/{id}/combined_credits` call and by the bundled person request below.
+ */
+const formatActionCredits = (payload: any): TMDBResult[] => {
+  const rawCast = Array.isArray(payload?.cast) ? payload.cast : [];
   const castItems = rawCast.filter((item: any) => !isTalkOrSelfShow(item));
-  const crewItems = data.crew || [];
+  const crewItems = Array.isArray(payload?.crew) ? payload.crew : [];
 
   // Filter the crew array to only get items where they were the Director
   const directorialWorks = crewItems.filter((item: any) => item.job === "Director");
 
   // Combine acting and directing arrays
   const combined = [...castItems, ...directorialWorks];
-  
+
   // Remove duplicates (e.g., if they act and direct in the same movie)
   const uniqueItems = Array.from(new Map(combined.map((item: any) => [item.id, item])).values());
 
@@ -1569,6 +1615,41 @@ export const getPersonCombinedCredits = async (
     media_type: item.media_type || (item.title ? "movie" : "tv"),
     character: item.character || item.job || null
   }));
+};
+
+export const getPersonCombinedCredits = async (
+  personId: number,
+  options?: TmdbRequestOptions,
+): Promise<TMDBResult[]> => {
+  const data = await fetchWithCache(`/person/${personId}/combined_credits`, {}, options);
+  return formatActionCredits(data);
+};
+
+/**
+ * Everything the cast page renders in a single round trip.
+ *
+ * `/person/{id}` supports `append_to_response`, so profile, full credits and
+ * photo set arrive together instead of as three separate requests competing
+ * for the same five-per-host sockets.
+ */
+export const getPersonBundle = async (
+  personId: number,
+  options?: TmdbRequestOptions,
+): Promise<{ person: TMDBPerson; credits: TMDBResult[]; images: TMDBImage[] }> => {
+  const data: any = await fetchWithCache(
+    `/person/${personId}`,
+    { append_to_response: 'combined_credits,images' },
+    options,
+  );
+
+  // Drop the appended blobs so state holds just the profile record.
+  const { combined_credits: creditsPayload, images: imagesPayload, ...person } = data || {};
+
+  return {
+    person: person as TMDBPerson,
+    credits: formatActionCredits(creditsPayload),
+    images: Array.isArray(imagesPayload?.profiles) ? imagesPayload.profiles : [],
+  };
 };
 
 export const getPersonImages = async (
@@ -1839,6 +1920,7 @@ export const fetchPersonalisedDiscoveryContent = async (
   forceRefresh = false,
   favoriteActors: any[] = [],
   onBackgroundUpdate?: (data: any) => void,
+  shouldContinue?: () => boolean,
 ) => {
   const gId = genreFilterId === 0 ? undefined : genreFilterId;
   const actorsKey = (favoriteActors || []).map((a: any) => a.id).join('_');
@@ -1854,6 +1936,17 @@ export const fetchPersonalisedDiscoveryContent = async (
     return true;
   };
 
+  // The tail of a refresh is only skippable when a compatible page is already
+  // on screen; otherwise the user would be left with nothing to look at.
+  const hasCompatibleCachedPage = (): boolean => {
+    try {
+      const entry = getExploreContentCacheEntrySync(genreFilterId);
+      return Boolean(entry?.data && isCompatibleCache(entry.data));
+    } catch {
+      return false;
+    }
+  };
+
   const scheduleBackgroundExploreRefresh = () => {
     const promise = fetchFreshPersonalisedContent(
       languages,
@@ -1864,6 +1957,7 @@ export const fetchPersonalisedDiscoveryContent = async (
       configHash,
       genreFilterId,
       'low',
+      shouldContinue,
     );
     if (onBackgroundUpdate) {
       promise
@@ -1912,6 +2006,7 @@ export const fetchPersonalisedDiscoveryContent = async (
     configHash,
     genreFilterId,
     'high',
+    shouldContinue && hasCompatibleCachedPage() ? shouldContinue : undefined,
   );
 };
 
@@ -1924,6 +2019,7 @@ const fetchFreshPersonalisedContent = async (
   configHash: string,
   genreFilterId: number = 0,
   priority: RequestPriority = 'low',
+  shouldContinue?: () => boolean,
 ) => {
   const existing = inFlightExploreRefreshes.get(cacheKey);
   if (existing) {
@@ -1966,6 +2062,14 @@ const fetchFreshPersonalisedContent = async (
         coreLang0Movies.length > 0;
 
       if (!hasCoreContent) {
+        return null;
+      }
+
+      // Phase 2 is ~21 further requests for shelves below the fold. If the user
+      // has left Explore while Phase 1 was in flight, stop here instead of
+      // burning queue slots the next screen needs. Returning null also keeps
+      // the partial page out of the cache.
+      if (shouldContinue && !shouldContinue()) {
         return null;
       }
 

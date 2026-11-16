@@ -606,6 +606,9 @@ const ExplorePage = () => {
   const lastPrefsRef = useRef<string>('');
   const refreshingRef = useRef(false);
   const pendingCacheRefreshRef = useRef(false);
+  // Mirrors tab focus so the request layer can drop the tail of an Explore
+  // refresh nobody is looking at.
+  const exploreFocusedRef = useRef(true);
 
   const bgOpacity = useSharedValue(0);
   const searchWidthAnim = useSharedValue(0);
@@ -674,7 +677,8 @@ const ExplorePage = () => {
               setExploreError(false);
               setContentLoading(false);
             }
-          }
+          },
+          () => exploreFocusedRef.current
         );
         if (requestId !== contentRequestRef.current) return;
         if (content) {
@@ -766,6 +770,17 @@ const ExplorePage = () => {
 
   // Cancel the pending stage timer on unmount
   useEffect(() => () => stageCancelRef.current?.(), []);
+
+  // Track tab focus. A refresh that loses its audience stops after the core
+  // shelves instead of issuing the remaining ~21 background requests.
+  useFocusEffect(
+    useCallback(() => {
+      exploreFocusedRef.current = true;
+      return () => {
+        exploreFocusedRef.current = false;
+      };
+    }, [])
+  );
 
   // Listen for preference updates / cache clears from onboarding / settings
   useEffect(() => {

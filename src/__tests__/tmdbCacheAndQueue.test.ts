@@ -21,6 +21,8 @@ jest.mock('axios', () => ({
   },
 }));
 
+jest.mock('@react-native-community/netinfo');
+
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: {
@@ -76,10 +78,44 @@ const deferred = <T,>() => {
   return { promise, resolve, reject };
 };
 
-const flushMicrotasks = async (cycles = 8) => {
+// Native fetch adds one async hop per request compared with the old axios path,
+// so allow more microtask turns before asserting.
+const flushMicrotasks = async (cycles = 30) => {
   for (let i = 0; i < cycles; i++) {
     await Promise.resolve();
   }
+};
+
+const parseFetchUrl = (url: string) => {
+  const queryIndex = url.indexOf('?');
+  const rawPath = queryIndex === -1 ? url : url.slice(0, queryIndex);
+  const path = rawPath.replace(/^https?:\/\/[^/]+/, '').replace(/^\/api\/tmdb/, '') || '/';
+  const params: Record<string, unknown> = {};
+  if (queryIndex !== -1) {
+    for (const pair of url.slice(queryIndex + 1).split('&')) {
+      if (!pair) continue;
+      const [rawKey, rawValue = ''] = pair.split('=');
+      const key = decodeURIComponent(rawKey);
+      const value = decodeURIComponent(rawValue);
+      params[key] = /^-?\d+$/.test(value) ? Number(value) : value === 'true' ? true : value === 'false' ? false : value;
+    }
+  }
+  return { path, params };
+};
+
+// The client moved from axios to native fetch, but these tests still drive it
+// through axios-style mocks. Bridge the two so assertions keep their shape.
+const installFetchMock = () => {
+  (globalThis as any).fetch = jest.fn(async (url: string) => {
+    const { path, params } = parseFetchUrl(String(url));
+    const response: any = await mockAxiosGet(path, { params });
+    const body = response && typeof response === 'object' && 'data' in response ? response.data : response;
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify(body ?? null),
+    };
+  });
 };
 
 describe('TMDB caching, priority queue, and error handling', () => {
@@ -91,6 +127,7 @@ describe('TMDB caching, priority queue, and error handling', () => {
     mockAxiosPost.mockReset();
     jest.restoreAllMocks();
     jest.resetModules();
+    installFetchMock();
   });
 
   test('limits concurrent low-priority requests while allowing high-priority requests to preempt immediately', async () => {
@@ -258,6 +295,90 @@ describe('TMDB caching, priority queue, and error handling', () => {
     expect(details.media_type).toBe('tv');
     expect(details.director?.name).toBe('Kevin Bray');
     expect(details.directors).toHaveLength(1);
+  });
+
+  test('getPersonBundle fetches the whole cast page in a single request', async () => {
+    const tmdb = require('../tmdb') as typeof import('../tmdb');
+
+    mockAxiosGet.mockResolvedValueOnce({
+      data: {
+        id: 287,
+        name: 'Brad Pitt',
+        profile_path: '/bp.jpg',
+        combined_credits: {
+          cast: [
+            { id: 550, title: 'Fight Club', media_type: 'movie', popularity: 30 },
+            { id: 1399, name: 'Late Night Talk', media_type: 'tv', genre_ids: [10767] },
+          ],
+          crew: [{ id: 807, title: 'Se7en', media_type: 'movie', job: 'Director' }],
+        },
+        images: { profiles: [{ file_path: '/p1.jpg', aspect_ratio: 0.67, width: 100, height: 150 }] },
+      },
+    });
+
+    const bundle = await tmdb.getPersonBundle(287, { priority: 'high' });
+
+    // Exactly one round trip, with the appended blocks requested together.
+    expect(mockAxiosGet.mock.calls.map((c) => c[0])).toEqual(['/person/287']);
+    expect(mockAxiosGet).toHaveBeenCalledWith('/person/287', {
+      params: expect.objectContaining({ append_to_response: 'combined_credits,images' }),
+    });
+
+    // Profile state stays clean; the appended blobs are unpacked separately.
+    expect(bundle.person).toMatchObject({ id: 287, name: 'Brad Pitt' });
+    expect((bundle.person as any).combined_credits).toBeUndefined();
+    expect((bundle.person as any).images).toBeUndefined();
+
+    // Talk shows filtered out, director credit kept.
+    expect(bundle.credits.map((credit: any) => credit.id).sort()).toEqual([550, 807]);
+    expect(bundle.images).toHaveLength(1);
+  });
+
+  test('an Explore refresh that loses its audience stops after the core shelves', async () => {
+    const tmdb = require('../tmdb') as typeof import('../tmdb');
+    const db = require('../database');
+
+    // A compatible page is already on screen, so dropping the tail is allowed.
+    mockExploreCache.set(0, {
+      data: { langData: { en: { movies: [], tv: [] } }, _configHash: 'nsfw:1|genres:28|actors:' },
+      updatedAt: Date.now(),
+    });
+
+    mockAxiosGet.mockResolvedValue({
+      data: { results: [{ id: 1, title: 'A', poster_path: '/a.jpg' }] },
+    });
+
+    const result = await tmdb.fetchPersonalisedDiscoveryContent(
+      ['en'],
+      [28],
+      0,
+      true,
+      [],
+      undefined,
+      () => false, // user already left the tab
+    );
+
+    expect(result).toBeNull();
+    // Phase 1 is 5 requests; the ~21 Phase 2 requests never fire.
+    expect(mockAxiosGet.mock.calls.length).toBe(5);
+    // The abandoned partial page must not be cached as if it were complete.
+    expect(db.saveExploreContentCacheSync).not.toHaveBeenCalled();
+  });
+
+  test('fails fast without a network attempt when the device reports offline', async () => {
+    const tmdb = require('../tmdb') as typeof import('../tmdb');
+    const netinfo = require('@react-native-community/netinfo');
+
+    mockAxiosGet.mockRejectedValue(new Error('network should not be touched'));
+
+    netinfo.__setState({ isConnected: false, isInternetReachable: false });
+
+    await expect(
+      tmdb.getMediaDetails(37680, 'tv', 'US', { priority: 'high' })
+    ).rejects.toMatchObject({ code: 'ERR_OFFLINE' });
+
+    // The whole point: no request is attempted, so no 15s timeout is paid.
+    expect(mockAxiosGet).not.toHaveBeenCalled();
   });
 
   test('getSeasonEpisodes throws when offline with no cache instead of returning empty episodes', async () => {
