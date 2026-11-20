@@ -386,7 +386,7 @@ export default function StatsPage() {
   if (loading || !stats) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
-        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+        <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
         <LoadingIndicator size="large" color={colors.primary} />
       </View>
     );
@@ -394,7 +394,7 @@ export default function StatsPage() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Header Bar */}
       <View style={[styles.header, { borderBottomColor: colors.divider }]}>

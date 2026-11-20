@@ -13,6 +13,8 @@ import { Text } from 'react-native-paper';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurTargetView } from 'expo-blur';
+import { GradientBlur } from '../../src/components/shared/GradientBlur';
 import { hasSavedItem, addSavedItem, removeSavedItem, subscribeToSavedItemsChanges } from '../../src/database';
 import { savedStore$, syncSavedStore, toggleWatchlistGlobal } from '../../src/state/savedState';
 import { useSelector } from '@legendapp/state/react';
@@ -23,8 +25,13 @@ import {
   TMDBResult,
 } from '../../src/tmdb';
 import { ShimmerBlock } from '../../src/components/shared/Shimmer';
-import { useAppTheme } from '../../src/theme';
-import { warmPaletteForMedia } from '../../src/utils/colorExtractor';
+import { useAppTheme, ACCENT_COLOR } from '../../src/theme';
+import {
+  useImagePalette,
+  warmPaletteForMedia,
+  AMBIENT_PENDING_BG,
+  AMBIENT_PENDING_BG_LIGHT,
+} from '../../src/utils/colorExtractor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
@@ -44,10 +51,22 @@ const C = {
 
 // --- SHIMMER COMPONENTS ---
 
-const MovieCardShimmer = () => {
+const MovieCardShimmer = ({ isAmbientActive, isDark }: { isAmbientActive?: boolean; isDark?: boolean }) => {
   const { colors } = useAppTheme();
   return (
-    <View style={[styles.movieCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}>
+    <View
+      style={[
+        styles.movieCard,
+        {
+          backgroundColor: isAmbientActive
+            ? 'rgba(255, 255, 255, 0.06)'
+            : colors.surfaceContainer,
+          borderColor: isAmbientActive
+            ? 'rgba(255, 255, 255, 0.08)'
+            : colors.border,
+        },
+      ]}
+    >
       <ShimmerBlock width={100} height={150} borderRadius={12} />
       <View style={{ flex: 1, gap: 8, paddingVertical: 4 }}>
         <ShimmerBlock width="65%" height={16} />
@@ -63,7 +82,7 @@ const MovieCardShimmer = () => {
 
 const CollectionDetails = () => {
   const router = useRouter();
-  const { colors, isDark } = useAppTheme();
+  const { colors, isDark, ambientTheming, useMaterialYou } = useAppTheme();
   const { id, name, title } = useLocalSearchParams();
   const collectionId = Number(id);
   const collectionName = (name as string) || (title as string) || '';
@@ -73,8 +92,38 @@ const CollectionDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const fetchReqIdRef = useRef(0);
+  const topBlurTarget = useRef<any>(null);
   const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [isWatched, setIsWatched] = useState(false);
+
+  // Extract poster or backdrop image url for ambient palette
+  const heroThumbUrl = collection?.poster_path
+    ? getImageUrl(collection.poster_path, 'w185')
+    : collection?.backdrop_path
+    ? getImageUrl(collection.backdrop_path, 'w300')
+    : null;
+
+  const heroBackdropUrl = collection?.backdrop_path
+    ? getImageUrl(collection.backdrop_path, 'w780')
+    : collection?.poster_path
+    ? getImageUrl(collection.poster_path, 'w780')
+    : null;
+
+  const { palette, failed: paletteFailed } = useImagePalette(ambientTheming ? heroThumbUrl : null);
+
+  const palettePending = Boolean(ambientTheming && heroThumbUrl && !palette && !paletteFailed);
+  const isAmbientActive = Boolean(ambientTheming && (palette?.pastelDark || palettePending));
+
+  // Ambient mode keeps the rich cinematic dark palette across both dark and light system themes
+  const detailsBg = isAmbientActive
+    ? (palette?.pastelDark || AMBIENT_PENDING_BG)
+    : colors.background;
+
+  const heroGradientColors: readonly [string, string, ...string[]] = isAmbientActive
+    ? ['transparent', 'rgba(255,255,255,0.06)', detailsBg]
+    : (isDark
+        ? ['rgba(10,10,11,0.1)', 'transparent', detailsBg]
+        : ['rgba(255,255,255,0.1)', 'transparent', detailsBg]);
 
   const checkStatus = useCallback((col: TMDBCollectionDetails) => {
     const inWatchlist = hasSavedItem(col.id, 'watchlist');
@@ -222,41 +271,95 @@ const CollectionDetails = () => {
     const isItemWatched = watchedIds ? watchedIds.has(item.id) : hasSavedItem(item.id, 'history');
     return (
       <TouchableOpacity
-        style={[styles.movieCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.border }]}
+        style={[
+          styles.movieCard,
+          {
+            backgroundColor: isAmbientActive
+              ? 'rgba(255, 255, 255, 0.06)'
+              : colors.surfaceContainer,
+            borderColor: isAmbientActive
+              ? 'rgba(255, 255, 255, 0.08)'
+              : colors.border,
+          },
+          isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+        ]}
         onPress={() => handleMoviePress(item)}
         activeOpacity={0.95}
       >
         <Image
           source={{ uri: getImageUrl(item.poster_path, 'w185') }}
-          style={[styles.moviePoster, { backgroundColor: colors.surfaceContainerHigh }]}
+          style={[
+            styles.moviePoster,
+            {
+              backgroundColor: isAmbientActive
+                ? 'rgba(255, 255, 255, 0.08)'
+                : colors.surfaceContainerHigh,
+            },
+          ]}
           contentFit="cover"
           cachePolicy="disk"
         />
         <View style={styles.movieInfo}>
-          <Text style={[styles.movieTitle, { color: colors.text }]} numberOfLines={2}>
+          <Text
+            style={[
+              styles.movieTitle,
+              { color: isAmbientActive ? '#FFFFFF' : colors.text },
+            ]}
+            numberOfLines={2}
+          >
             {item.title || item.name}
           </Text>
           <View style={styles.metaRow}>
             {year ? (
-              <Text style={[styles.movieYear, { color: colors.textSecondary }]}>{year}</Text>
+              <Text
+                style={[
+                  styles.movieYear,
+                  { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
+                ]}
+              >
+                {year}
+              </Text>
             ) : null}
             {item.vote_average > 0 && (
               <View style={styles.ratingRow}>
                 <Ionicons name="star" size={11} color={C.gold} />
-                <Text style={[styles.ratingText, { color: colors.textSecondary }]}>
+                <Text
+                  style={[
+                    styles.ratingText,
+                    { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
+                  ]}
+                >
                   {item.vote_average.toFixed(1)}
                 </Text>
               </View>
             )}
             {isItemWatched && (
-              <View style={styles.partWatchedBadge}>
-                <Ionicons name="checkmark-circle" size={11} color="#4ADE80" />
-                <Text style={styles.partWatchedText}>Watched</Text>
+              <View
+                style={[
+                  styles.partWatchedBadge,
+                  {
+                    backgroundColor: isAmbientActive
+                      ? 'rgba(74, 222, 128, 0.16)'
+                      : 'rgba(74, 222, 128, 0.15)',
+                    borderColor: isAmbientActive
+                      ? 'rgba(74, 222, 128, 0.35)'
+                      : 'rgba(74, 222, 128, 0.25)',
+                  },
+                ]}
+              >
+                <Ionicons name="checkmark-circle" size={11} color={isDark ? "#4ADE80" : "#16A34A"} />
+                <Text style={[styles.partWatchedText, { color: isDark ? "#4ADE80" : "#16A34A" }]}>Watched</Text>
               </View>
             )}
           </View>
           {item.overview ? (
-            <Text style={[styles.movieOverview, { color: colors.textSecondary }]} numberOfLines={3}>
+            <Text
+              style={[
+                styles.movieOverview,
+                { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
+              ]}
+              numberOfLines={3}
+            >
               {item.overview}
             </Text>
           ) : null}
@@ -268,72 +371,169 @@ const CollectionDetails = () => {
   const renderHeader = () => (
     <>
       {/* Backdrop */}
-      <View style={styles.backdropContainer}>
+      <View style={[styles.backdropContainer, { backgroundColor: detailsBg }]}>
         <Image
           source={{
-            uri: getImageUrl(
-              collection?.backdrop_path || null,
-              'w780'
-            ),
+            uri: heroBackdropUrl || undefined,
           }}
           style={styles.backdropImage}
           contentFit="cover"
           cachePolicy="disk"
+          priority="high"
         />
         <LinearGradient
-          colors={[
-            'rgba(10,10,11,0.1)',
-            'transparent',
-            'rgba(10,10,11,0.7)',
-            '#0A0A0B',
-          ]}
-          locations={[0, 0.3, 0.7, 1]}
+          colors={heroGradientColors}
+          locations={[0, 0.45, 1]}
           style={StyleSheet.absoluteFill}
         />
       </View>
 
       {/* Content */}
-      <View style={[styles.contentContainer, { backgroundColor: colors.background }]}>
-        <Text style={[styles.eyebrow, { color: colors.primary }]}>COLLECTION</Text>
-        <Text style={[styles.collectionTitle, { color: colors.text }]}>
+      <View style={[styles.contentContainer, { backgroundColor: detailsBg }]}>
+        <Text
+          style={[
+            styles.eyebrow,
+            { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary },
+          ]}
+        >
+          COLLECTION
+        </Text>
+        <Text
+          style={[
+            styles.collectionTitle,
+            { color: isAmbientActive ? '#FFFFFF' : colors.text },
+          ]}
+        >
           {collection?.name || collectionName}
         </Text>
         {collection?.overview ? (
-          <Text style={[styles.collectionOverview, { color: colors.text }]}>
+          <Text
+            style={[
+              styles.collectionOverview,
+              { color: isAmbientActive ? 'rgba(255, 255, 255, 0.88)' : colors.text },
+            ]}
+          >
             {collection.overview}
           </Text>
         ) : null}
-        <View style={[styles.countPill, { backgroundColor: colors.badgeBg, borderColor: colors.border }]}>
-          <Ionicons name="film-outline" size={13} color={colors.primary} />
-          <Text style={[styles.countText, { color: colors.primary }]}>
+
+        <View
+          style={[
+            styles.countPill,
+            {
+              backgroundColor: isAmbientActive
+                ? 'rgba(255, 255, 255, 0.12)'
+                : colors.badgeBg,
+              borderColor: isAmbientActive
+                ? 'rgba(255, 255, 255, 0.18)'
+                : colors.border,
+            },
+          ]}
+        >
+          <Ionicons
+            name="film-outline"
+            size={13}
+            color={isAmbientActive ? '#FFFFFF' : (useMaterialYou ? colors.primary : ACCENT_COLOR)}
+          />
+          <Text
+            style={[
+              styles.countText,
+              { color: isAmbientActive ? '#FFFFFF' : (useMaterialYou ? colors.primary : ACCENT_COLOR) },
+            ]}
+          >
             {sortedParts.length} {sortedParts.length === 1 ? 'Film' : 'Films'}
           </Text>
         </View>
 
         <View style={styles.actionsRow}>
-          <TouchableOpacity activeOpacity={0.95} 
+          <TouchableOpacity
+            activeOpacity={0.9}
             style={[
               styles.actionBtn,
-              { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border },
-              isInWatchlist && { backgroundColor: colors.primary, borderColor: colors.primary }
-            ]} 
+              {
+                backgroundColor: isAmbientActive
+                  ? 'rgba(255, 255, 255, 0.08)'
+                  : colors.surfaceContainer,
+                borderColor: isAmbientActive
+                  ? 'transparent'
+                  : colors.border,
+              },
+              isInWatchlist && {
+                backgroundColor: isAmbientActive
+                  ? 'rgba(255, 255, 255, 0.20)'
+                  : (useMaterialYou ? colors.primary : ACCENT_COLOR),
+                borderColor: 'transparent',
+              },
+              isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+            ]}
             onPress={toggleWatchlist}
           >
-            <Feather name={isInWatchlist ? "check" : "bookmark"} size={18} color={isInWatchlist ? colors.onPrimary : colors.text} />
-            <Text style={[styles.actionBtnText, { color: colors.text }, isInWatchlist && { color: colors.onPrimary }]}>
+            <Feather
+              name={isInWatchlist ? "check" : "bookmark"}
+              size={18}
+              color={
+                isInWatchlist
+                  ? (isAmbientActive ? '#FFFFFF' : (useMaterialYou ? colors.onPrimary : '#FFFFFF'))
+                  : (isAmbientActive ? '#FFFFFF' : colors.text)
+              }
+            />
+            <Text
+              style={[
+                styles.actionBtnText,
+                {
+                  color: isInWatchlist
+                    ? (isAmbientActive ? '#FFFFFF' : (useMaterialYou ? colors.onPrimary : '#FFFFFF'))
+                    : (isAmbientActive ? '#FFFFFF' : colors.text),
+                  fontWeight: isInWatchlist ? '700' : '600',
+                },
+              ]}
+            >
               {isInWatchlist ? "Saved" : "Save"}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.95} 
+
+          <TouchableOpacity
+            activeOpacity={0.9}
             style={[
               styles.actionBtn,
-              { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border },
-              isWatched && { backgroundColor: colors.primary, borderColor: colors.primary }
-            ]} 
+              {
+                backgroundColor: isAmbientActive
+                  ? 'rgba(255, 255, 255, 0.08)'
+                  : colors.surfaceContainer,
+                borderColor: isAmbientActive
+                  ? 'transparent'
+                  : colors.border,
+              },
+              isWatched && {
+                backgroundColor: isAmbientActive
+                  ? 'rgba(255, 255, 255, 0.20)'
+                  : (useMaterialYou ? colors.primary : ACCENT_COLOR),
+                borderColor: 'transparent',
+              },
+              isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
+            ]}
             onPress={toggleWatched}
           >
-            <Feather name={isWatched ? "eye-off" : "eye"} size={18} color={isWatched ? colors.onPrimary : colors.text} />
-            <Text style={[styles.actionBtnText, { color: colors.text }, isWatched && { color: colors.onPrimary }]}>
+            <Feather
+              name={isWatched ? "check-circle" : "eye"}
+              size={18}
+              color={
+                isWatched
+                  ? (isAmbientActive ? '#FFFFFF' : (useMaterialYou ? colors.onPrimary : '#FFFFFF'))
+                  : (isAmbientActive ? '#FFFFFF' : colors.text)
+              }
+            />
+            <Text
+              style={[
+                styles.actionBtnText,
+                {
+                  color: isWatched
+                    ? (isAmbientActive ? '#FFFFFF' : (useMaterialYou ? colors.onPrimary : '#FFFFFF'))
+                    : (isAmbientActive ? '#FFFFFF' : colors.text),
+                  fontWeight: isWatched ? '700' : '600',
+                },
+              ]}
+            >
               {isWatched ? "Watched" : "Mark Watched"}
             </Text>
           </TouchableOpacity>
@@ -348,19 +548,19 @@ const CollectionDetails = () => {
       return (
         <View style={styles.emptyContainer}>
           <Ionicons name="cloud-offline-outline" size={40} color={colors.textSecondary} />
-          <Text style={[styles.emptyText, { color: colors.text, fontWeight: '700', marginTop: 10 }]}>
+          <Text style={[styles.emptyText, { color: isAmbientActive ? '#FFFFFF' : colors.text, fontWeight: '700', marginTop: 10 }]}>
             Collection unavailable
           </Text>
           <Text style={[styles.emptyText, { color: colors.textSecondary, marginTop: 4 }]}>
             {error}
           </Text>
           <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            style={[styles.retryButton, { backgroundColor: useMaterialYou ? colors.primary : ACCENT_COLOR }]}
             onPress={fetchCollection}
             activeOpacity={0.8}
           >
-            <Ionicons name="refresh" size={16} color={colors.onPrimary} />
-            <Text style={[styles.retryButtonText, { color: colors.onPrimary }]}>Retry</Text>
+            <Ionicons name="refresh" size={16} color="#FFF" />
+            <Text style={[styles.retryButtonText, { color: '#FFF' }]}>Retry</Text>
           </TouchableOpacity>
         </View>
       );
@@ -373,10 +573,79 @@ const CollectionDetails = () => {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
+    <View style={[styles.root, { backgroundColor: detailsBg }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={isAmbientActive || isDark ? "light-content" : "dark-content"} />
 
-      {/* Back button */}
+      {/* Hero + scrolling content are the blur source for the coloured status-bar edge */}
+      <BlurTargetView ref={topBlurTarget} style={styles.fill} collapsable={false}>
+        {loading ? (
+          <FlatList
+            data={[]}
+            renderItem={() => null}
+            ListHeaderComponent={() => (
+              <>
+                <View style={[styles.backdropContainer, { backgroundColor: detailsBg }]}>
+                  <ShimmerBlock width="100%" height="100%" borderRadius={0} />
+                </View>
+                <View style={[styles.contentContainer, { backgroundColor: detailsBg }]}>
+                  <ShimmerBlock width={80} height={12} style={{ marginBottom: 10 }} />
+                  <ShimmerBlock width="70%" height={28} style={{ marginBottom: 12 }} />
+                  <ShimmerBlock width="100%" height={14} style={{ marginBottom: 6 }} />
+                  <ShimmerBlock width="85%" height={14} style={{ marginBottom: 20 }} />
+                </View>
+                <View style={{ paddingHorizontal: 20 }}>
+                  {[1, 2, 3, 4].map((i) => (
+                    <MovieCardShimmer key={i} isAmbientActive={isAmbientActive} isDark={isDark} />
+                  ))}
+                </View>
+              </>
+            )}
+            showsVerticalScrollIndicator={false}
+          />
+        ) : error && !collection ? (
+          <View style={styles.errorScreen}>
+            <Ionicons name="cloud-offline-outline" size={44} color={colors.textSecondary} />
+            <Text style={[styles.emptyText, { color: isAmbientActive ? '#FFFFFF' : colors.text, fontWeight: '700', fontSize: 18, marginTop: 10 }]}>
+              Collection unavailable
+            </Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary, marginTop: 4 }]}>
+              {error}
+            </Text>
+            <TouchableOpacity
+              style={[styles.retryButton, { backgroundColor: useMaterialYou ? colors.primary : ACCENT_COLOR }]}
+              onPress={fetchCollection}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="refresh" size={16} color="#FFF" />
+              <Text style={[styles.retryButtonText, { color: '#FFF' }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            data={sortedParts}
+            extraData={watchedIds}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={renderMovieItem}
+            ListHeaderComponent={renderHeader}
+            ListEmptyComponent={renderEmpty}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            ItemSeparatorComponent={() => <View style={styles.separator} />}
+          />
+        )}
+      </BlurTargetView>
+
+      {/* Coloured status-bar edge: palette tint plus real blur over the hero */}
+      <GradientBlur
+        position="top"
+        height={TOP_BAR_PADDING + 56}
+        intensity={55}
+        color={detailsBg}
+        blurTarget={topBlurTarget}
+        tint={isAmbientActive || isDark ? 'dark' : 'light'}
+      />
+
+      {/* Back button HUD */}
       <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
         <TouchableOpacity
           onPress={() => router.back()}
@@ -386,62 +655,6 @@ const CollectionDetails = () => {
           <Ionicons name="chevron-back" size={22} color="#FFF" />
         </TouchableOpacity>
       </View>
-
-      {loading ? (
-        <FlatList
-          data={[]}
-          renderItem={() => null}
-          ListHeaderComponent={() => (
-            <>
-              <View style={styles.backdropContainer}>
-                <ShimmerBlock width="100%" height="100%" borderRadius={0} />
-              </View>
-              <View style={[styles.contentContainer, { backgroundColor: colors.background }]}>
-                <ShimmerBlock width={80} height={12} style={{ marginBottom: 10 }} />
-                <ShimmerBlock width="70%" height={28} style={{ marginBottom: 12 }} />
-                <ShimmerBlock width="100%" height={14} style={{ marginBottom: 6 }} />
-                <ShimmerBlock width="85%" height={14} style={{ marginBottom: 20 }} />
-              </View>
-              <View style={{ paddingHorizontal: 20 }}>
-                {[1, 2, 3, 4].map((i) => (
-                  <MovieCardShimmer key={i} />
-                ))}
-              </View>
-            </>
-          )}
-          showsVerticalScrollIndicator={false}
-        />
-      ) : error && !collection ? (
-        <View style={styles.errorScreen}>
-          <Ionicons name="cloud-offline-outline" size={44} color={colors.textSecondary} />
-          <Text style={[styles.emptyText, { color: colors.text, fontWeight: '700', fontSize: 18, marginTop: 10 }]}>
-            Collection unavailable
-          </Text>
-          <Text style={[styles.emptyText, { color: colors.textSecondary, marginTop: 4 }]}>
-            {error}
-          </Text>
-          <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: colors.primary }]}
-            onPress={fetchCollection}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="refresh" size={16} color={colors.onPrimary} />
-            <Text style={[styles.retryButtonText, { color: colors.onPrimary }]}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={sortedParts}
-          extraData={watchedIds}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderMovieItem}
-          ListHeaderComponent={renderHeader}
-          ListEmptyComponent={renderEmpty}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-        />
-      )}
     </View>
   );
 };
@@ -450,6 +663,9 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: C.bg,
+  },
+  fill: {
+    flex: 1,
   },
 
   topBar: {

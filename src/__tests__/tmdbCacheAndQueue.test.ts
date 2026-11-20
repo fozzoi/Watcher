@@ -180,6 +180,76 @@ describe('TMDB caching, priority queue, and error handling', () => {
     expect([r1, r2, r3, r4]).toEqual([[], [], [], []]);
   });
 
+  test('cancelling one subscriber does not abort a shared request still used by another screen', async () => {
+    const tmdb = require('../tmdb') as typeof import('../tmdb');
+
+    const pending = deferred<any>();
+    mockAxiosGet.mockReturnValue(pending.promise);
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const first = tmdb.getPersonDetails(555, { signal: firstController.signal });
+    const second = tmdb.getPersonDetails(555, { signal: secondController.signal });
+
+    await flushMicrotasks();
+    expect(mockAxiosGet).toHaveBeenCalledTimes(1);
+
+    firstController.abort();
+    await expect(first).rejects.toMatchObject({ name: 'AbortError' });
+
+    pending.resolve({ data: { id: 555, name: 'Person' } });
+    await expect(second).resolves.toMatchObject({ id: 555, name: 'Person' });
+  });
+
+  test('cancelling the last subscriber aborts the active request and frees its queue slot', async () => {
+    const tmdb = require('../tmdb') as typeof import('../tmdb');
+
+    const pending = deferred<any>();
+    mockAxiosGet.mockReturnValueOnce(pending.promise).mockResolvedValueOnce({
+      data: { id: 556, name: 'Next person' },
+    });
+    const controller = new AbortController();
+    const cancelled = tmdb.getPersonDetails(555, { signal: controller.signal });
+
+    await flushMicrotasks();
+    controller.abort();
+    await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' });
+
+    const next = tmdb.getPersonDetails(556);
+    await expect(next).resolves.toMatchObject({ id: 556, name: 'Next person' });
+    expect(mockAxiosGet).toHaveBeenCalledTimes(2);
+    pending.resolve({ data: { id: 555, name: 'Cancelled person' } });
+  });
+
+  test('cancelling a queued screen request removes it before dispatch', async () => {
+    const tmdb = require('../tmdb') as typeof import('../tmdb');
+
+    const pendingByEndpoint = new Map<string, ReturnType<typeof deferred<any>>>();
+    mockAxiosGet.mockImplementation((endpoint: string) => {
+      const pending = deferred<any>();
+      pendingByEndpoint.set(endpoint, pending);
+      return pending.promise;
+    });
+
+    const activeRequests = Array.from({ length: 6 }, (_, index) => tmdb.getPersonDetails(index + 1));
+    await flushMicrotasks();
+    expect(mockAxiosGet).toHaveBeenCalledTimes(6);
+
+    const controller = new AbortController();
+    const queuedRequest = tmdb.getPersonDetails(99, { signal: controller.signal });
+    await flushMicrotasks();
+    expect(mockAxiosGet).toHaveBeenCalledTimes(6);
+
+    controller.abort();
+    await expect(queuedRequest).rejects.toMatchObject({ name: 'AbortError' });
+
+    for (const [endpoint, pending] of pendingByEndpoint) {
+      pending.resolve({ data: { id: Number(endpoint.split('/').pop()), name: 'Person' } });
+    }
+    await Promise.all(activeRequests);
+    await flushMicrotasks();
+    expect(mockAxiosGet).toHaveBeenCalledTimes(6);
+  });
+
   test('serves persistent stale cache immediately via SWR and invokes onBackgroundUpdate only when payload changes', async () => {
     const tmdb = require('../tmdb') as typeof import('../tmdb');
 
@@ -241,7 +311,7 @@ describe('TMDB caching, priority queue, and error handling', () => {
     expect(onChangedUpdate).toHaveBeenCalledWith(updatedEpisodes);
   });
 
-  test('getMediaDetails fails fast on timeout without retry or movie fallback, while transient 503 retries once', async () => {
+  test('getMediaDetails makes one timed-out request and never falls back to /movie or retries a 503', async () => {
     const tmdb = require('../tmdb') as typeof import('../tmdb');
 
     const timeoutErr: any = new Error('timeout of 10000ms exceeded');
@@ -250,19 +320,15 @@ describe('TMDB caching, priority queue, and error handling', () => {
 
     await expect(tmdb.getMediaDetails(37680, 'tv', 'US', { priority: 'high' })).rejects.toThrow('timeout');
 
-    // Only 1 attempt on /tv/37680 (no 20s double-timeout hang, NEVER /movie/37680)
     expect(mockAxiosGet.mock.calls.map((c) => c[0])).toEqual(['/tv/37680']);
 
     mockAxiosGet.mockReset();
     const err503: any = new Error('Service Unavailable');
     err503.response = { status: 503 };
-    mockAxiosGet.mockRejectedValueOnce(err503).mockResolvedValueOnce({
-      data: { id: 37680, name: 'Suits', overview: 'Legal', vote_average: 8.2, first_air_date: '2011-06-23', credits: { cast: [], crew: [] }, seasons: [] },
-    });
+    mockAxiosGet.mockRejectedValue(err503);
 
-    const recovered = await tmdb.getMediaDetails(37680, 'tv', 'US', { priority: 'high' });
-    expect(recovered.name).toBe('Suits');
-    expect(mockAxiosGet.mock.calls.map((c) => c[0])).toEqual(['/tv/37680', '/tv/37680']);
+    await expect(tmdb.getMediaDetails(37680, 'tv', 'US', { priority: 'high' })).rejects.toThrow('Service Unavailable');
+    expect(mockAxiosGet.mock.calls.map((c) => c[0])).toEqual(['/tv/37680']);
   });
 
   test('getMediaDetails DOES fall back to opposite media_type on 404 and populates directors', async () => {
@@ -292,9 +358,14 @@ describe('TMDB caching, priority queue, and error handling', () => {
 
     const details = await tmdb.getMediaDetails(37680, 'movie', 'US', { priority: 'high' });
     expect(mockAxiosGet.mock.calls.map((c) => c[0])).toEqual(['/movie/37680', '/tv/37680']);
+    expect(mockAxiosGet.mock.calls[0][1].params.append_to_response).toBe(
+      'credits,release_dates,content_ratings,external_ids,videos',
+    );
     expect(details.media_type).toBe('tv');
     expect(details.director?.name).toBe('Kevin Bray');
     expect(details.directors).toHaveLength(1);
+    expect(details.recommendations).toEqual([]);
+    expect(details.images).toEqual([]);
   });
 
   test('getPersonBundle fetches the whole cast page in a single request', async () => {
@@ -587,7 +658,7 @@ describe('TMDB caching, priority queue, and error handling', () => {
     timeoutErr.code = 'ECONNABORTED';
     mockAxiosGet.mockRejectedValue(timeoutErr);
 
-    // Cold cache + offline: should run only the 5 core requests instead of 25+
+    // Cold cache + offline: only the 5 core requests run instead of 25+.
     const res = await tmdb.fetchPersonalisedDiscoveryContent(['en'], [28], 28, false, []);
     expect(res).toBeNull();
     expect(mockAxiosGet).toHaveBeenCalledTimes(5);

@@ -12,7 +12,7 @@ import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import FormattedMarkdownText from '../aichat/FormattedMarkdownText';
 import { LANGUAGE_OPTIONS } from '../../userPreferences';
-import { useAppTheme } from '../../theme';
+import { useAppTheme, ACCENT_COLOR } from '../../theme';
 
 interface MovieChatSectionProps {
   movie: any;
@@ -41,7 +41,7 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
   genres,
   isAmbientActive,
 }) => {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const [messages, setMessages] = useState<{ id: string; role: 'user' | 'assistant'; text: string }[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -262,7 +262,7 @@ export const MovieChatSection: React.FC<MovieChatSectionProps> = ({
           onPress={() => sendMessage()}
           disabled={!input.trim() || loading}
         >
-          <Ionicons name="arrow-up" size={17} color={isAmbientActive ? '#FFFFFF' : colors.onPrimary} />
+          <Ionicons name="arrow-up" size={17} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
     </View>

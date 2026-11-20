@@ -33,10 +33,12 @@ export interface GradientBlurProps {
   height?: number;
   /** Tint colour. Defaults to the theme background. */
   color?: string;
-  /** Blur intensity, 0-100. Default: 40. */
+  /** Blur intensity, 0-100. Default: 70. */
   intensity?: number;
   /** Ref to the enclosing BlurTargetView. Omit for scrim-only rendering. */
   blurTarget?: React.RefObject<any> | null;
+  /** Explicit blur tint ('dark' | 'light'). Defaults to isDark ? 'dark' : 'light'. */
+  tint?: 'dark' | 'light';
   style?: StyleProp<ViewStyle>;
 }
 
@@ -67,16 +69,18 @@ export const GradientBlur: React.FC<GradientBlurProps> = ({
   position = 'top',
   height = 96,
   color,
-  intensity = 40,
+  intensity = 70,
   blurTarget,
+  tint,
   style,
 }) => {
   const { colors, isDark } = useAppTheme();
   const base = color || colors.background;
+  const resolvedTint = tint || (isDark ? 'dark' : 'light');
 
   // Give the BlurTargetView time to mount before rendering BlurView. Keep
   // checking briefly so a slower screen mount still enables real blur.
-  const [targetReady, setTargetReady] = useState(false);
+  const [targetReady, setTargetReady] = useState(() => Boolean(blurTarget?.current));
   useEffect(() => {
     if (!blurTarget) {
       setTargetReady(false);
@@ -92,7 +96,7 @@ export const GradientBlur: React.FC<GradientBlurProps> = ({
       if (blurTarget.current) {
         setTargetReady(true);
         clearInterval(timer);
-      } else if (attempts >= 10) {
+      } else if (attempts >= 40) {
         clearInterval(timer);
       }
     }, 50);
@@ -135,7 +139,7 @@ export const GradientBlur: React.FC<GradientBlurProps> = ({
         >
           <BlurView
             intensity={intensity}
-            tint={isDark ? 'dark' : 'light'}
+            tint={resolvedTint}
             blurMethod="dimezisBlurView"
             blurTarget={blurTarget}
             style={StyleSheet.absoluteFill}

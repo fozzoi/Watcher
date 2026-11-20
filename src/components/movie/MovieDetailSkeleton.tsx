@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { View, StyleSheet, ScrollView, StatusBar, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurTargetView } from 'expo-blur';
 import { ShimmerBlock } from '../shared/Shimmer';
+import { GradientBlur } from '../shared/GradientBlur';
 import { useAppTheme } from '../../theme';
 import { AMBIENT_PENDING_BG } from '../../utils/colorExtractor';
 
@@ -9,6 +11,7 @@ const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
 export const MovieDetailSkeleton: React.FC = () => {
   const { colors, isDark, ambientTheming } = useAppTheme();
+  const topBlurTarget = useRef<any>(null);
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const HEADER_HEIGHT = isLandscape ? height * 0.55 : height * 0.50;
@@ -22,6 +25,7 @@ export const MovieDetailSkeleton: React.FC = () => {
     <View style={[styles.root, { backgroundColor: bg }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle={dark ? "light-content" : "dark-content"} />
 
+      <BlurTargetView ref={topBlurTarget} style={{ flex: 1 }} collapsable={false}>
       {/* Static Hero Backdrop Skeleton — Matches app/movie/[id].tsx identically */}
       <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: bg }]} pointerEvents="none">
         <ShimmerBlock width="100%" height={HEADER_HEIGHT} borderRadius={0} style={styles.heroShimmer} />
@@ -30,12 +34,6 @@ export const MovieDetailSkeleton: React.FC = () => {
           locations={[0, 0.45, 1]}
           style={StyleSheet.absoluteFill}
         />
-      </View>
-
-      {/* Top Floating Glass Buttons */}
-      <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-        <View style={[styles.glassCircle, { backgroundColor: dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }]} />
-        <View style={[styles.glassCircle, { backgroundColor: dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }]} />
       </View>
 
       {/* Single Scroll Container with identical spacer */}
@@ -120,6 +118,22 @@ export const MovieDetailSkeleton: React.FC = () => {
           </View>
         </View>
       </ScrollView>
+      </BlurTargetView>
+
+      <GradientBlur
+        position="top"
+        height={TOP_BAR_PADDING + 56}
+        intensity={55}
+        color={bg}
+        blurTarget={topBlurTarget}
+        tint={dark ? 'dark' : 'light'}
+      />
+
+      {/* Top Floating Glass Buttons */}
+      <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
+        <View style={[styles.glassCircle, { backgroundColor: dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }]} />
+        <View style={[styles.glassCircle, { backgroundColor: dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }]} />
+      </View>
     </View>
   );
 };

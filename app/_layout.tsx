@@ -207,8 +207,11 @@ export default function RootLayout() {
         void pollCloudChangesIfStale(CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS);
       }
     };
+    // Sync only when the app is opened or brought back to the foreground —
+    // there is deliberately NO background interval here. The Watchlist tab
+    // does its own focus-triggered poll, so a periodic timer would only be
+    // extra idle-state traffic against the API.
     syncIfStale();
-    const syncTimer = setInterval(syncIfStale, CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS);
     const appStateSubscription = AppState.addEventListener('change', state => {
       if (state === 'active') {
         void pollCloudChangesIfStale(CLOUD_SYNC_WATCHLIST_POLL_INTERVAL_MS);
@@ -216,7 +219,6 @@ export default function RootLayout() {
     });
 
     return () => {
-      clearInterval(syncTimer);
       appStateSubscription.remove();
     };
   }, [isReady, databaseReady]);
@@ -336,7 +338,11 @@ function RootNavigator({ showUpdateModal, setShowUpdateModal, updateResult }: an
 
   return (
     <SafeAreaProvider style={{ flex: 1, backgroundColor: colors.background }}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
+      <StatusBar
+        translucent
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor="transparent"
+      />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -378,26 +384,37 @@ function RootNavigator({ showUpdateModal, setShowUpdateModal, updateResult }: an
 }
 
 /**
- * Soft top/bottom edges for screens that do not own the tab bar: cast,
- * collection, view-all and stats. Tabs, the movie hero, the player and
- * onboarding paint their own, so they are skipped.
- *
- * Scrim-only on purpose: a real blur needs a BlurTargetView, and wrapping the
- * root navigator in one would leave the tab layout's own blur target nested
- * inside another snapshot (Dimezis recursion).
+ * Soft edge fades for screens without their own top blur. Tabs and the
+ * movie/cast/collection detail screens own a blur target; the player hides the
+ * status bar. A root blur target would nest the tab target and cause Dimezis
+ * recursion, so the shared fade is scrim-only.
  */
 function ScreenEdgeFades() {
   const insets = useSafeAreaInsets();
   const segments = useSegments();
   const route = segments[0] as string | undefined;
-  const hidden = route === '(tabs)' || route === 'movie' || route === 'player' || route === 'onboarding';
+  const hasLocalTopFade =
+    route === '(tabs)' ||
+    route === 'movie' ||
+    route === 'cast' ||
+    route === 'collection' ||
+    route === 'player';
+  const hideBottomFade =
+    route === '(tabs)' ||
+    route === 'movie' ||
+    route === 'player' ||
+    route === 'onboarding';
 
-  if (hidden) return null;
+  if (hasLocalTopFade && hideBottomFade) return null;
 
   return (
     <>
-      <GradientBlur position="top" height={insets.top + 22} intensity={60} />
-      <GradientBlur position="bottom" height={insets.bottom + 24} intensity={60} />
+      {!hasLocalTopFade ? (
+        <GradientBlur position="top" height={insets.top + 22} intensity={60} />
+      ) : null}
+      {!hideBottomFade ? (
+        <GradientBlur position="bottom" height={insets.bottom + 24} intensity={60} />
+      ) : null}
     </>
   );
 }

@@ -133,12 +133,12 @@ const CustomTabBar = ({ targetRef, targetReady }: { targetRef: any; targetReady:
 
     return (
         <View style={localStyles.overlayContainer} pointerEvents="box-none">
-            <GradientBlur
+            {/* <GradientBlur
                 position="bottom"
                 height={DOCK_MARGIN_BOTTOM + TAB_BAR_HEIGHT + 20}
-                intensity={60}
+                intensity={70}
                 blurTarget={blurEnabled ? targetRef : null}
-            />
+            /> */}
             <Animated.View
                 style={[
                     localStyles.pillContainer,
@@ -151,7 +151,7 @@ const CustomTabBar = ({ targetRef, targetReady }: { targetRef: any; targetReady:
                     {blurEnabled && (
                         <BlurView
                             key="tab-bar-blur"
-                            intensity={60}
+                            intensity={70}
                             tint={isDark ? 'dark' : 'light'}
                             style={StyleSheet.absoluteFill}
                             blurTarget={targetRef}
@@ -280,8 +280,8 @@ export default function TabLayout() {
             {/* Status-bar edge: content scrolls under a frosted fade instead of a hard cut */}
             <GradientBlur
                 position="top"
-                height={insets.top + 16}
-                intensity={40}
+                height={insets.top + 50}
+                // intensity={70}
                 blurTarget={targetReady ? targetRef : null}
             />
         </View>

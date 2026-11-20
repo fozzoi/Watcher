@@ -677,7 +677,7 @@ const ListDetails = ({ route }: any) => {
 
   return (
     <View style={[styles.baseContainer, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Animated Blurred Background */}
       <View style={styles.animatedBgContainer}>

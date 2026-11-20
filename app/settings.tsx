@@ -255,26 +255,6 @@ const Settings = () => {
     };
   }, []);
 
-  const handleCloudDemoLogin = async () => {
-    setIsSyncingCloud(true);
-    const res = await cloudSync.loginWithDemo();
-    setIsSyncingCloud(false);
-    if (res.success && res.user) {
-      setCloudUser(res.user);
-      showDialog({
-        title: "Cloud Connected! ☁️",
-        message: `Signed in as ${res.user.name}.\n\nYour Watchlist, History, and Progress are now synced across desktop, web, and mobile!`,
-        type: "success",
-      });
-    } else {
-      showDialog({
-        title: "Sync Failed",
-        message: res.error || "Could not connect to cloud server.",
-        type: "danger",
-      });
-    }
-  };
-
   const handleManualCloudSync = async () => {
     setIsSyncingCloud(true);
     console.log('[Settings:Sync] Manual cloud sync initiated by user — running full mergeLocalWithCloud...');
@@ -888,12 +868,6 @@ const Settings = () => {
                   {isSyncingCloud ? 'Signing in...' : 'Sign in with Google'}
                 </Text>
               </TouchableOpacity>
-              <SettingSeparator />
-              <ActionRow
-                title="Demo Account (No Account Needed)"
-                subtitle="1-Click test sync across Desktop, Web & Mobile"
-                onPress={handleCloudDemoLogin}
-              />
             </>
           )}
         </View>

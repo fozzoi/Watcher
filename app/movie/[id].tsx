@@ -55,8 +55,8 @@ import MovieChatSection from '../../src/components/movie/MovieChatSection';
 import { MovieDetailSkeleton } from '../../src/components/movie/MovieDetailSkeleton';
 import MovieMediaGallery from '../../src/components/movie/MovieMediaGallery';
 import MovieTorrentModal from '../../src/components/movie/MovieTorrentModal';
-import { useAppTheme, getActiveGlowShadow } from '../../src/theme';
-import { useImagePalette, warmPaletteForMedia, AMBIENT_PENDING_BG } from '../../src/utils/colorExtractor';
+import { useAppTheme, getActiveGlowShadow, ACCENT_COLOR } from '../../src/theme';
+import { useImagePalette, warmPaletteForMedia, AMBIENT_PENDING_BG, AMBIENT_PENDING_BG_LIGHT } from '../../src/utils/colorExtractor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 const INITIAL_EPISODES_LIMIT = 8;
@@ -125,7 +125,7 @@ const CardShimmer = React.memo(({ width, height }: { width: DimensionValue; heig
 ));
 
 const MemoizedSimilarCard = React.memo(({ item, cardWidth, isAmbientActive, onPress }: any) => {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const posterUrl = getImageUrl(item.poster_path, 'w342');
   return (
     <TouchableOpacity
@@ -152,7 +152,7 @@ const MemoizedSimilarCard = React.memo(({ item, cardWidth, isAmbientActive, onPr
 });
 
 const MemoizedDirectorCard = React.memo(({ item, mediaType, isAmbientActive, onPress }: any) => {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const profileUrl = item.profile_path
     ? getImageUrl(item.profile_path, 'w185')
     : 'https://via.placeholder.com/150';
@@ -186,7 +186,7 @@ const MemoizedDirectorCard = React.memo(({ item, mediaType, isAmbientActive, onP
 });
 
 const MemoizedCastCard = React.memo(({ item, cardWidth, isAmbientActive, onPress }: any) => {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const profileUrl = item.profile_path
     ? getImageUrl(item.profile_path, 'w185')
     : 'https://via.placeholder.com/150';
@@ -216,7 +216,7 @@ const MemoizedCastCard = React.memo(({ item, cardWidth, isAmbientActive, onPress
 });
 
 const MemoizedEpisodeRow = React.memo(({ ep, isActive, isPlayed, episodeThumbWidth, isAmbientActive, onPlay }: any) => {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const stillUrl = ep.still_path
     ? getImageUrl(ep.still_path, 'w185')
     : 'https://via.placeholder.com/150';
@@ -289,7 +289,7 @@ interface MovieActionDockProps {
 }
 
 const MovieActionDock = React.memo(({ movie, isAmbientActive }: MovieActionDockProps) => {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const movieId = movie?.id;
   const isInWatchlist = useSelector(() => {
     if (!movieId) return false;
@@ -390,7 +390,8 @@ const MovieActionDock = React.memo(({ movie, isAmbientActive }: MovieActionDockP
           size={18}
           color={isInWatchlist ? (isAmbientActive ? '#FFFFFF' : colors.primary) : (isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.text)}
         />
-        <Text style={[styles.actionBtnText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, isInWatchlist && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>
+        <Text style={[styles.actionBtnText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, 
+          isInWatchlist && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>
           Watchlist
         </Text>
       </TouchableOpacity>
@@ -400,7 +401,7 @@ const MovieActionDock = React.memo(({ movie, isAmbientActive }: MovieActionDockP
         style={[
           styles.actionBtn,
           { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer },
-          isWatched && (isAmbientActive ? { backgroundColor: 'rgba(48, 209, 88, 0.16)' } : styles.actionBtnActive),
+          isWatched && (isAmbientActive ? { backgroundColor: 'rgba(255, 255, 255, 0.16)' } : { backgroundColor: colors.badgeBg }),
           isAmbientActive ? { elevation: 0, shadowOpacity: 0 } : null,
         ]}
         onPress={toggleWatched}
@@ -408,9 +409,10 @@ const MovieActionDock = React.memo(({ movie, isAmbientActive }: MovieActionDockP
         <Ionicons
           name={isWatched ? 'checkmark-circle' : 'checkmark-circle-outline'}
           size={18}
-          color={isWatched ? C.green : (isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary)}
+          color={isWatched ? (isAmbientActive ? '#FFFFFF' : colors.primary) : (isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.text)}
         />
-        <Text style={[styles.actionBtnText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, isWatched && { color: C.green }]}>Watched</Text>
+        <Text style={[styles.actionBtnText, { color: isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : colors.textSecondary }, 
+          isWatched && { color: isAmbientActive ? '#FFFFFF' : colors.primary, fontWeight: '700' }]}>Watched</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -435,7 +437,7 @@ interface MovieOverviewProps {
 }
 
 const MovieOverview = React.memo(({ overview, isAmbientActive }: MovieOverviewProps) => {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const [isExpanded, setIsExpanded] = useState(false);
   if (!overview) return null;
   const isLong = overview.length > 220;
@@ -562,7 +564,7 @@ const MovieAIPanel = React.memo(({
   renderSimilarItem,
   isAmbientActive,
 }: MovieAIPanelProps) => {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const [aiTab, setAiTab] = useState<'lens' | 'chat' | 'vibe'>('lens');
   const [lensInsight, setLensInsight] = useState<any>(null);
   const [lensLoading, setLensLoading] = useState(false);
@@ -853,7 +855,7 @@ const MovieEpisodesSection = React.memo(({
   isAmbientActive,
   onPlay,
 }: MovieEpisodesSectionProps) => {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const visibleEpisodes = episodes.slice(0, episodesLimit);
 
   return (
@@ -992,9 +994,10 @@ export default function DetailPage() {
 
     // 1. Check synchronous SQLite response cache
     const targetMediaType = (media_type as string) || (searchParams.first_air_date ? 'tv' : 'movie');
-    const newCacheKey = `/${targetMediaType}/${numericId}-{"append_to_response":"credits,release_dates,content_ratings,external_ids,videos,recommendations,images","include_adult":${GLOBAL_CONFIG.nsfwFilterEnabled ? 'false' : 'true'},"include_image_language":"en,null"}`;
+    const newCacheKey = `/${targetMediaType}/${numericId}-{"append_to_response":"credits,release_dates,content_ratings,external_ids,videos","include_adult":${GLOBAL_CONFIG.nsfwFilterEnabled ? 'false' : 'true'},"include_image_language":"en,null"}`;
+    const previousCacheKey = `/${targetMediaType}/${numericId}-{"append_to_response":"credits,release_dates,content_ratings,external_ids,videos,recommendations,images","include_adult":${GLOBAL_CONFIG.nsfwFilterEnabled ? 'false' : 'true'},"include_image_language":"en,null"}`;
     const oldCacheKey = `/${targetMediaType}/${numericId}-{"append_to_response":"credits,release_dates,content_ratings,external_ids,videos"}`;
-    const cached = getTmdbResponseCacheSync(newCacheKey) || getTmdbResponseCacheSync(oldCacheKey);
+    const cached = getTmdbResponseCacheSync(newCacheKey) || getTmdbResponseCacheSync(previousCacheKey) || getTmdbResponseCacheSync(oldCacheKey);
     if (cached?.data) return cached.data;
 
     // 2. Check route search params passed from card press
@@ -1089,6 +1092,7 @@ export default function DetailPage() {
   const [episodesError, setEpisodesError] = useState<string | null>(null);
   const episodeRequestRef = useRef(0);
   const initialRequestRef = useRef(0);
+  const initialAbortControllerRef = useRef<AbortController | null>(null);
   const similarRequestRef = useRef(0);
   const lastSyncedProgressSeasonRef = useRef<number | null>(null);
 
@@ -1108,7 +1112,7 @@ export default function DetailPage() {
     : movie?.backdrop_path
     ? getImageUrl(movie.backdrop_path, 'w300')
     : null;
-  const { palette, failed: paletteFailed } = useImagePalette(heroThumbUrl);
+  const { palette, failed: paletteFailed } = useImagePalette(ambientTheming ? heroThumbUrl : null);
 
   // Palette still extracting (or being warmed by the list screen we came from):
   // enter ambient mode immediately with the neutral backdrop instead of painting
@@ -1116,18 +1120,16 @@ export default function DetailPage() {
   const palettePending = Boolean(ambientTheming && heroThumbUrl && !palette && !paletteFailed);
   const isAmbientActive = Boolean(ambientTheming && (palette?.pastelDark || palettePending));
 
-  // In ambient mode, no light mode or dark mode distinction: always use the pastel dark color
-  const detailsBg = palette?.pastelDark
-    ? palette.pastelDark
-    : isAmbientActive
-    ? AMBIENT_PENDING_BG
+  // Ambient mode keeps the rich cinematic dark palette across both dark and light system themes
+  const detailsBg = isAmbientActive
+    ? (palette?.pastelDark || AMBIENT_PENDING_BG)
     : colors.background;
 
   const heroGradientColors: readonly [string, string, ...string[]] = isAmbientActive
-    ? palette?.gradient ?? ['transparent', 'rgba(255,255,255,0.06)', AMBIENT_PENDING_BG]
+    ? ['transparent', 'rgba(255,255,255,0.06)', detailsBg]
     : (isDark
-        ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E']
-        : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']);
+        ? ['rgba(10,10,11,0.1)', 'transparent', detailsBg]
+        : ['rgba(255,255,255,0.1)', 'transparent', detailsBg]);
 
   useEffect(() => {
     const onBack = () => {
@@ -1146,6 +1148,9 @@ export default function DetailPage() {
   const fetchInitial = useCallback(async () => {
     if (!id) return;
     const reqId = ++initialRequestRef.current;
+    initialAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    initialAbortControllerRef.current = controller;
     const numericId = Number(id);
     if (!Number.isFinite(numericId) || numericId <= 0) {
       setDetailsError('Invalid title ID.');
@@ -1175,6 +1180,7 @@ export default function DetailPage() {
       const [data, progress] = await Promise.all([
         getMediaDetails(numericId, (media_type as 'movie' | 'tv') || 'movie', 'US', {
           priority: 'high',
+          signal: controller.signal,
           onBackgroundUpdate: (freshData) => {
             if (reqId === initialRequestRef.current && freshData?.id) {
               setMovie(freshData);
@@ -1228,9 +1234,15 @@ export default function DetailPage() {
     }
   }, [id, media_type]);
 
-  useEffect(() => {
-    fetchInitial();
-  }, [fetchInitial]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchInitial();
+      return () => {
+        initialRequestRef.current += 1;
+        initialAbortControllerRef.current?.abort();
+      };
+    }, [fetchInitial]),
+  );
 
   // Phase 2: Deferred crew, cast, collection, and recommendations (fires as soon as movie.id AND renderStage >= 1)
   const loadSimilar = useCallback(async (movieId: number, mediaType: 'movie' | 'tv') => {
@@ -1249,22 +1261,24 @@ export default function DetailPage() {
     }
   }, []);
 
-  useEffect(() => {
+  useFocusEffect(
+    useCallback(() => {
     if (!movie?.id || renderStage < 1) return;
     let isActive = true;
+    const controller = new AbortController();
 
     const hasInlineDetails = Array.isArray(movie.cast);
     const fullDetailsPromise = hasInlineDetails
       ? Promise.resolve(movie)
-      : getFullDetails({ id: movie.id, media_type: movie.media_type } as any, 'US', { priority: 'high' }).catch(() => null);
+      : getFullDetails({ id: movie.id, media_type: movie.media_type } as any, 'US', { priority: 'low', signal: controller.signal }).catch(() => null);
     const collectionPromise = movie.belongs_to_collection?.id
-      ? getCollectionDetails(movie.belongs_to_collection.id, { priority: 'high' }).catch(() => null)
+      ? getCollectionDetails(movie.belongs_to_collection.id, { priority: 'low', signal: controller.signal }).catch(() => null)
       : Promise.resolve(null);
     const similarPromise = fullDetailsPromise.then((fd) => {
       if (fd?.recommendations && fd.recommendations.length > 0) {
         return { items: fd.recommendations, failed: false };
       }
-      return getSimilarMedia(movie.id, movie.media_type, 1, { priority: 'high', throwOnError: true })
+      return getSimilarMedia(movie.id, movie.media_type, 1, { priority: 'low', throwOnError: true, signal: controller.signal })
         .then((items) => ({ items, failed: false }))
         .catch(() => ({ items: [], failed: true }));
     });
@@ -1313,7 +1327,7 @@ export default function DetailPage() {
       if (extraImages.length === 0 || extraPosters.length === 0) {
         try {
           const targetMediaType = movie.media_type || (movie.first_air_date ? 'tv' : 'movie');
-          const imgs = await getMediaImages(movie.id, targetMediaType, { priority: 'high' });
+          const imgs = await getMediaImages(movie.id, targetMediaType, { priority: 'low', signal: controller.signal });
           if (isActive) {
             if (extraImages.length === 0) extraImages = imgs.backdrops || [];
             if (extraPosters.length === 0) extraPosters = imgs.posters || [];
@@ -1341,8 +1355,10 @@ export default function DetailPage() {
 
     return () => {
       isActive = false;
+      controller.abort();
     };
-  }, [movie?.id, movie?.media_type, movie?.belongs_to_collection?.id, renderStage]);
+    }, [movie?.id, movie?.media_type, movie?.belongs_to_collection?.id, renderStage]),
+  );
 
   const prefetchSources = useCallback(
     async (
@@ -1581,6 +1597,12 @@ export default function DetailPage() {
     return (
       <View style={[styles.root, styles.detailsLoading, { backgroundColor: colors.background }]}>
         <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
+        <GradientBlur
+          position="top"
+          height={TOP_BAR_PADDING + 56}
+          intensity={55}
+          color={colors.background}
+        />
         <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
           <TouchableOpacity
             activeOpacity={0.8}
@@ -1915,13 +1937,14 @@ export default function DetailPage() {
                 <TouchableOpacity
                   activeOpacity={0.92}
                   style={styles.collectionBanner}
-                  onPress={() =>
+                  onPress={() => {
+                    warmPaletteForMedia(movie.belongs_to_collection);
                     router.push(
                       `/collection/${movie.belongs_to_collection.id}?name=${encodeURIComponent(
                         movie.belongs_to_collection.name
                       )}`
-                    )
-                  }
+                    );
+                  }}
                 >
                   <Image
                     source={{ uri: getImageUrl(movie.belongs_to_collection.backdrop_path, 'w500') }}
@@ -2020,6 +2043,7 @@ export default function DetailPage() {
         intensity={55}
         color={detailsBg}
         blurTarget={topBlurTarget}
+        tint={isAmbientActive || isDark ? 'dark' : 'light'}
       />
 
       {/* Top Bar HUD */}

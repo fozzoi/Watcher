@@ -20,7 +20,7 @@ import { getSavedItems, hasSavedItem, addSavedItem, removeSavedItem, subscribeTo
 import { toggleWatchlistGlobal, syncSavedStore } from '../../src/state/savedState';
 import { logTasteEvent, TASTE_WEIGHTS } from '../../src/services/tasteProfile';
 import * as Clipboard from 'expo-clipboard';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ThemedDialog, DialogButton } from '../../src/components/shared/ThemedDialog';
@@ -39,9 +39,11 @@ import {
   TMDBResult,
   TMDBImage,
 } from '../../src/tmdb';
+import { BlurTargetView } from 'expo-blur';
+import { GradientBlur } from '../../src/components/shared/GradientBlur';
 import { CastDetailSkeleton } from '../../src/components/cast/CastDetailSkeleton';
 import { useAppTheme, shadows, getActiveGlowShadow, ACCENT_COLOR } from '../../src/theme';
-import { useImagePalette, warmPaletteForMedia, AMBIENT_PENDING_BG } from '../../src/utils/colorExtractor';
+import { useImagePalette, warmPaletteForMedia, AMBIENT_PENDING_BG, AMBIENT_PENDING_BG_LIGHT } from '../../src/utils/colorExtractor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
@@ -94,7 +96,7 @@ const CreditCard = React.memo(
     isAmbientActive?: boolean;
     onPress: (item: TMDBResult) => void;
   }) => {
-    const { colors } = useAppTheme();
+    const { colors, isDark } = useAppTheme();
     const handlePress = useCallback(() => {
       onPress(item);
     }, [onPress, item]);
@@ -192,6 +194,8 @@ export default function CastDetails() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadRequestRef = useRef(0);
+  const loadAbortControllerRef = useRef<AbortController | null>(null);
+  const topBlurTarget = useRef<any>(null);
   const [isBioExpanded, setIsBioExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'movie' | 'tv'>('all');
   const [sortBy, setSortBy] = useState<'popular' | 'rating' | 'latest' | 'watched'>('popular');
@@ -242,6 +246,9 @@ export default function CastDetails() {
 
   const loadData = useCallback(async () => {
     const reqId = ++loadRequestRef.current;
+    loadAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    loadAbortControllerRef.current = controller;
     if (!personId || isNaN(personId)) {
       setPerson(null);
       setCredits([]);
@@ -259,10 +266,9 @@ export default function CastDetails() {
 
     try {
       // One request: profile + credits + photos via append_to_response.
-      const bundle = await getPersonBundle(personId, { priority: 'high', throwOnError: true });
+      const bundle = await getPersonBundle(personId, { priority: 'high', throwOnError: true, signal: controller.signal });
 
       if (reqId !== loadRequestRef.current) return;
-
       const personData = bundle.person;
       if (!personData?.id) {
         setError('Could not load profile details. Please check your connection and try again.');
@@ -313,16 +319,22 @@ export default function CastDetails() {
   }, [personId]);
 
   useEffect(() => {
-    loadData();
-    checkIfLiked();
     const unsub = subscribeToSavedItemsChanges(() => {
       checkIfLiked();
     });
-    return () => {
-      loadRequestRef.current += 1;
-      unsub();
-    };
-  }, [personId, loadData, checkIfLiked]);
+    return unsub;
+  }, [checkIfLiked]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+      checkIfLiked();
+      return () => {
+        loadRequestRef.current += 1;
+        loadAbortControllerRef.current?.abort();
+      };
+    }, [loadData, checkIfLiked]),
+  );
 
   const sortedCredits = useMemo(() => {
     let list = credits.filter((item) => {
@@ -439,34 +451,58 @@ export default function CastDetails() {
   // never be conditionally skipped between renders.
   const heroImagePath = person?.profile_path || (personImages.length > 0 ? personImages[0].file_path : null);
   const heroThumbUrl = heroImagePath ? getImageUrl(heroImagePath, 'w185') : null;
-  const { palette, failed: paletteFailed } = useImagePalette(heroThumbUrl);
+  const { palette, failed: paletteFailed } = useImagePalette(ambientTheming ? heroThumbUrl : null);
 
   // Extraction still running: enter ambient mode early with the neutral backdrop
   // so the screen never paints the default theme first and switches afterwards.
   const palettePending = Boolean(ambientTheming && heroThumbUrl && !palette && !paletteFailed);
   const isAmbientActive = Boolean(ambientTheming && (palette?.pastelDark || palettePending));
 
-  // In ambient mode, no light mode or dark mode distinction: always use the pastel dark color
-  const detailsBg = palette?.pastelDark
-    ? palette.pastelDark
-    : isAmbientActive
-    ? AMBIENT_PENDING_BG
+  // Ambient mode keeps the rich cinematic dark palette across both dark and light system themes
+  const detailsBg = isAmbientActive
+    ? (palette?.pastelDark || AMBIENT_PENDING_BG)
     : colors.background;
 
   const heroGradientColors: readonly [string, string, ...string[]] = isAmbientActive
-    ? palette?.gradient ?? ['transparent', 'rgba(255,255,255,0.06)', AMBIENT_PENDING_BG]
+    ? ['transparent', 'rgba(255,255,255,0.06)', detailsBg]
     : (isDark
-        ? ['rgba(10,10,11,0.1)', 'transparent', '#0B0B0E']
-        : ['rgba(255,255,255,0.1)', 'transparent', '#F8F9FA']);
+        ? ['rgba(10,10,11,0.1)', 'transparent', detailsBg]
+        : ['rgba(255,255,255,0.1)', 'transparent', detailsBg]);
 
   if (loading) {
-    return <CastDetailSkeleton />;
+    return (
+      <View style={[styles.root, { backgroundColor: detailsBg }]}>
+        <StatusBar translucent backgroundColor="transparent" barStyle={isAmbientActive || isDark ? "light-content" : "dark-content"} />
+        <BlurTargetView ref={topBlurTarget} style={styles.fill} collapsable={false}>
+          <CastDetailSkeleton />
+        </BlurTargetView>
+        <GradientBlur
+          position="top"
+          height={TOP_BAR_PADDING + 56}
+          intensity={55}
+          color={detailsBg}
+          blurTarget={topBlurTarget}
+          tint={isAmbientActive || isDark ? 'dark' : 'light'}
+        />
+        <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
+          <TouchableOpacity style={styles.glassBtn} onPress={() => router.back()} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
   }
 
   if (error || !person) {
     return (
       <View style={[styles.errorScreen, { backgroundColor: colors.background }]}>
         <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? 'light-content' : 'dark-content'} />
+        <GradientBlur
+          position="top"
+          height={TOP_BAR_PADDING + 56}
+          intensity={55}
+          color={colors.background}
+        />
         <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
           <TouchableOpacity style={styles.glassBtn} onPress={() => router.back()} activeOpacity={0.7}>
             <Ionicons name="chevron-back" size={22} color="#fff" />
@@ -478,12 +514,12 @@ export default function CastDetails() {
           {error || 'Could not load person details.'}
         </Text>
         <TouchableOpacity
-          style={[styles.retryButton, { backgroundColor: colors.primary }]}
+          style={[styles.retryButton, { backgroundColor: ACCENT_COLOR }]}
           onPress={loadData}
           activeOpacity={0.8}
         >
-          <Ionicons name="refresh" size={16} color={colors.onPrimary} />
-          <Text style={[styles.retryButtonText, { color: colors.onPrimary }]}>Retry</Text>
+          <Ionicons name="refresh" size={16} color="#FFFFFF" />
+          <Text style={[styles.retryButtonText, { color: '#FFFFFF' }]}>Retry</Text>
         </TouchableOpacity>
       </View>
     );
@@ -493,33 +529,29 @@ export default function CastDetails() {
     <View style={[styles.root, { backgroundColor: detailsBg }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle={isAmbientActive || isDark ? "light-content" : "dark-content"} />
 
-      {/* Lightweight Static Hero Backdrop (Matched with Movie DetailPage) */}
-      <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: detailsBg }]} pointerEvents="none">
-        <Image
-          source={{ uri: getImageUrl(heroImagePath, 'w500') }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          cachePolicy="disk"
-          priority="high"
-        />
-        <LinearGradient
-          colors={heroGradientColors}
-          locations={[0, 0.45, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-      </View>
+      {/* Hero + scrolling content are the blur source for the coloured status-bar edge */}
+      <BlurTargetView ref={topBlurTarget} style={styles.fill} collapsable={false}>
+        {/* Lightweight Static Hero Backdrop (Matched with Movie DetailPage) */}
+        <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: detailsBg }]} pointerEvents="none">
+          <Image
+            source={{ uri: getImageUrl(heroImagePath, 'w500') }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            cachePolicy="disk"
+            priority="high"
+          />
+          <LinearGradient
+            colors={heroGradientColors}
+            locations={[0, 0.45, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
 
-      {/* Top Bar HUD */}
-      <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
-        <TouchableOpacity activeOpacity={0.8} onPress={() => router.back()} style={styles.glassBtn}>
-          <Ionicons name="chevron-back" size={22} color="#FFF" />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 60 }}
-      >
+        <ScrollView
+          style={styles.fill}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 60 }}
+        >
         <View style={{ height: HEADER_HEIGHT - 30 }} />
 
         <View style={[styles.cardTop, { backgroundColor: detailsBg }]}>
@@ -563,7 +595,7 @@ export default function CastDetails() {
               styles.playBtn,
               {
                 backgroundColor: isAmbientActive
-                  ? 'rgba(255, 255, 255, 0.92)'
+                  ? (isDark ? 'rgba(255, 255, 255, 0.92)' : '#111827')
                   : useMaterialYou
                   ? colors.primary
                   : isDark
@@ -580,7 +612,7 @@ export default function CastDetails() {
               size={20}
               color={
                 isAmbientActive
-                  ? (isLiked ? '#E50914' : '#000000')
+                  ? (isLiked ? '#E50914' : (isDark ? '#000000' : '#FFFFFF'))
                   : useMaterialYou
                   ? colors.onPrimary
                   : isLiked
@@ -595,7 +627,7 @@ export default function CastDetails() {
                 styles.playBtnText,
                 {
                   color: isAmbientActive
-                    ? '#000000'
+                    ? (isDark ? '#000000' : '#FFFFFF')
                     : useMaterialYou
                     ? colors.onPrimary
                     : isDark
@@ -652,7 +684,7 @@ export default function CastDetails() {
             </Text>
             {person.biography && person.biography.length > 220 && (
               <TouchableOpacity activeOpacity={0.8} onPress={() => setIsBioExpanded(!isBioExpanded)}>
-                <Text style={[styles.readMore, { color: isAmbientActive ? '#FFFFFF' : colors.primary }]}>{isBioExpanded ? 'Less' : 'Read more'}</Text>
+                <Text style={[styles.readMore, { color: isAmbientActive ? '#FFFFFF' : ACCENT_COLOR }]}>{isBioExpanded ? 'Less' : 'Read more'}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -663,8 +695,8 @@ export default function CastDetails() {
               style={[
                 styles.mediaTypeTabsContainer,
                 {
-                  backgroundColor: isAmbientActive ? 'rgba(0, 0, 0, 0.35)' : (isDark ? '#18181B' : '#F3F4F6'),
-                  borderColor: isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : (isDark ? '#27272A' : '#E5E7EB'),
+                  backgroundColor: isAmbientActive ? 'rgba(0, 0, 0, 0.35)' : colors.surfaceContainer,
+                  borderColor: isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : colors.border,
                 },
               ]}
             >
@@ -677,7 +709,7 @@ export default function CastDetails() {
                 style={[
                   styles.mediaTypeTab,
                   { paddingHorizontal: isNarrow ? 9 : isMedium ? 12 : 14 },
-                  activeTab === 'all' && [styles.mediaTypeTabActive, { backgroundColor: colors.primary }],
+                  activeTab === 'all' && [styles.mediaTypeTabActive, { backgroundColor: ACCENT_COLOR }],
                 ]}
               >
                 <Text
@@ -685,7 +717,7 @@ export default function CastDetails() {
                     styles.mediaTypeTabText,
                     {
                       fontSize: isNarrow ? 11.5 : 12.5,
-                      color: activeTab === 'all' ? '#575656' : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#374151')),
+                      color: activeTab === 'all' ? '#ffffff' : (isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : (isDark ? '#E4E4E7' : '#4B5563')),
                       fontWeight: activeTab === 'all' ? '700' : '600',
                     },
                   ]}
@@ -704,13 +736,13 @@ export default function CastDetails() {
                 style={[
                   styles.mediaTypeTab,
                   { paddingHorizontal: isNarrow ? 9 : isMedium ? 12 : 14 },
-                  activeTab === 'movie' && [styles.mediaTypeTabActive, { backgroundColor: colors.primary }],
+                  activeTab === 'movie' && [styles.mediaTypeTabActive, { backgroundColor: ACCENT_COLOR }],
                 ]}
               >
                 <Ionicons
                   name="film-outline"
                   size={isNarrow ? 12 : 13.5}
-                  color={activeTab === 'movie' ? '#575656' : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#4B5563'))}
+                  color={activeTab === 'movie' ? '#ffffff' : (isDark ? '#E4E4E7' : '#4B5563')}
                   style={{ marginRight: 4 }}
                 />
                 <Text
@@ -718,7 +750,7 @@ export default function CastDetails() {
                     styles.mediaTypeTabText,
                     {
                       fontSize: isNarrow ? 11.5 : 12.5,
-                      color: activeTab === 'movie' ? '#575656' : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#374151')),
+                      color: activeTab === 'movie' ? '#ffffff' : (isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : (isDark ? '#E4E4E7' : '#4B5563')),
                       fontWeight: activeTab === 'movie' ? '700' : '600',
                     },
                   ]}
@@ -737,13 +769,13 @@ export default function CastDetails() {
                 style={[
                   styles.mediaTypeTab,
                   { paddingHorizontal: isNarrow ? 9 : isMedium ? 12 : 14 },
-                  activeTab === 'tv' && [styles.mediaTypeTabActive, { backgroundColor: colors.primary }],
+                  activeTab === 'tv' && [styles.mediaTypeTabActive, { backgroundColor: ACCENT_COLOR }],
                 ]}
               >
                 <Ionicons
                   name="tv-outline"
                   size={isNarrow ? 12 : 13.5}
-                  color={activeTab === 'tv' ? '#575656' : (isAmbientActive ? '#E4E4E7' : colors.text)}
+                  color={activeTab === 'tv' ? '#ffffff' : (isDark ? '#E4E4E7' : '#4B5563')}
                   style={{ marginRight: 4 }}
                 />
                 <Text
@@ -751,7 +783,7 @@ export default function CastDetails() {
                     styles.mediaTypeTabText,
                     {
                       fontSize: isNarrow ? 11.5 : 12.5,
-                      color: activeTab === 'tv' ? '#575656' : (isAmbientActive ? '#E4E4E7' : colors.text),
+                      color: activeTab === 'tv' ? '#ffffff' : (isAmbientActive ? 'rgba(255, 255, 255, 0.70)' : (isDark ? '#E4E4E7' : '#4B5563')),
                       fontWeight: activeTab === 'tv' ? '700' : '600',
                     },
                   ]}
@@ -786,11 +818,11 @@ export default function CastDetails() {
                       paddingHorizontal: pillPaddingH,
                       paddingVertical: pillPaddingV,
                       backgroundColor: sortBy === 'popular'
-                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
-                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.10)' : (isDark ? '#202024' : '#F1F3F5')),
+                        ? (isDark ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.10)' : colors.surfaceContainer),
                       borderColor: sortBy === 'popular'
-                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
-                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : (isDark ? '#2E2E34' : '#E5E7EB')),
+                        ? (isDark ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : colors.border),
                     },
                   ]}
                 >
@@ -800,8 +832,8 @@ export default function CastDetails() {
                       {
                         fontSize: pillFontSize,
                         color: sortBy === 'popular'
-                          ? (isDark || isAmbientActive ? '#000000' : '#FFFFFF')
-                          : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#374151')),
+                          ? (isDark ? '#000000' : '#FFFFFF')
+                          : (isAmbientActive ? 'rgba(255, 255, 255, 0.80)' : (isDark ? '#E4E4E7' : '#374151')),
                         fontWeight: sortBy === 'popular' ? '700' : '600',
                       },
                     ]}
@@ -822,11 +854,11 @@ export default function CastDetails() {
                       paddingHorizontal: pillPaddingH,
                       paddingVertical: pillPaddingV,
                       backgroundColor: sortBy === 'rating'
-                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
-                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.10)' : (isDark ? '#202024' : '#F1F3F5')),
+                        ? (isDark ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.10)' : colors.surfaceContainer),
                       borderColor: sortBy === 'rating'
-                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
-                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : (isDark ? '#2E2E34' : '#E5E7EB')),
+                        ? (isDark ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : colors.border),
                     },
                   ]}
                 >
@@ -836,8 +868,8 @@ export default function CastDetails() {
                       {
                         fontSize: pillFontSize,
                         color: sortBy === 'rating'
-                          ? (isDark || isAmbientActive ? '#000000' : '#FFFFFF')
-                          : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#374151')),
+                          ? (isDark ? '#000000' : '#FFFFFF')
+                          : (isAmbientActive ? 'rgba(255, 255, 255, 0.80)' : (isDark ? '#E4E4E7' : '#374151')),
                         fontWeight: sortBy === 'rating' ? '700' : '600',
                       },
                     ]}
@@ -858,11 +890,11 @@ export default function CastDetails() {
                       paddingHorizontal: pillPaddingH,
                       paddingVertical: pillPaddingV,
                       backgroundColor: sortBy === 'latest'
-                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
-                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.10)' : (isDark ? '#202024' : '#F1F3F5')),
+                        ? (isDark ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.10)' : colors.surfaceContainer),
                       borderColor: sortBy === 'latest'
-                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
-                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : (isDark ? '#2E2E34' : '#E5E7EB')),
+                        ? (isDark ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : colors.border),
                     },
                   ]}
                 >
@@ -872,8 +904,8 @@ export default function CastDetails() {
                       {
                         fontSize: pillFontSize,
                         color: sortBy === 'latest'
-                          ? (isDark || isAmbientActive ? '#000000' : '#FFFFFF')
-                          : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#374151')),
+                          ? (isDark ? '#000000' : '#FFFFFF')
+                          : (isAmbientActive ? 'rgba(255, 255, 255, 0.80)' : (isDark ? '#E4E4E7' : '#374151')),
                         fontWeight: sortBy === 'latest' ? '700' : '600',
                       },
                     ]}
@@ -894,11 +926,11 @@ export default function CastDetails() {
                       paddingHorizontal: pillPaddingH,
                       paddingVertical: pillPaddingV,
                       backgroundColor: sortBy === 'watched'
-                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
-                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.10)' : (isDark ? '#202024' : '#F1F3F5')),
+                        ? (isDark ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.10)' : colors.surfaceContainer),
                       borderColor: sortBy === 'watched'
-                        ? (isDark || isAmbientActive ? '#FFFFFF' : '#111827')
-                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : (isDark ? '#2E2E34' : '#E5E7EB')),
+                        ? (isDark ? '#FFFFFF' : '#111827')
+                        : (isAmbientActive ? 'rgba(255, 255, 255, 0.16)' : colors.border),
                     },
                   ]}
                 >
@@ -908,8 +940,8 @@ export default function CastDetails() {
                       {
                         fontSize: pillFontSize,
                         color: sortBy === 'watched'
-                          ? (isDark || isAmbientActive ? '#000000' : '#FFFFFF')
-                          : (isAmbientActive ? '#E4E4E7' : (isDark ? '#E4E4E7' : '#374151')),
+                          ? (isDark ? '#000000' : '#FFFFFF')
+                          : (isAmbientActive ? 'rgba(255, 255, 255, 0.80)' : (isDark ? '#E4E4E7' : '#374151')),
                         fontWeight: sortBy === 'watched' ? '700' : '600',
                       },
                     ]}
@@ -947,6 +979,24 @@ export default function CastDetails() {
           </View>
         </View>
       </ScrollView>
+      </BlurTargetView>
+
+      {/* Coloured status-bar edge: palette tint plus real blur over the hero */}
+      <GradientBlur
+        position="top"
+        height={TOP_BAR_PADDING + 56}
+        intensity={55}
+        color={detailsBg}
+        blurTarget={topBlurTarget}
+        tint={isAmbientActive || isDark ? 'dark' : 'light'}
+      />
+
+      {/* Top Bar HUD */}
+      <View style={[styles.topBar, { paddingTop: TOP_BAR_PADDING }]}>
+        <TouchableOpacity activeOpacity={0.8} onPress={() => router.back()} style={styles.glassBtn}>
+          <Ionicons name="chevron-back" size={22} color="#FFF" />
+        </TouchableOpacity>
+      </View>
 
       {person && (
         <GalleryModal
@@ -1088,6 +1138,7 @@ const GalleryModal = React.memo(({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
+  fill: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.bg },
 
   heroContainer: {

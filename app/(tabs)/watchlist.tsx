@@ -549,48 +549,52 @@ const WatchListPage = () => {
     });
     if (pending.length === 0) return;
 
-    let nextIndex = 0;
     const resolveImages = async () => {
-      while (nextIndex < pending.length) {
-        const artist = pending[nextIndex++];
+      const details = await Promise.allSettled(pending.map((artist) =>
+        getPersonDetails(Number(artist.id), { priority: 'low', forceRefresh: true }),
+      ));
+      const unresolved: { artist: any; detailsError?: unknown }[] = [];
+
+      details.forEach((result, index) => {
+        const artist = pending[index];
         const id = Number(artist.id);
-        let profilePath: string | null = null;
-        let detailsError: unknown;
-
-        try {
-          profilePath = (await getPersonDetails(id, { priority: 'low', forceRefresh: true })).profile_path;
-        } catch (error) {
-          detailsError = error;
-        }
-
-        if (!profilePath) {
-          try {
-            const images = await getPersonImages(id, { priority: 'low', forceRefresh: true, throwOnError: true });
-            profilePath = images.find((image) => image.file_path)?.file_path || null;
-          } catch (error) {
-            console.warn(`[Watchlist] Failed to load TMDB profile image for person ${id}:`, error);
-            attemptedArtistImageLookups.current.delete(id);
-            continue;
+        if (result.status === 'fulfilled' && result.value.profile_path) {
+          const savedArtist = getSavedItems('artist').find((item) => Number(item.id) === id);
+          if (savedArtist && !savedArtist.profile_path) {
+            addSavedItem({ ...savedArtist, profile_path: result.value.profile_path }, 'artist');
           }
+        } else {
+          unresolved.push({ artist, detailsError: result.status === 'rejected' ? result.reason : undefined });
         }
+      });
 
-        if (!profilePath) {
-          if (detailsError) {
-            console.warn(`[Watchlist] Could not resolve TMDB profile image for person ${id}:`, detailsError);
-            attemptedArtistImageLookups.current.delete(id);
+      // Profile photos are conditional on the detail response; batch all of
+      // those fallback image requests together as a second API round trip.
+      const images = await Promise.allSettled(unresolved.map(({ artist }) =>
+        getPersonImages(Number(artist.id), { priority: 'low', forceRefresh: true, throwOnError: true }),
+      ));
+      images.forEach((result, index) => {
+        const { artist, detailsError } = unresolved[index];
+        const id = Number(artist.id);
+        if (result.status === 'rejected') {
+          console.warn(`[Watchlist] Failed to load TMDB profile image for person ${id}:`, result.reason);
+          attemptedArtistImageLookups.current.delete(id);
+          return;
+        }
+        const profilePath = result.value.find((image) => image.file_path)?.file_path || null;
+        if (profilePath) {
+          const savedArtist = getSavedItems('artist').find((item) => Number(item.id) === id);
+          if (savedArtist && !savedArtist.profile_path) {
+            addSavedItem({ ...savedArtist, profile_path: profilePath }, 'artist');
           }
-          continue;
+        } else if (detailsError) {
+          console.warn(`[Watchlist] Could not resolve TMDB profile image for person ${id}:`, detailsError);
+          attemptedArtistImageLookups.current.delete(id);
         }
-
-        const savedArtist = getSavedItems('artist').find((item) => Number(item.id) === id);
-        if (savedArtist && !savedArtist.profile_path) {
-          addSavedItem({ ...savedArtist, profile_path: profilePath }, 'artist');
-        }
-      }
+      });
     };
 
-    const workers = Array.from({ length: Math.min(3, pending.length) }, () => resolveImages());
-    void Promise.all(workers).catch((error) => console.warn('[Watchlist] TMDB artist image lookup failed:', error));
+    void resolveImages().catch((error) => console.warn('[Watchlist] TMDB artist image lookup failed:', error));
   }, [activeTab, artists]);
 
   const runDailyAutoSync = async () => {
@@ -613,26 +617,22 @@ const WatchListPage = () => {
 
     const currentList = getSavedItems('watchlist');
 
-    for (let i = 0; i < titles.length; i++) {
-      setSyncProgress(`Checking ${i + 1}/${titles.length}: ${titles[i].title}`);
-      try {
-        const results = await searchTMDB(titles[i].title);
-        const match = results.find(m => m.poster_path);
-        if (match) {
-          const exists = currentList.some((item: any) => item.id === match.id);
-          if (!exists) {
-            currentList.unshift(match);
-            addedCount++;
-          } else {
-            existingCount++;
-          }
+    setSyncProgress(`Checking ${titles.length} titles on TMDB...`);
+    const searchResults = await Promise.allSettled(titles.map(({ title }) => searchTMDB(title)));
+    searchResults.forEach((result, index) => {
+      const match = result.status === 'fulfilled' ? result.value.find((item) => item.poster_path) : null;
+      if (match) {
+        const exists = currentList.some((item: any) => item.id === match.id);
+        if (!exists) {
+          currentList.unshift(match);
+          addedCount++;
         } else {
-          missedTitles.push(titles[i].title);
+          existingCount++;
         }
-      } catch (e) {
-        missedTitles.push(titles[i].title);
+      } else {
+        missedTitles.push(titles[index].title);
       }
-    }
+    });
 
     currentList.forEach((item: any) => addSavedItem(item, 'watchlist'));
     setWatchlist(currentList);
@@ -778,35 +778,28 @@ const WatchListPage = () => {
         return;
       }
 
-      setSyncProgress(`Matching ${extractedMovies.length} titles on TMDB...`);
-
       const currentWatchlist = getSavedItems('watchlist');
       let addedCount = 0;
       let existingCount = 0;
       const missedTitles: string[] = [];
 
-      for (let i = 0; i < extractedMovies.length; i++) {
-        const item = extractedMovies[i];
-        setSyncProgress(`Matching [${i + 1}/${extractedMovies.length}]: ${item.title}`);
-        try {
-          const searchData = await searchTMDB(item.title);
-          const topResult = Array.isArray(searchData) ? searchData[0] : (searchData as any)?.results?.[0];
-
-          if (topResult) {
-            const alreadyExists = currentWatchlist.some((m: any) => m.id === topResult.id);
-            if (!alreadyExists) {
-              currentWatchlist.unshift(topResult);
-              addedCount++;
-            } else {
-              existingCount++;
-            }
+      setSyncProgress(`Matching ${extractedMovies.length} titles on TMDB...`);
+      const searchResults = await Promise.allSettled(extractedMovies.map(({ title }) => searchTMDB(title)));
+      searchResults.forEach((result, index) => {
+        const searchData = result.status === 'fulfilled' ? result.value : [];
+        const topResult = Array.isArray(searchData) ? searchData[0] : (searchData as any)?.results?.[0];
+        if (topResult) {
+          const alreadyExists = currentWatchlist.some((item: any) => item.id === topResult.id);
+          if (!alreadyExists) {
+            currentWatchlist.unshift(topResult);
+            addedCount++;
           } else {
-            missedTitles.push(item.title);
+            existingCount++;
           }
-        } catch (err) {
-          missedTitles.push(item.title);
+        } else {
+          missedTitles.push(extractedMovies[index].title);
         }
-      }
+      });
 
       if (addedCount > 0) {
         currentWatchlist.forEach((item: any) => addSavedItem(item, 'watchlist'));
@@ -1015,6 +1008,7 @@ const WatchListPage = () => {
       warmPaletteForMedia(item);
       router.push(`/cast/${item.id}`);
     } else if (item.media_type === 'collection') {
+      warmPaletteForMedia(item);
       router.push(`/collection/${item.id}?name=${encodeURIComponent(item.name)}`);
     } else if (item.media_type === 'movie' || item.media_type === 'tv' || item.title || item.name) {
       warmPaletteForMedia(item);
@@ -1085,7 +1079,7 @@ const WatchListPage = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
+      <StatusBar translucent barStyle={isDark ? "light-content" : "dark-content"} backgroundColor="transparent" />
 
       {/* ── SYNC PROGRESS BANNER ── */}
       {syncing && (

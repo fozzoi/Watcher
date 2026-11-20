@@ -299,7 +299,7 @@ export default function Onboarding() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? "light-content" : "dark-content"} />
       <LinearGradient 
         colors={isDark ? ['#0A0A0F', '#0E0008', '#000'] : [colors.surfaceContainerLow, colors.background, colors.background]} 
         style={StyleSheet.absoluteFill} 

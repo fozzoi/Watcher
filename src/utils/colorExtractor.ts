@@ -6,7 +6,9 @@ import { getActiveAmbientTheming } from '../theme/ThemeContext';
 export interface ExtractedPalette {
   dominant: string;
   pastelDark: string;
+  pastelLight: string;
   gradient: [string, string, string];
+  lightGradient: [string, string, string];
 }
 
 /**
@@ -16,6 +18,7 @@ export interface ExtractedPalette {
  * default theme first and then jumping to the ambient tint.
  */
 export const AMBIENT_PENDING_BG = '#1B1A1F';
+export const AMBIENT_PENDING_BG_LIGHT = '#F4F5F8';
 
 // In-memory cache to make re-renders and repeat visits instantaneous
 const MAX_PALETTE_CACHE_ENTRIES = 200;
@@ -295,7 +298,13 @@ async function decodeAndExtract(imageUrl: string): Promise<ExtractedPalette | nu
     const finalSat = Math.max(0.28, Math.min(0.40, s));
     const pastelDark = hslToHex(h, finalSat, 0.125);
 
-    // Multi-stop hero transition gradient:
+    // Refined Pastel Light Color:
+    // Gentle, soft tinted light background: lightness ~94%, subtle saturation ~15%
+    // Clearly tinted to the movie's palette in light mode without glare
+    const finalLightSat = Math.max(0.10, Math.min(0.22, s * 0.65));
+    const pastelLight = hslToHex(h, finalLightSat, 0.94);
+
+    // Multi-stop hero transition gradient (Dark):
     // Top: transparent so the hero image shows through crisp and clean
     // Middle: soft 35% ambient tint
     // Bottom: 100% opaque pastelDark matching detailsBg perfectly
@@ -305,10 +314,19 @@ async function decodeAndExtract(imageUrl: string): Promise<ExtractedPalette | nu
       pastelDark,
     ];
 
+    // Multi-stop hero transition gradient (Light):
+    const lightGradient: [string, string, string] = [
+      'transparent',
+      `rgba(${avgR}, ${avgG}, ${avgB}, 0.15)`,
+      pastelLight,
+    ];
+
     const palette: ExtractedPalette = {
       dominant: hslToHex(h, Math.max(0.60, s), 0.50),
       pastelDark,
+      pastelLight,
       gradient,
+      lightGradient,
     };
 
     if (paletteCache.has(imageUrl)) {

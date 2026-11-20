@@ -354,7 +354,7 @@ export default function Index() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
+      <StatusBar translucent barStyle={isDark ? "light-content" : "dark-content"} backgroundColor="transparent" />
       <LinearGradient colors={isDark ? ['#0F0F0F', colors.background] : [colors.surfaceVariant, colors.background]} style={StyleSheet.absoluteFill} />
 
       <View style={[

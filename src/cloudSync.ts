@@ -94,6 +94,20 @@ let pollRetryAfter = 0;
 let lastPollAt = 0;
 let lastFlushedSnapshotMergeTime = 0;
 
+/**
+ * Cached sign-in state. Every read/write of `cloud_auth_user` happens in this
+ * file, so once the boot-time session check has resolved we can answer
+ * "is this device signed in?" without touching storage on every local library
+ * edit, and bail out of cloud work before any network I/O.
+ * `undefined` = not resolved yet, `null` = signed out, object = signed in.
+ */
+let cachedAuthUser: MobileUserProfile | null | undefined;
+
+async function getKnownAuthUser(): Promise<MobileUserProfile | null> {
+  if (cachedAuthUser !== undefined) return cachedAuthUser;
+  return cloudSync.getAuthUser();
+}
+
 const outboxKey = (userId: string) => `cloud_sync_outbox_v1:${userId}`;
 const outboxWarningKey = (userId: string) => `cloud_sync_outbox_warning_v1:${userId}`;
 const snapshotCacheKey = (userId: string) => `cloud_library_snapshot_v1:${userId}`;
@@ -292,6 +306,7 @@ async function handleExpiredSession() {
     AsyncStorage.removeItem('cloud_auth_user'),
     AsyncStorage.removeItem('last_cloud_sync_time'),
   ]);
+  cachedAuthUser = null;
   retryAfter = 0;
   retryDelay = 1000;
   pollRetryAfter = 0;
@@ -352,7 +367,7 @@ function compactMediaItemForSync(raw: any) {
 
 async function enqueueCloudOperation(operation: any): Promise<void> {
   try {
-    const user = await cloudSync.getAuthUser();
+    const user = await getKnownAuthUser();
     if (!user) {
       console.warn(`[CloudSync:Outbox] Cannot queue mutation (${operation?.type}:${operation?.action}): User is NOT signed in. Items will sync when signed in.`);
       return;
@@ -721,6 +736,11 @@ export async function pollCloudChangesWithResult(options?: { ignoreBackoff?: boo
     return { ok: false, error: 'Cloud sync is backing off after a recent network failure.' };
   }
   if (inFlightPollPromise) return inFlightPollPromise;
+  // Boot-time session check already resolved to "signed out": don't touch storage
+  // or the network for a cloud sync this device cannot perform.
+  if (cachedAuthUser === null) {
+    return { ok: false, error: 'Sign in to sync your library' };
+  }
 
   const run = async (): Promise<PollResult> => {
     const pollStart = Date.now();
@@ -956,7 +976,9 @@ export const cloudSync = {
   async getAuthUser(): Promise<MobileUserProfile | null> {
     try {
       const userStr = await AsyncStorage.getItem('cloud_auth_user');
-      return userStr ? JSON.parse(userStr) : null;
+      const user = userStr ? JSON.parse(userStr) : null;
+      cachedAuthUser = user;
+      return user;
     } catch {
       return null;
     }
@@ -994,6 +1016,7 @@ export const cloudSync = {
         AsyncStorage.setItem('cloud_auth_token', token),
         AsyncStorage.setItem('cloud_auth_user', JSON.stringify(user)),
       ]);
+      cachedAuthUser = user;
       invalidateApiAuthCache();
       DeviceEventEmitter.emit('watcher_cloud_auth_changed', user);
 
@@ -1028,6 +1051,7 @@ export const cloudSync = {
         AsyncStorage.setItem('cloud_auth_token', token),
         AsyncStorage.setItem('cloud_auth_user', JSON.stringify(user)),
       ]);
+      cachedAuthUser = user;
       invalidateApiAuthCache();
       DeviceEventEmitter.emit('watcher_cloud_auth_changed', user);
 
@@ -1059,6 +1083,7 @@ export const cloudSync = {
       AsyncStorage.removeItem('cloud_auth_user'),
       AsyncStorage.removeItem('last_cloud_sync_time'),
     ]);
+    cachedAuthUser = null;
     invalidateApiAuthCache();
     DeviceEventEmitter.emit('watcher_cloud_auth_changed', null);
   },
