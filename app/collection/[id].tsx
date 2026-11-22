@@ -28,6 +28,7 @@ import { ShimmerBlock } from '../../src/components/shared/Shimmer';
 import { useAppTheme, ACCENT_COLOR } from '../../src/theme';
 import {
   useImagePalette,
+  warmPalette,
   warmPaletteForMedia,
   AMBIENT_PENDING_BG,
   AMBIENT_PENDING_BG_LIGHT,
@@ -96,22 +97,15 @@ const CollectionDetails = () => {
   const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [isWatched, setIsWatched] = useState(false);
 
-  // Extract poster or backdrop image url for ambient palette
-  const heroThumbUrl = collection?.poster_path
-    ? getImageUrl(collection.poster_path, 'w185')
-    : collection?.backdrop_path
-    ? getImageUrl(collection.backdrop_path, 'w300')
-    : null;
-
   const heroBackdropUrl = collection?.backdrop_path
     ? getImageUrl(collection.backdrop_path, 'w780')
     : collection?.poster_path
     ? getImageUrl(collection.poster_path, 'w780')
     : null;
 
-  const { palette, failed: paletteFailed } = useImagePalette(ambientTheming ? heroThumbUrl : null);
+  const { palette, failed: paletteFailed } = useImagePalette(ambientTheming ? heroBackdropUrl : null);
 
-  const palettePending = Boolean(ambientTheming && heroThumbUrl && !palette && !paletteFailed);
+  const palettePending = Boolean(ambientTheming && heroBackdropUrl && !palette && !paletteFailed);
   const isAmbientActive = Boolean(ambientTheming && (palette?.pastelDark || palettePending));
 
   // Ambient mode keeps the rich cinematic dark palette across both dark and light system themes
@@ -380,6 +374,11 @@ const CollectionDetails = () => {
           contentFit="cover"
           cachePolicy="disk"
           priority="high"
+          onLoad={() => {
+            if (!palette && !paletteFailed && heroBackdropUrl) {
+              warmPalette(heroBackdropUrl);
+            }
+          }}
         />
         <LinearGradient
           colors={heroGradientColors}

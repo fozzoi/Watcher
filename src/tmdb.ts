@@ -12,7 +12,11 @@ import {
 } from './database';
 import { getUserPreferences } from './userPreferences';
 import { withApiAuth } from './apiAuth';
-import { isKnownOffline, subscribeToNetwork } from './network';
+import { isKnownOffline, initNetworkMonitor } from './network';
+
+initNetworkMonitor();
+
+const isAndroid = Platform?.OS === 'android';
 
 // ==========================================
 // 1. GLOBAL CONFIGURATION & SETUP
@@ -294,11 +298,13 @@ const createCacheKey = (endpoint: string, params: Record<string, any> = {}) => {
 
 const MAX_REQUEST_CACHE_ENTRIES = 300;
 
-// Calls are grouped into one app-to-API batch per event-loop burst. Let the
-// queue dispatch one page-sized group so the API can fan requests out under
-// its own upstream concurrency limit.
-const MAX_CONCURRENT_TOTAL = 60;
-const MAX_CONCURRENT_LOW = 60;
+export let MAX_CONCURRENT_TOTAL = 60;
+export let MAX_CONCURRENT_LOW = 8;
+
+export const setConcurrencyLimits = (total: number, low: number) => {
+  MAX_CONCURRENT_TOTAL = total;
+  MAX_CONCURRENT_LOW = low;
+};
 
 interface InFlightRequest {
   promise: Promise<any>;
@@ -311,24 +317,6 @@ const inFlightRequests = new Map<string, InFlightRequest>();
 const backgroundRevalidations = new Map<string, Promise<void>>();
 const pendingRevalidationCallbacks = new Map<string, Set<(data: any) => void>>();
 const cacheWriteVersions = new Map<string, number>();
-
-interface QueuedTask<T> {
-  cacheKey: string;
-  requestLabel: string;
-  enqueuedAt: number;
-  priority: RequestPriority;
-  run: () => Promise<T>;
-  resolve: (value: T) => void;
-  reject: (error: any) => void;
-  signal?: AbortSignal;
-  onAbort?: () => void;
-}
-
-const highQueue: QueuedTask<any>[] = [];
-const lowQueue: QueuedTask<any>[] = [];
-const queuedTasksByKey = new Map<string, Set<QueuedTask<any>>>();
-let activeTotal = 0;
-let activeLow = 0;
 
 const OFFLINE_ERROR_CODE = 'ERR_OFFLINE';
 const REQUEST_ABORTED_CODE = 'ERR_CANCELED';
@@ -346,152 +334,14 @@ const createOfflineError = (): any => {
   return error;
 };
 
-/**
- * When connectivity drops, everything still waiting for a slot is already
- * doomed. Rejecting now frees the queue instead of letting each task pay its
- * own 15s timeout when a slot eventually frees up.
- */
-const rejectQueuedRequestsForOffline = () => {
-  if (highQueue.length === 0 && lowQueue.length === 0) return;
-  const pending = [...highQueue, ...lowQueue];
-  highQueue.length = 0;
-  lowQueue.length = 0;
-  queuedTasksByKey.clear();
-  for (const task of pending) {
-    if (task.signal && task.onAbort) {
-      task.signal.removeEventListener('abort', task.onAbort);
-    }
-    task.reject(createOfflineError());
-  }
-};
-
-const removeQueuedTaskReference = (task: QueuedTask<any>) => {
-  const set = queuedTasksByKey.get(task.cacheKey);
-  if (set) {
-    set.delete(task);
-    if (set.size === 0) queuedTasksByKey.delete(task.cacheKey);
-  }
-};
-
-const dispatchTask = (task: QueuedTask<any>) => {
-  removeQueuedTaskReference(task);
-  if (task.signal && task.onAbort) {
-    task.signal.removeEventListener('abort', task.onAbort);
-  }
-  const queueWaitMs = Date.now() - task.enqueuedAt;
-  if (Platform.OS === 'android' && queueWaitMs >= 1500) {
-    console.warn(`[TMDB][Android] ${task.requestLabel} waited ${queueWaitMs}ms in request queue`);
-  }
-  const dispatchedAsLow = task.priority === 'low';
-  activeTotal++;
-  if (dispatchedAsLow) activeLow++;
-
-  Promise.resolve()
-    .then(() => task.run())
-    .then(
-      (res) => task.resolve(res),
-      (err) => task.reject(err),
+export const isAbortError = (error: any): boolean => {
+  return Boolean(
+    error && (
+      error.code === REQUEST_ABORTED_CODE ||
+      error.name === 'AbortError' ||
+      error.message === 'Request cancelled'
     )
-    .finally(() => {
-      activeTotal--;
-      if (dispatchedAsLow) activeLow--;
-      drainRequestQueue();
-    });
-};
-
-const drainRequestQueue = () => {
-  while (activeTotal < MAX_CONCURRENT_TOTAL) {
-    if (highQueue.length > 0) {
-      const task = highQueue.shift()!;
-      dispatchTask(task);
-    } else if (lowQueue.length > 0 && activeLow < MAX_CONCURRENT_LOW) {
-      const task = lowQueue.shift()!;
-      dispatchTask(task);
-    } else {
-      break;
-    }
-  }
-};
-
-// Registered after drainRequestQueue exists: NetInfo can emit the current
-// state as soon as a listener attaches.
-subscribeToNetwork((onlineNow) => {
-  if (onlineNow) {
-    drainRequestQueue();
-    return;
-  }
-  rejectQueuedRequestsForOffline();
-});
-
-const enqueueRequest = <T>(
-  cacheKey: string,
-  requestLabel: string,
-  priority: RequestPriority,
-  run: () => Promise<T>,
-  signal?: AbortSignal,
-): Promise<T> => {
-  return new Promise<T>((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(createRequestAbortedError());
-      return;
-    }
-    // Nothing new should join the queue while the device is offline; it would
-    // only wait to fail. Callers with cached data fall back to it.
-    if (isKnownOffline()) {
-      reject(createOfflineError());
-      return;
-    }
-    const task: QueuedTask<T> = { cacheKey, requestLabel, enqueuedAt: Date.now(), priority, run, resolve, reject, signal };
-    let set = queuedTasksByKey.get(cacheKey);
-    if (!set) {
-      set = new Set();
-      queuedTasksByKey.set(cacheKey, set);
-    }
-    set.add(task);
-    if (signal) {
-      task.onAbort = () => {
-        const queue = task.priority === 'high' ? highQueue : lowQueue;
-        const index = queue.indexOf(task);
-        if (index === -1) return;
-        queue.splice(index, 1);
-        removeQueuedTaskReference(task);
-        signal.removeEventListener('abort', task.onAbort!);
-        task.reject(createRequestAbortedError());
-        drainRequestQueue();
-      };
-      signal.addEventListener('abort', task.onAbort, { once: true });
-    }
-    if (priority === 'high') {
-      highQueue.push(task);
-    } else {
-      lowQueue.push(task);
-    }
-    if (signal?.aborted) {
-      task.onAbort?.();
-      return;
-    }
-    drainRequestQueue();
-  });
-};
-
-const promoteQueuedRequest = (cacheKey: string) => {
-  const tasks = queuedTasksByKey.get(cacheKey);
-  if (!tasks || tasks.size === 0) return;
-  let promoted = false;
-  for (const task of tasks) {
-    if (task.priority === 'low') {
-      const idx = lowQueue.indexOf(task);
-      if (idx !== -1) {
-        lowQueue.splice(idx, 1);
-        task.priority = 'high';
-        highQueue.push(task);
-        promoted = true;
-      }
-    }
-  }
-  if (promoted) {
-    drainRequestQueue();
-  }
+  );
 };
 
 const shouldPersistEndpoint = (endpoint: string): boolean => {
@@ -548,10 +398,11 @@ const saveCacheEntry = (cacheKey: string, endpoint: string, data: any) => {
   }
 };
 
-const executeHttpSingle = async (
+const executeHttp = async (
   endpoint: string,
-  params: Record<string, any>,
+  params: Record<string, any> = {},
   signal?: AbortSignal,
+  priority: RequestPriority = 'high',
 ) => {
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
@@ -559,9 +410,7 @@ const executeHttpSingle = async (
     throw createRequestAbortedError();
   }
 
-  // Fail fast when the device reports no connectivity. Waiting out the full
-  // timeout per request is what turns a plane-mode phone into a minute of
-  // "loading" instead of an instant cached render.
+  // Fail fast when the device reports no connectivity.
   if (isKnownOffline()) {
     throw createOfflineError();
   }
@@ -580,6 +429,7 @@ const executeHttpSingle = async (
   const controller = new AbortController();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   let abortListener: (() => void) | undefined;
+  let responseStatus: number | string = 200;
 
   try {
     const requestPromise = (async () => {
@@ -588,6 +438,7 @@ const executeHttpSingle = async (
         headers: { Accept: 'application/json' },
         signal: controller.signal,
       });
+      responseStatus = response.status;
       const responseText = await response.text();
 
       if (!response.ok) {
@@ -625,19 +476,24 @@ const executeHttpSingle = async (
           if (signal.aborted) abortListener();
         })
       : null;
+
     const data = abortPromise
       ? await Promise.race([requestPromise, timeoutPromise, abortPromise])
       : await Promise.race([requestPromise, timeoutPromise]);
+
     const durationMs = Date.now() - startedAt;
-    if (Platform.OS === 'android' && durationMs >= 1500) {
-      console.log(`[TMDB][Android] ${cleanEndpoint} succeeded duration=${durationMs}ms`);
+    if (isAndroid && durationMs >= 1500) {
+      console.log(`[TMDB][Android] ${cleanEndpoint} priority=${priority} duration=${durationMs}ms status=${responseStatus}`);
     }
     return data;
   } catch (error: any) {
     const durationMs = Date.now() - startedAt;
-    if (Platform.OS === 'android' && error.code !== OFFLINE_ERROR_CODE && error.code !== REQUEST_ABORTED_CODE) {
+    const status = error.response?.status ?? responseStatus ?? 'none';
+    const isAbort = isAbortError(error);
+    const isOffline = error.code === OFFLINE_ERROR_CODE || error.isOffline;
+    if (isAndroid && !isAbort && !isOffline && status !== 404) {
       console.warn(
-        `[TMDB][Android] ${cleanEndpoint} failed duration=${durationMs}ms status=${error.response?.status ?? 'none'} code=${error.code ?? 'none'} name=${error.name ?? 'Error'} message=${String(error.message ?? error).slice(0, 180)}`
+        `[TMDB][Android] ${cleanEndpoint} priority=${priority} failed duration=${durationMs}ms status=${status} code=${error.code ?? 'none'} name=${error.name ?? 'Error'} message=${String(error.message ?? error).slice(0, 180)}`
       );
     }
     throw error;
@@ -646,116 +502,6 @@ const executeHttpSingle = async (
     if (signal && abortListener) signal.removeEventListener('abort', abortListener);
   }
 };
-
-interface PendingTmdbTransport {
-  id: string;
-  endpoint: string;
-  params: Record<string, any>;
-  signal?: AbortSignal;
-  resolve: (data: any) => void;
-  reject: (error: any) => void;
-  abortListener?: () => void;
-}
-
-const pendingTmdbTransport: PendingTmdbTransport[] = [];
-let tmdbTransportFlushTimer: ReturnType<typeof setTimeout> | null = null;
-let tmdbTransportSequence = 0;
-
-const flushTmdbTransport = async () => {
-  tmdbTransportFlushTimer = null;
-  const pending = pendingTmdbTransport.splice(0);
-  const active = pending.filter((item) => !item.signal?.aborted);
-  pending.filter((item) => item.signal?.aborted).forEach((item) => item.reject(createRequestAbortedError()));
-  if (active.length === 0) return;
-
-  const startedAt = Date.now();
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    if (isKnownOffline()) throw createOfflineError();
-    const response = await fetch(`${API_BASE_URL}?endpoint=%2Fbatch`, {
-      method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requests: active.map(({ id, endpoint, params }) => ({ id, endpoint, params })),
-      }),
-      signal: controller.signal,
-    });
-    const responseText = await response.text();
-    let payload: any;
-    try { payload = JSON.parse(responseText); } catch { payload = {}; }
-    if (!response.ok) {
-      const error: any = new Error(payload.error || `Batch request failed with status ${response.status}`);
-      error.response = { status: response.status, data: payload };
-      throw error;
-    }
-
-    for (const item of active) {
-      item.signal?.removeEventListener('abort', item.abortListener!);
-      if (item.signal?.aborted) {
-        item.reject(createRequestAbortedError());
-        continue;
-      }
-      const result = payload.results?.[item.id];
-      if (result?.status === 'ok') {
-        item.resolve(result.data);
-      } else {
-        const error: any = new Error(result?.error || 'TMDB request failed');
-        error.response = { status: result?.statusCode || 502, data: { code: result?.code || 'TMDB_UPSTREAM_ERROR' } };
-        item.reject(error);
-      }
-    }
-    const durationMs = Date.now() - startedAt;
-    if (Platform.OS === 'android' && durationMs >= 1500) {
-      console.log(`[TMDB][Android] /batch requests=${active.length} succeeded duration=${durationMs}ms`);
-    }
-  } catch (error: any) {
-    const durationMs = Date.now() - startedAt;
-    if (Platform.OS === 'android' && error.code !== OFFLINE_ERROR_CODE) {
-      console.warn(`[TMDB][Android] /batch requests=${active.length} failed duration=${durationMs}ms status=${error.response?.status ?? 'none'} code=${error.code ?? 'none'} message=${String(error.message ?? error).slice(0, 180)}`);
-    }
-    active.forEach((item) => {
-      item.signal?.removeEventListener('abort', item.abortListener!);
-      item.reject(error);
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-};
-
-const executeHttp = (
-  endpoint: string,
-  params: Record<string, any>,
-  signal?: AbortSignal,
-) => new Promise<any>((resolve, reject) => {
-  if (signal?.aborted) {
-    reject(createRequestAbortedError());
-    return;
-  }
-  if (isKnownOffline()) {
-    reject(createOfflineError());
-    return;
-  }
-  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const item: PendingTmdbTransport = {
-    id: `r${++tmdbTransportSequence}`,
-    endpoint: cleanEndpoint,
-    params,
-    signal,
-    resolve,
-    reject,
-  };
-  item.abortListener = () => {
-    const index = pendingTmdbTransport.indexOf(item);
-    if (index >= 0) pendingTmdbTransport.splice(index, 1);
-    reject(createRequestAbortedError());
-  };
-  signal?.addEventListener('abort', item.abortListener, { once: true });
-  pendingTmdbTransport.push(item);
-  if (!tmdbTransportFlushTimer) {
-    tmdbTransportFlushTimer = setTimeout(() => { void flushTmdbTransport(); }, 0);
-  }
-});
 
 const subscribeToRequest = <T>(
   request: InFlightRequest,
@@ -846,7 +592,7 @@ const scheduleBackgroundRevalidation = (
   const startEpoch = cacheEpoch;
   const startVersion = cacheWriteVersions.get(cacheKey) || 0;
 
-  const bgPromise = enqueueRequest(cacheKey, endpoint, 'low', () => executeHttp(endpoint, params))
+  const bgPromise = executeHttp(endpoint, params, undefined, 'low')
     .then((freshData) => {
       const callbacks = pendingRevalidationCallbacks.get(cacheKey);
       pendingRevalidationCallbacks.delete(cacheKey);
@@ -900,7 +646,6 @@ const fetchWithCache = async (
   }
 
   const cacheKey = createCacheKey(endpoint, params);
-  const priority: RequestPriority = options?.priority ?? 'high';
   const startEpoch = cacheEpoch;
   const cached = getCacheEntry(cacheKey, endpoint);
 
@@ -920,16 +665,28 @@ const fetchWithCache = async (
   // Deduplicate concurrent identical in-flight requests
   const existingRequest = inFlightRequests.get(cacheKey);
   if (existingRequest) {
-    if (priority === 'high') {
-      promoteQueuedRequest(cacheKey);
+    if (options?.onBackgroundUpdate && cached) {
+      subscribeToRequest(existingRequest)
+        .then((freshData) => {
+          let changed = true;
+          try {
+            changed = JSON.stringify(freshData) !== JSON.stringify(cached.data);
+          } catch {
+            changed = true;
+          }
+          if (changed) {
+            options.onBackgroundUpdate!(freshData);
+          }
+        })
+        .catch(() => {});
     }
     return subscribeToRequest(existingRequest, options?.signal);
   }
 
   const controller = new AbortController();
-  const requestPromise = enqueueRequest(cacheKey, endpoint, priority, async () => {
+  const requestPromise = (async () => {
     try {
-      const data = await executeHttp(endpoint, params, controller.signal);
+      const data = await executeHttp(endpoint, params, controller.signal, options?.priority ?? 'high');
       if (startEpoch === cacheEpoch) {
         saveCacheEntry(cacheKey, endpoint, data);
       }
@@ -946,7 +703,8 @@ const fetchWithCache = async (
       }
       throw error;
     }
-  }, controller.signal);
+  })();
+
   const request: InFlightRequest = {
     promise: requestPromise,
     controller,
@@ -964,6 +722,7 @@ const fetchWithCache = async (
       if (inFlightRequests.get(cacheKey) === request) inFlightRequests.delete(cacheKey);
     },
   );
+
   return subscribeToRequest(request, options?.signal);
 };
 
@@ -1571,7 +1330,7 @@ export const getFullDetails = async (
   options?: TmdbRequestOptions<TMDBResult>,
 ): Promise<TMDBResult> => {
   let resolvedMediaType: "movie" | "tv" = item.media_type || (item.first_air_date ? "tv" : "movie");
-  const append = "credits,release_dates,content_ratings,external_ids,videos";
+  const append = "credits,release_dates,content_ratings,external_ids,videos,recommendations,images";
 
   const makeFetchOptions = (targetType: "movie" | "tv"): TmdbRequestOptions | undefined => {
     if (!options) return undefined;
@@ -2250,15 +2009,33 @@ const fetchFreshPersonalisedContent = async (
       const genreSlice = (genreIds && genreIds.length > 0) ? genreIds.slice(0, 4) : [28, 35, 878];
       const remainingLangs = langSlice.slice(1);
 
-      // Queue every independent shelf together. The client transport combines
-      // this page load into one app-to-API request; the API fans out to TMDB.
-      const [coreTrending, coreTv, coreTopRated, coreUpcoming, coreLang0Movies,
-        secondaryBase, lang0Tv, remainingLangResults, actorResults, genreResults] = await Promise.all([
+      // Phase 1: 5 core requests
+      const [coreTrending, coreTv, coreTopRated, coreUpcoming, coreLang0Movies] = await Promise.all([
         getTrendingMovies(1, gId, getOpts()),
         getTrendingTV(1, gId, getOpts()),
         getTopRated(1, gId, getOpts()),
         getUpcomingMovies(1, getOpts()),
         getLanguageMovies(langSlice[0], 1, gId, getOpts()),
+      ]);
+
+      const hasCoreContent =
+        coreTrending.length > 0 ||
+        coreTv.length > 0 ||
+        coreTopRated.length > 0 ||
+        coreLang0Movies.length > 0;
+
+      if (!hasCoreContent) {
+        return null;
+      }
+
+      // If the user has left Explore while Phase 1 was in flight, avoid
+      // committing stale results to the cache or running Phase 2.
+      if (shouldContinue && !shouldContinue()) {
+        return null;
+      }
+
+      // Phase 2: fetch remaining discovery shelves
+      const [secondaryBase, lang0Tv, remainingLangResults, actorResults, genreResults] = await Promise.all([
         Promise.all([
           getHiddenGems(1, gId, getOpts()),
           getNostalgicMovies(1, gId, getOpts()),
@@ -2290,22 +2067,6 @@ const fetchFreshPersonalisedContent = async (
           }
         })),
       ]);
-
-      const hasCoreContent =
-        coreTrending.length > 0 ||
-        coreTv.length > 0 ||
-        coreTopRated.length > 0 ||
-        coreLang0Movies.length > 0;
-
-      if (!hasCoreContent) {
-        return null;
-      }
-
-      // If the user has left Explore while the page batch is in flight, avoid
-      // committing stale results to the cache.
-      if (shouldContinue && !shouldContinue()) {
-        return null;
-      }
 
       const langData: Record<string, { movies: any[]; tv: any[] }> = {
         [langSlice[0]]: { movies: coreLang0Movies, tv: lang0Tv },

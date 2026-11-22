@@ -154,7 +154,7 @@ export default function RootLayout() {
         }
         setShowUpdateModal(true);
       } else if (data?.mediaId) {
-        const mediaType = data.mediaType || 'movie';
+        const mediaType = data.mediaType || data.media_type || (data.first_air_date ? 'tv' : 'movie');
         router.push(`/movie/${data.mediaId}?media_type=${mediaType}`);
       } else if (typeof data?.url === 'string') {
         router.push(data.url as any);
@@ -166,7 +166,8 @@ export default function RootLayout() {
         if (response) {
           const data: any = response.notification.request.content.data;
           if (data?.mediaId) {
-            router.push(`/movie/${data.mediaId}?media_type=${data.mediaType || 'movie'}`);
+            const mediaType = data.mediaType || data.media_type || (data.first_air_date ? 'tv' : 'movie');
+            router.push(`/movie/${data.mediaId}?media_type=${mediaType}`);
           } else if (typeof data?.url === 'string') {
             router.push(data.url as any);
           }

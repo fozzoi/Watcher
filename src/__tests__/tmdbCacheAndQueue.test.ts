@@ -106,8 +106,39 @@ const parseFetchUrl = (url: string) => {
 // The client moved from axios to native fetch, but these tests still drive it
 // through axios-style mocks. Bridge the two so assertions keep their shape.
 const installFetchMock = () => {
-  (globalThis as any).fetch = jest.fn(async (url: string) => {
+  (globalThis as any).fetch = jest.fn(async (url: string, init?: any) => {
     const { path, params } = parseFetchUrl(String(url));
+    if (params.endpoint === '/batch' || path === '/batch') {
+      const body = init?.body ? JSON.parse(init.body) : { requests: [] };
+      const requests = body.requests || [];
+      const itemResults = await Promise.all(
+        requests.map(async (req: any) => {
+          try {
+            const response: any = await mockAxiosGet(req.endpoint, { params: req.params });
+            const data = response && typeof response === 'object' && 'data' in response ? response.data : response;
+            return { id: req.id, result: { status: 'ok', data } };
+          } catch (err: any) {
+            return {
+              id: req.id,
+              result: {
+                status: 'error',
+                statusCode: err.response?.status || 502,
+                error: err.message || 'Request failed',
+              },
+            };
+          }
+        }),
+      );
+      const results: Record<string, any> = {};
+      for (const item of itemResults) {
+        results[item.id] = item.result;
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ results }),
+      };
+    }
     const response: any = await mockAxiosGet(path, { params });
     const body = response && typeof response === 'object' && 'data' in response ? response.data : response;
     return {
@@ -128,9 +159,11 @@ describe('TMDB caching, priority queue, and error handling', () => {
     jest.restoreAllMocks();
     jest.resetModules();
     installFetchMock();
+    const tmdb = require('../tmdb');
+    tmdb.setConcurrencyLimits?.(6, 3);
   });
 
-  test('limits concurrent low-priority requests while allowing high-priority requests to preempt immediately', async () => {
+  test('dispatches requests directly without queue delay while deduplicating in-flight requests', async () => {
     const tmdb = require('../tmdb') as typeof import('../tmdb');
 
     const startedOrder: string[] = [];
@@ -150,17 +183,20 @@ describe('TMDB caching, priority queue, and error handling', () => {
 
     await flushMicrotasks();
 
-    // MAX_CONCURRENT_LOW is 3, so person 4 stays queued
-    expect(startedOrder).toEqual(['/person/1/images', '/person/2/images', '/person/3/images']);
+    // All requests dispatch directly without queue wait
+    expect(startedOrder).toEqual(['/person/1/images', '/person/2/images', '/person/3/images', '/person/4/images']);
 
-    // High-priority foreground tap must bypass lowQueue and start immediately (slot 4 of 6)
+    // High-priority foreground tap also dispatches immediately
     const highTap = tmdb.getPersonImages(99, { priority: 'high' });
+    // Concurrent identical request for person 1 deduplicates (no extra network call)
+    const dedupedLow1 = tmdb.getPersonImages(1);
     await flushMicrotasks();
 
     expect(startedOrder).toEqual([
       '/person/1/images',
       '/person/2/images',
       '/person/3/images',
+      '/person/4/images',
       '/person/99/images',
     ]);
 
@@ -172,12 +208,10 @@ describe('TMDB caching, priority queue, and error handling', () => {
       }
     }
     await flushMicrotasks();
-    // Person 4 starts once low slots free up
-    deferredByUrl.get('/person/4/images')?.resolve({ data: { profiles: [] } });
 
-    const [r99, r1, r2, r3, r4] = await Promise.all([highTap, low1, low2, low3, low4]);
+    const [r99, r1, r2, r3, r4, rDeduped] = await Promise.all([highTap, low1, low2, low3, low4, dedupedLow1]);
     expect(r99).toHaveLength(1);
-    expect([r1, r2, r3, r4]).toEqual([[], [], [], []]);
+    expect([r1, r2, r3, r4, rDeduped]).toEqual([[], [], [], [], []]);
   });
 
   test('cancelling one subscriber does not abort a shared request still used by another screen', async () => {
@@ -220,34 +254,19 @@ describe('TMDB caching, priority queue, and error handling', () => {
     pending.resolve({ data: { id: 555, name: 'Cancelled person' } });
   });
 
-  test('cancelling a queued screen request removes it before dispatch', async () => {
+  test('cancelling an active request aborts with AbortError', async () => {
     const tmdb = require('../tmdb') as typeof import('../tmdb');
 
-    const pendingByEndpoint = new Map<string, ReturnType<typeof deferred<any>>>();
-    mockAxiosGet.mockImplementation((endpoint: string) => {
-      const pending = deferred<any>();
-      pendingByEndpoint.set(endpoint, pending);
-      return pending.promise;
-    });
-
-    const activeRequests = Array.from({ length: 6 }, (_, index) => tmdb.getPersonDetails(index + 1));
-    await flushMicrotasks();
-    expect(mockAxiosGet).toHaveBeenCalledTimes(6);
+    const pending = deferred<any>();
+    mockAxiosGet.mockReturnValue(pending.promise);
 
     const controller = new AbortController();
-    const queuedRequest = tmdb.getPersonDetails(99, { signal: controller.signal });
+    const activeRequest = tmdb.getPersonDetails(99, { signal: controller.signal });
     await flushMicrotasks();
-    expect(mockAxiosGet).toHaveBeenCalledTimes(6);
+    expect(mockAxiosGet).toHaveBeenCalledWith('/person/99', expect.anything());
 
     controller.abort();
-    await expect(queuedRequest).rejects.toMatchObject({ name: 'AbortError' });
-
-    for (const [endpoint, pending] of pendingByEndpoint) {
-      pending.resolve({ data: { id: Number(endpoint.split('/').pop()), name: 'Person' } });
-    }
-    await Promise.all(activeRequests);
-    await flushMicrotasks();
-    expect(mockAxiosGet).toHaveBeenCalledTimes(6);
+    await expect(activeRequest).rejects.toMatchObject({ name: 'AbortError' });
   });
 
   test('serves persistent stale cache immediately via SWR and invokes onBackgroundUpdate only when payload changes', async () => {
@@ -359,7 +378,7 @@ describe('TMDB caching, priority queue, and error handling', () => {
     const details = await tmdb.getMediaDetails(37680, 'movie', 'US', { priority: 'high' });
     expect(mockAxiosGet.mock.calls.map((c) => c[0])).toEqual(['/movie/37680', '/tv/37680']);
     expect(mockAxiosGet.mock.calls[0][1].params.append_to_response).toBe(
-      'credits,release_dates,content_ratings,external_ids,videos',
+      'credits,release_dates,content_ratings,external_ids,videos,recommendations,images',
     );
     expect(details.media_type).toBe('tv');
     expect(details.director?.name).toBe('Kevin Bray');
@@ -539,7 +558,7 @@ describe('TMDB caching, priority queue, and error handling', () => {
     expect(mockAxiosGet).toHaveBeenCalledTimes(2);
   });
 
-  test('promotes a queued low-priority request ahead of remaining lowQueue items when 6 slots (3 high + 3 low) are full', async () => {
+  test('dispatches concurrent requests directly without head-of-line blocking', async () => {
     const tmdb = require('../tmdb') as typeof import('../tmdb');
 
     const startedOrder: string[] = [];
@@ -552,36 +571,18 @@ describe('TMDB caching, priority queue, and error handling', () => {
       return d.promise;
     });
 
-    // Saturate 3 high + 3 low active slots, plus low4 & low5 waiting in lowQueue
     const h1 = tmdb.getPersonImages(101, { priority: 'high' });
-    const h2 = tmdb.getPersonImages(102, { priority: 'high' });
-    const h3 = tmdb.getPersonImages(103, { priority: 'high' });
     const l1 = tmdb.getPersonImages(201, { priority: 'low' });
     const l2 = tmdb.getPersonImages(202, { priority: 'low' });
-    const l3 = tmdb.getPersonImages(203, { priority: 'low' });
-    const l4 = tmdb.getPersonImages(204, { priority: 'low' });
-    const l5 = tmdb.getPersonImages(205, { priority: 'low' });
 
     await flushMicrotasks();
-    expect(startedOrder).toHaveLength(6);
+    expect(startedOrder).toEqual(['/person/101/images', '/person/201/images', '/person/202/images']);
 
-    // Promote person 205 (l5, sitting behind l4 in lowQueue) via a high-priority caller
-    const promoted = tmdb.getPersonImages(205, { priority: 'high' });
-    await flushMicrotasks();
-
-    // Free one high slot -> promoted 205 must dispatch BEFORE queued 204 (l4)
-    deferredByEndpoint.get('/person/101/images')?.resolve({ data: { profiles: [] } });
-    await flushMicrotasks(12);
-    expect(startedOrder[6]).toBe('/person/205/images');
-
-    // Resolve all remaining tasks
     for (const d of deferredByEndpoint.values()) {
       d.resolve({ data: { profiles: [] } });
     }
-    await flushMicrotasks(12);
-    deferredByEndpoint.get('/person/204/images')?.resolve({ data: { profiles: [] } });
-
-    await Promise.all([h1, h2, h3, l1, l2, l3, l4, l5, promoted]);
+    const results = await Promise.all([h1, l1, l2]);
+    expect(results).toEqual([[], [], []]);
   });
 
   test('enforces MAX_REQUEST_CACHE_ENTRIES (300) true LRU eviction', async () => {

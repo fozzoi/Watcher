@@ -162,6 +162,12 @@ const ViewAllPage = () => {
       style={styles.cardContainer}
       onPress={() => {
         warmPaletteForMedia(item);
+        if ((item.media_type as string) === 'collection' || (item as any).collection_id) {
+          const colId = (item as any).collection_id || item.id;
+          const colName = item.title || item.name || '';
+          router.push(`/collection/${colId}?name=${encodeURIComponent(colName)}&title=${encodeURIComponent(colName)}`);
+          return;
+        }
         const mType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
         router.push(`/movie/${item.id}?media_type=${mType}`);
       }}

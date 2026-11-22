@@ -34,6 +34,7 @@ import {
   getGeminiMoviesSimilarTo,
   GLOBAL_CONFIG,
   getCollectionDetails,
+  isAbortError,
 } from '../../src/tmdb';
 import { getProgress, isEpisodeCompleted } from '../../src/utils/progress';
 import {
@@ -56,7 +57,7 @@ import { MovieDetailSkeleton } from '../../src/components/movie/MovieDetailSkele
 import MovieMediaGallery from '../../src/components/movie/MovieMediaGallery';
 import MovieTorrentModal from '../../src/components/movie/MovieTorrentModal';
 import { useAppTheme, getActiveGlowShadow, ACCENT_COLOR } from '../../src/theme';
-import { useImagePalette, warmPaletteForMedia, AMBIENT_PENDING_BG, AMBIENT_PENDING_BG_LIGHT } from '../../src/utils/colorExtractor';
+import { useImagePalette, warmPalette, warmPaletteForMedia, AMBIENT_PENDING_BG, AMBIENT_PENDING_BG_LIGHT } from '../../src/utils/colorExtractor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 const INITIAL_EPISODES_LIMIT = 8;
@@ -171,6 +172,7 @@ const MemoizedDirectorCard = React.memo(({ item, mediaType, isAmbientActive, onP
         style={[styles.directorImg, { backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainerHigh }]}
         contentFit="cover"
         cachePolicy="disk"
+        priority="low"
         recyclingKey={profileUrl}
       />
       <View style={{ maxWidth: 140 }}>
@@ -201,6 +203,7 @@ const MemoizedCastCard = React.memo(({ item, cardWidth, isAmbientActive, onPress
         style={[styles.castImg, { width: cardWidth, height: cardWidth * 1.35, backgroundColor: isAmbientActive ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceContainer }]}
         contentFit="cover"
         cachePolicy="disk"
+        priority="low"
         recyclingKey={profileUrl}
       />
       <Text style={[styles.castName, { color: isAmbientActive ? '#FFFFFF' : colors.text }]} numberOfLines={1}>
@@ -1051,9 +1054,19 @@ export default function DetailPage() {
     };
   }, []);
 
+  const scrollRef = useRef<any>(null);
+  const scrollOffsetRef = useRef(0);
+  const isScreenFocusedRef = useRef(true);
+  const isRestoringScrollRef = useRef(false);
+  const loadedMovieIdRef = useRef<number | null>(null);
+
   const handleScroll = useCallback((e: any) => {
-    if (hasScrolledRef.current) return;
     const y = e.nativeEvent?.contentOffset?.y ?? 0;
+    // Don't let spurious zero offsets from Android fragment transitions/restores clobber saved scroll position
+    if (isRestoringScrollRef.current && y === 0) return;
+    if (!isScreenFocusedRef.current && y === 0) return;
+    scrollOffsetRef.current = y;
+    if (hasScrolledRef.current) return;
     if (y > 80) {
       hasScrolledRef.current = true;
       setHasScrolledPastFold(true);
@@ -1107,17 +1120,17 @@ export default function DetailPage() {
   const castCardWidth = isTablet ? 120 : width * 0.26;
   const episodeThumbWidth = isTablet ? 200 : width * 0.34;
 
-  const heroThumbUrl = movie?.poster_path
-    ? getImageUrl(movie.poster_path, 'w185')
+  const heroImageUrl = movie?.poster_path
+    ? getImageUrl(movie.poster_path, 'w500')
     : movie?.backdrop_path
-    ? getImageUrl(movie.backdrop_path, 'w300')
+    ? getImageUrl(movie.backdrop_path, 'w780')
     : null;
-  const { palette, failed: paletteFailed } = useImagePalette(ambientTheming ? heroThumbUrl : null);
+  const { palette, failed: paletteFailed } = useImagePalette(ambientTheming ? heroImageUrl : null);
 
-  // Palette still extracting (or being warmed by the list screen we came from):
+  // Palette still extracting:
   // enter ambient mode immediately with the neutral backdrop instead of painting
   // the default theme first and switching afterwards.
-  const palettePending = Boolean(ambientTheming && heroThumbUrl && !palette && !paletteFailed);
+  const palettePending = Boolean(ambientTheming && heroImageUrl && !palette && !paletteFailed);
   const isAmbientActive = Boolean(ambientTheming && (palette?.pastelDark || palettePending));
 
   // Ambient mode keeps the rich cinematic dark palette across both dark and light system themes
@@ -1130,6 +1143,12 @@ export default function DetailPage() {
     : (isDark
         ? ['rgba(10,10,11,0.1)', 'transparent', detailsBg]
         : ['rgba(255,255,255,0.1)', 'transparent', detailsBg]);
+
+  useEffect(() => {
+    if (media_type === 'collection' && id) {
+      router.replace(`/collection/${id}`);
+    }
+  }, [id, media_type, router]);
 
   useEffect(() => {
     const onBack = () => {
@@ -1145,7 +1164,7 @@ export default function DetailPage() {
   }, [router]);
 
   // Phase 1: Fast initial metadata (hydrates immediately from cache/SWR + reads watch progress in parallel)
-  const fetchInitial = useCallback(async () => {
+  const fetchInitial = useCallback(async (isRefresh = false) => {
     if (!id) return;
     const reqId = ++initialRequestRef.current;
     initialAbortControllerRef.current?.abort();
@@ -1154,6 +1173,16 @@ export default function DetailPage() {
     const numericId = Number(id);
     if (!Number.isFinite(numericId) || numericId <= 0) {
       setDetailsError('Invalid title ID.');
+      return;
+    }
+
+    const isAlreadyLoaded = loadedMovieIdRef.current === numericId;
+    if (isAlreadyLoaded && !isRefresh) {
+      getProgress(numericId).then((progress) => {
+        if (reqId === initialRequestRef.current) {
+          setLastWatched(progress);
+        }
+      }).catch(() => {});
       return;
     }
 
@@ -1177,18 +1206,27 @@ export default function DetailPage() {
     lastSyncedProgressSeasonRef.current = null;
 
     try {
+      const targetMediaType: 'movie' | 'tv' =
+        (media_type as 'movie' | 'tv') ||
+        (searchParams.first_air_date ? 'tv' : 'movie');
+
       const [data, progress] = await Promise.all([
-        getMediaDetails(numericId, (media_type as 'movie' | 'tv') || 'movie', 'US', {
+        getMediaDetails(numericId, targetMediaType, 'US', {
           priority: 'high',
           signal: controller.signal,
           onBackgroundUpdate: (freshData) => {
             if (reqId === initialRequestRef.current && freshData?.id) {
               setMovie(freshData);
-              if ((Array.isArray(freshData.images) && freshData.images.length > 0) || (Array.isArray(freshData.posters) && freshData.posters.length > 0)) {
+              if (
+                (Array.isArray(freshData.images) && freshData.images.length > 0) ||
+                (Array.isArray(freshData.posters) && freshData.posters.length > 0) ||
+                (Array.isArray(freshData.recommendations) && freshData.recommendations.length > 0)
+              ) {
                 setExtras((prev) => ({
                   ...prev,
                   images: (Array.isArray(freshData.images) && freshData.images.length > 0) ? freshData.images : prev.images,
                   posters: (Array.isArray(freshData.posters) && freshData.posters.length > 0) ? freshData.posters : prev.posters,
+                  similarMovies: (Array.isArray(freshData.recommendations) && freshData.recommendations.length > 0) ? freshData.recommendations : prev.similarMovies,
                 }));
               }
               if (freshData.media_type === 'tv' && freshData.seasons && freshData.seasons.length > 0) {
@@ -1206,14 +1244,20 @@ export default function DetailPage() {
 
       if (reqId !== initialRequestRef.current) return;
 
+      loadedMovieIdRef.current = numericId;
       setLastWatched(progress);
       lastSyncedProgressSeasonRef.current = progress?.lastSeason ?? null;
       setMovie(data);
-      if ((Array.isArray(data.images) && data.images.length > 0) || (Array.isArray(data.posters) && data.posters.length > 0)) {
+      if (
+        (Array.isArray(data.images) && data.images.length > 0) ||
+        (Array.isArray(data.posters) && data.posters.length > 0) ||
+        (Array.isArray(data.recommendations) && data.recommendations.length > 0)
+      ) {
         setExtras((prev) => ({
           ...prev,
           images: (Array.isArray(data.images) && data.images.length > 0) ? data.images : prev.images,
           posters: (Array.isArray(data.posters) && data.posters.length > 0) ? data.posters : prev.posters,
+          similarMovies: (Array.isArray(data.recommendations) && data.recommendations.length > 0) ? data.recommendations : prev.similarMovies,
         }));
       }
 
@@ -1227,8 +1271,9 @@ export default function DetailPage() {
           setSelectedSeason(preferredSeason);
         }
       }
-    } catch {
+    } catch (err: any) {
       if (reqId === initialRequestRef.current) {
+        if (isAbortError(err)) return;
         setDetailsError('Unable to load this title. Check your connection or retry.');
       }
     }
@@ -1236,12 +1281,29 @@ export default function DetailPage() {
 
   useFocusEffect(
     useCallback(() => {
-      fetchInitial();
+      isScreenFocusedRef.current = true;
+      if (loadedMovieIdRef.current !== Number(id)) {
+        fetchInitial();
+      } else if (scrollOffsetRef.current > 0) {
+        const targetY = scrollOffsetRef.current;
+        isRestoringScrollRef.current = true;
+        requestAnimationFrame(() => {
+          scrollRef.current?.scrollTo({ y: targetY, animated: false });
+        });
+        const t1 = setTimeout(() => {
+          scrollRef.current?.scrollTo({ y: targetY, animated: false });
+        }, 50);
+        const t2 = setTimeout(() => {
+          scrollRef.current?.scrollTo({ y: targetY, animated: false });
+          isRestoringScrollRef.current = false;
+        }, 300);
+      }
       return () => {
+        isScreenFocusedRef.current = false;
         initialRequestRef.current += 1;
         initialAbortControllerRef.current?.abort();
       };
-    }, [fetchInitial]),
+    }, [fetchInitial, id]),
   );
 
   // Phase 2: Deferred crew, cast, collection, and recommendations (fires as soon as movie.id AND renderStage >= 1)
@@ -1581,7 +1643,8 @@ export default function DetailPage() {
         isAmbientActive={isAmbientActive}
         onPress={(clicked: any) => {
           warmPaletteForMedia(clicked);
-          router.push(`/movie/${clicked.id}?media_type=${clicked.media_type || 'movie'}`);
+          const mType = clicked.media_type || (clicked.first_air_date ? 'tv' : (movie?.media_type === 'tv' ? 'tv' : 'movie'));
+          router.push(`/movie/${clicked.id}?media_type=${mType}`);
         }}
       />
     ),
@@ -1622,7 +1685,7 @@ export default function DetailPage() {
           style={[styles.retryBtn, { backgroundColor: colors.primary }]}
           onPress={() => {
             setDetailsError(null);
-            void fetchInitial();
+            void fetchInitial(true);
           }}
         >
           <Ionicons name="refresh" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
@@ -1642,11 +1705,16 @@ export default function DetailPage() {
       {/* Lightweight Static Hero Backdrop */}
       <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: detailsBg }]} pointerEvents="none">
         <Image
-          source={{ uri: getImageUrl(movie.poster_path, 'w500') }}
+          source={{ uri: heroImageUrl || undefined }}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
           cachePolicy="disk"
           priority="high"
+          onLoad={() => {
+            if (!palette && !paletteFailed && heroImageUrl) {
+              warmPalette(heroImageUrl);
+            }
+          }}
           // contentPosition={{ top: 40, left: 'center' }}
         />
         <LinearGradient
@@ -1658,11 +1726,17 @@ export default function DetailPage() {
 
       {/* Main Single Scroll Container */}
       <ScrollView
+        ref={scrollRef}
         style={styles.fill}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 }}
         onScroll={handleScroll}
-        scrollEventThrottle={32}
+        scrollEventThrottle={16}
+        onContentSizeChange={(_w, h) => {
+          if (isRestoringScrollRef.current && scrollOffsetRef.current > 0 && h > scrollOffsetRef.current) {
+            scrollRef.current?.scrollTo({ y: scrollOffsetRef.current, animated: false });
+          }
+        }}
       >
         {/* Lowered Details Card Spacer */}
         <View style={{ height: HEADER_HEIGHT - 30 }} />

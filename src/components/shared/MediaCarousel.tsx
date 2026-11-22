@@ -37,6 +37,12 @@ const MediaCarousel = memo(
     const handleCardPress = useCallback(
       (item: any) => {
         warmPaletteForMedia(item);
+        if (item.media_type === 'collection' || item.collection_id) {
+          const colId = item.collection_id || item.id;
+          const colName = item.title || item.name || '';
+          router.push(`/collection/${colId}?name=${encodeURIComponent(colName)}&title=${encodeURIComponent(colName)}`);
+          return;
+        }
         const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
         router.push({
           pathname: `/movie/${item.id}`,

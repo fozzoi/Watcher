@@ -35,6 +35,7 @@ import Animated, {
 import {
   getPersonBundle,
   getImageUrl,
+  isAbortError,
   TMDBPerson,
   TMDBResult,
   TMDBImage,
@@ -43,7 +44,7 @@ import { BlurTargetView } from 'expo-blur';
 import { GradientBlur } from '../../src/components/shared/GradientBlur';
 import { CastDetailSkeleton } from '../../src/components/cast/CastDetailSkeleton';
 import { useAppTheme, shadows, getActiveGlowShadow, ACCENT_COLOR } from '../../src/theme';
-import { useImagePalette, warmPaletteForMedia, AMBIENT_PENDING_BG, AMBIENT_PENDING_BG_LIGHT } from '../../src/utils/colorExtractor';
+import { useImagePalette, warmPalette, warmPaletteForMedia, AMBIENT_PENDING_BG, AMBIENT_PENDING_BG_LIGHT } from '../../src/utils/colorExtractor';
 
 const TOP_BAR_PADDING = (StatusBar.currentHeight || 44) + 8;
 
@@ -195,6 +196,11 @@ export default function CastDetails() {
   const [error, setError] = useState<string | null>(null);
   const loadRequestRef = useRef(0);
   const loadAbortControllerRef = useRef<AbortController | null>(null);
+  const loadedPersonIdRef = useRef<number | null>(null);
+  const scrollRef = useRef<any>(null);
+  const scrollOffsetRef = useRef(0);
+  const isScreenFocusedRef = useRef(true);
+  const isRestoringScrollRef = useRef(false);
   const topBlurTarget = useRef<any>(null);
   const [isBioExpanded, setIsBioExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'movie' | 'tv'>('all');
@@ -244,7 +250,7 @@ export default function CastDetails() {
     setDialogConfig({ ...config, visible: true });
   }, []);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isRefresh = false) => {
     const reqId = ++loadRequestRef.current;
     loadAbortControllerRef.current?.abort();
     const controller = new AbortController();
@@ -255,14 +261,22 @@ export default function CastDetails() {
       setPersonImages([]);
       setError('Invalid person profile.');
       setLoading(false);
+      loadedPersonIdRef.current = null;
       return;
     }
 
-    setLoading(true);
-    setError(null);
-    setPerson(null);
-    setCredits([]);
-    setPersonImages([]);
+    const isAlreadyLoaded = loadedPersonIdRef.current === personId;
+    if (isAlreadyLoaded && !isRefresh) {
+      return;
+    }
+
+    if (!isAlreadyLoaded) {
+      setLoading(true);
+      setError(null);
+      setPerson(null);
+      setCredits([]);
+      setPersonImages([]);
+    }
 
     try {
       // One request: profile + credits + photos via append_to_response.
@@ -271,10 +285,13 @@ export default function CastDetails() {
       if (reqId !== loadRequestRef.current) return;
       const personData = bundle.person;
       if (!personData?.id) {
-        setError('Could not load profile details. Please check your connection and try again.');
+        if (!isAlreadyLoaded) {
+          setError('Could not load profile details. Please check your connection and try again.');
+        }
         return;
       }
 
+      loadedPersonIdRef.current = personId;
       const creditsData = bundle.credits;
       const imagesData = bundle.images;
 
@@ -303,12 +320,15 @@ export default function CastDetails() {
       );
 
       setCredits(uniqueCredits);
-    } catch (err) {
+    } catch (err: any) {
       if (reqId !== loadRequestRef.current) return;
+      if (isAbortError(err)) return;
       console.error('Error loading person details:', err);
-      setError('Could not load profile details. Please check your connection and try again.');
+      if (!isAlreadyLoaded) {
+        setError('Could not load profile details. Please check your connection and try again.');
+      }
     } finally {
-      if (reqId === loadRequestRef.current) {
+      if (reqId === loadRequestRef.current && !isAlreadyLoaded) {
         setLoading(false);
       }
     }
@@ -327,13 +347,30 @@ export default function CastDetails() {
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
+      isScreenFocusedRef.current = true;
       checkIfLiked();
+      if (loadedPersonIdRef.current !== personId) {
+        loadData();
+      } else if (scrollOffsetRef.current > 0) {
+        const targetY = scrollOffsetRef.current;
+        isRestoringScrollRef.current = true;
+        requestAnimationFrame(() => {
+          scrollRef.current?.scrollTo({ y: targetY, animated: false });
+        });
+        const t1 = setTimeout(() => {
+          scrollRef.current?.scrollTo({ y: targetY, animated: false });
+        }, 50);
+        const t2 = setTimeout(() => {
+          scrollRef.current?.scrollTo({ y: targetY, animated: false });
+          isRestoringScrollRef.current = false;
+        }, 300);
+      }
       return () => {
+        isScreenFocusedRef.current = false;
         loadRequestRef.current += 1;
         loadAbortControllerRef.current?.abort();
       };
-    }, [loadData, checkIfLiked]),
+    }, [checkIfLiked, loadData, personId]),
   );
 
   const sortedCredits = useMemo(() => {
@@ -450,12 +487,12 @@ export default function CastDetails() {
   // NOTE: useImagePalette must stay above the loading early-return — hooks may
   // never be conditionally skipped between renders.
   const heroImagePath = person?.profile_path || (personImages.length > 0 ? personImages[0].file_path : null);
-  const heroThumbUrl = heroImagePath ? getImageUrl(heroImagePath, 'w185') : null;
-  const { palette, failed: paletteFailed } = useImagePalette(ambientTheming ? heroThumbUrl : null);
+  const heroImageUrl = heroImagePath ? getImageUrl(heroImagePath, 'w500') : null;
+  const { palette, failed: paletteFailed } = useImagePalette(ambientTheming ? heroImageUrl : null);
 
   // Extraction still running: enter ambient mode early with the neutral backdrop
   // so the screen never paints the default theme first and switches afterwards.
-  const palettePending = Boolean(ambientTheming && heroThumbUrl && !palette && !paletteFailed);
+  const palettePending = Boolean(ambientTheming && heroImageUrl && !palette && !paletteFailed);
   const isAmbientActive = Boolean(ambientTheming && (palette?.pastelDark || palettePending));
 
   // Ambient mode keeps the rich cinematic dark palette across both dark and light system themes
@@ -515,7 +552,7 @@ export default function CastDetails() {
         </Text>
         <TouchableOpacity
           style={[styles.retryButton, { backgroundColor: ACCENT_COLOR }]}
-          onPress={loadData}
+          onPress={() => loadData(true)}
           activeOpacity={0.8}
         >
           <Ionicons name="refresh" size={16} color="#FFFFFF" />
@@ -534,11 +571,16 @@ export default function CastDetails() {
         {/* Lightweight Static Hero Backdrop (Matched with Movie DetailPage) */}
         <View style={[styles.heroContainer, { height: HEADER_HEIGHT, backgroundColor: detailsBg }]} pointerEvents="none">
           <Image
-            source={{ uri: getImageUrl(heroImagePath, 'w500') }}
+            source={{ uri: heroImageUrl || undefined }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             cachePolicy="disk"
             priority="high"
+            onLoad={() => {
+              if (!palette && !paletteFailed && heroImageUrl) {
+                warmPalette(heroImageUrl);
+              }
+            }}
           />
           <LinearGradient
             colors={heroGradientColors}
@@ -548,9 +590,22 @@ export default function CastDetails() {
         </View>
 
         <ScrollView
+          ref={scrollRef}
           style={styles.fill}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 60 }}
+          onScroll={(e) => {
+            const y = e.nativeEvent?.contentOffset?.y ?? 0;
+            if (isRestoringScrollRef.current && y === 0) return;
+            if (!isScreenFocusedRef.current && y === 0) return;
+            scrollOffsetRef.current = y;
+          }}
+          scrollEventThrottle={16}
+          onContentSizeChange={(_w, h) => {
+            if (isRestoringScrollRef.current && scrollOffsetRef.current > 0 && h > scrollOffsetRef.current) {
+              scrollRef.current?.scrollTo({ y: scrollOffsetRef.current, animated: false });
+            }
+          }}
         >
         <View style={{ height: HEADER_HEIGHT - 30 }} />
 

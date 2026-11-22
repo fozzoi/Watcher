@@ -132,26 +132,19 @@ export function warmPalette(imageUrl?: string | null): void {
 }
 
 /**
- * Prefetch helper for navigation sites. Mirrors the exact URL choice the details
- * screens make (poster w185 → backdrop w300 → profile w185) so the warmed cache
- * key matches the one the details screen will ask for.
+ * Prefetch helper for navigation sites.
+ * Kept as a no-op so card presses never trigger extra low-res image network requests.
+ * Ambient color is picked directly from the hero image already loaded on screen.
  */
 export function warmPaletteForMedia(
-  item?: {
+  _item?: {
     poster_path?: string | null;
     backdrop_path?: string | null;
     profile_path?: string | null;
   } | null
 ): void {
-  if (!item) return;
-
-  if (item.poster_path) {
-    warmPalette(getImageUrl(item.poster_path, 'w185'));
-  } else if (item.backdrop_path) {
-    warmPalette(getImageUrl(item.backdrop_path, 'w300'));
-  } else if (item.profile_path) {
-    warmPalette(getImageUrl(item.profile_path, 'w185'));
-  }
+  // No-op: Do not pull an extra image over the network.
+  return;
 }
 
 async function decodeAndExtract(imageUrl: string): Promise<ExtractedPalette | null> {
@@ -223,8 +216,9 @@ async function decodeAndExtract(imageUrl: string): Promise<ExtractedPalette | nu
     let totalSamples = 0;
 
     const len = pixels.length;
-    // Step by 16 bytes = every 4th pixel for speed & broad spatial sampling
-    for (let i = 0; i < len; i += 16) {
+    // Step by 32 bytes for large images (>500KB pixels) or 16 bytes for speed & broad spatial sampling
+    const step = len > 500000 ? 32 : 16;
+    for (let i = 0; i < len; i += step) {
       const a = pixels[i + 3];
       if (a < 180) continue;
 

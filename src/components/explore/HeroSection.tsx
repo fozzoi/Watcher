@@ -4,7 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Reanimated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import Reanimated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { getImageUrl, type TMDBResult } from '../../tmdb';
 import QuickAddButton from '../shared/QuickAddButton';
 import { HERO_HEIGHT, HORIZONTAL_MARGIN } from './ExploreConstants';
@@ -55,18 +55,24 @@ const LiquidIndicator = memo(function LiquidIndicator({
   onSelect: (i: number) => void;
 }) {
   const { colors } = useAppTheme();
-  const animatedBlobStyle = useAnimatedStyle(() => {
+  const blobX = useSharedValue(index * PITCH + BLOB_INSET);
+
+  useEffect(() => {
     const targetX = index * PITCH + BLOB_INSET;
+    blobX.value = reduceMotion
+      ? targetX
+      : withSpring(targetX, { damping: 20, stiffness: 200 });
+  }, [index, reduceMotion, blobX]);
+
+  const animatedBlobStyle = useAnimatedStyle(() => {
     return {
       transform: [
         {
-          translateX: reduceMotion
-            ? targetX
-            : withSpring(targetX, { damping: 20, stiffness: 200 }),
+          translateX: blobX.value,
         },
       ],
     };
-  }, [index, reduceMotion]);
+  });
 
   return (
     <View style={{ width: items.length * PITCH, height: HIT_H }}>
