@@ -11,9 +11,17 @@ import { HERO_HEIGHT, HORIZONTAL_MARGIN } from './ExploreConstants';
 import { observable } from '@legendapp/state';
 import { useSelector } from '@legendapp/state/react';
 import { useAppTheme } from '../../theme';
-import { warmPaletteForMedia, useImagePalette } from '../../utils/colorExtractor';
+import { warmPaletteForMedia, useImagePalette, extractPaletteFromUrl } from '../../utils/colorExtractor';
 
 export const heroScroll$ = observable({ isScrolledOut: false });
+export interface HeroCarouselState {
+  items: TMDBResult[];
+  activeIndex: number;
+}
+export const heroCarousel$ = observable<HeroCarouselState>({
+  items: [],
+  activeIndex: 0,
+});
 export const heroActiveItem$ = observable<{ item: TMDBResult | null }>({ item: null });
 
 const MAX_SLIDES = 8;
@@ -195,9 +203,23 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
 
   useEffect(() => {
     if (slides.length > 0) {
+      heroCarousel$.items.set(slides);
+      heroCarousel$.activeIndex.set(activeIndex);
       heroActiveItem$.item.set(slides[activeIndex] || null);
     }
   }, [slides, activeIndex]);
+
+  useEffect(() => {
+    if (!slides || slides.length === 0) return;
+    slides.forEach((item) => {
+      const path = item?.poster_path || item?.backdrop_path;
+      if (path) {
+        const thumbUrl = getImageUrl(path, 'w92');
+        Image.prefetch(thumbUrl);
+        extractPaletteFromUrl(thumbUrl);
+      }
+    });
+  }, [slides]);
 
   useEffect(() => { setIndex((p) => Math.min(p, Math.max(0, slides.length - 1))); }, [slides.length]);
 

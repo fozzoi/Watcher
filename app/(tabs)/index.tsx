@@ -228,6 +228,29 @@ interface ExploreSearchControllerProps {
   personalizedItems?: any[];
 }
 
+function toTranslucentColor(color: string, alpha: number): string {
+  if (!color) return `rgba(28, 28, 30, ${alpha})`;
+  if (color.startsWith('#')) {
+    const hex = color.slice(1);
+    if (hex.length === 3) {
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+  }
+  if (color.startsWith('rgb(')) {
+    return color.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+  }
+  return color;
+}
+
 const ExploreSearchController = memo(
   ({
     isExpanded,
@@ -403,11 +426,11 @@ const ExploreSearchController = memo(
     );
     const pillStyle = useMemo(
       () => ({
-        backgroundColor: colors.surfaceContainer,
-        borderColor: isDark ? colors.outlineVariant : 'rgba(0, 0, 0, 0.08)',
+        backgroundColor: toTranslucentColor(colors.surfaceContainer, isDark ? 0.72 : 0.80),
+        borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.08)',
         borderWidth: StyleSheet.hairlineWidth,
       }),
-      [colors.surfaceContainer, colors.outlineVariant, isDark]
+      [colors.surfaceContainer, isDark]
     );
     const inputStyle = useMemo(() => ({ color: colors.text }), [colors.text]);
 
@@ -1234,7 +1257,7 @@ const ExplorePage = () => {
       <StatusBar translucent backgroundColor="transparent" barStyle={statusBarTheme} />
 
       {/* Dynamic Animated Ambient Mesh Aurora (Flows from above search bar & behind hero, scrolls with feed) */}
-      <ExploreAmbientMeshBackdrop scrollY={lastScrollY} initialItem={trendingToday[0]} />
+      <ExploreAmbientMeshBackdrop scrollY={lastScrollY} items={trendingToday} initialItem={trendingToday[0]} />
 
       {/* Main Smooth ScrollView with Progressive Tier Mounts (Matched with Detail Page) */}
       <Animated.ScrollView

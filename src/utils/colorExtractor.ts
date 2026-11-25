@@ -5,6 +5,7 @@ import { getActiveAmbientTheming } from '../theme/ThemeContext';
 
 export interface ExtractedPalette {
   dominant: string;
+  rawDominant?: string;
   pastelDark: string;
   pastelLight: string;
   gradient: [string, string, string];
@@ -275,18 +276,19 @@ async function decodeAndExtract(imageUrl: string): Promise<ExtractedPalette | nu
     let avgB = 0;
     let h = 0;
     let s = 0;
+    let l = 0;
 
     if (bestBin !== -1 && binRgb[bestBin].count > 0) {
       avgR = Math.round(binRgb[bestBin].r / binRgb[bestBin].count);
       avgG = Math.round(binRgb[bestBin].g / binRgb[bestBin].count);
       avgB = Math.round(binRgb[bestBin].b / binRgb[bestBin].count);
-      [h, s] = rgbToHsl(avgR, avgG, avgB);
+      [h, s, l] = rgbToHsl(avgR, avgG, avgB);
     } else if (totalSamples > 0) {
       // Atmospheric monochrome or neutral backdrop
       avgR = Math.round(totalR / totalSamples);
       avgG = Math.round(totalG / totalSamples);
       avgB = Math.round(totalB / totalSamples);
-      [h, s] = rgbToHsl(avgR, avgG, avgB);
+      [h, s, l] = rgbToHsl(avgR, avgG, avgB);
     } else {
       // Default sleek slate
       avgR = 24;
@@ -294,6 +296,7 @@ async function decodeAndExtract(imageUrl: string): Promise<ExtractedPalette | nu
       avgB = 34;
       h = 220;
       s = 0.15;
+      l = 0.12;
     }
 
     // Refined Pastel Dark Color:
@@ -327,6 +330,7 @@ async function decodeAndExtract(imageUrl: string): Promise<ExtractedPalette | nu
 
     const palette: ExtractedPalette = {
       dominant: hslToHex(h, Math.max(0.60, s), 0.50),
+      rawDominant: hslToHex(h, s, l),
       pastelDark,
       pastelLight,
       gradient,
