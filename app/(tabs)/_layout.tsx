@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { BlurView, BlurTargetView } from 'expo-blur';
 import { useAppTheme, shadows } from '../../src/theme';
 import { GradientBlur } from '../../src/components/shared/GradientBlur';
+import { MediaQuickActionSheet } from '../../src/components/shared/MediaQuickActionSheet';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DOCK_MARGIN_BOTTOM = Platform.OS === 'ios' ? 40 : 35;
@@ -83,48 +84,64 @@ const CustomTabBar = ({ targetRef, targetReady }: { targetRef: any; targetReady:
     }, [targetReady, targetRef]);
 
     useEffect(() => {
-        const sub = DeviceEventEmitter.addListener('exploreScroll', (offsetY) => {
-            const diff = offsetY - lastScrollY.current;
+        const animateTabBar = (shrink: boolean) => {
+            if (shrink === isShrunk.current) return;
+            isShrunk.current = shrink;
+            Animated.parallel([
+                Animated.timing(scaleAnim, {
+                    toValue: shrink ? 0.8 : 1,
+                    duration: 150,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(translateYAnim, {
+                    toValue: shrink ? TAB_BAR_HEIGHT * 0.1 : 0,
+                    duration: 150,
+                    useNativeDriver: true,
+                }),
+            ]).start();
+        };
 
-            if (Math.abs(diff) > 200) {
-                lastScrollY.current = offsetY;
-                if (offsetY <= 50 && isShrunk.current) {
-                    isShrunk.current = false;
-                    Animated.parallel([
-                        Animated.timing(scaleAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
-                        Animated.timing(translateYAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-                    ]).start();
-                } else if (offsetY > 50 && !isShrunk.current) {
-                    isShrunk.current = true;
-                    Animated.parallel([
-                        Animated.timing(scaleAnim, { toValue: 0.8, duration: 150, useNativeDriver: true }),
-                        Animated.timing(translateYAnim, { toValue: TAB_BAR_HEIGHT * 0.1, duration: 150, useNativeDriver: true }),
-                    ]).start();
+        const sub = DeviceEventEmitter.addListener('exploreScroll', (payload: any) => {
+            // Direct explicit shrink / expand command
+            if (typeof payload === 'object' && payload !== null && typeof payload.isShrunk === 'boolean') {
+                animateTabBar(payload.isShrunk);
+                if (typeof payload.y === 'number') {
+                    lastScrollY.current = payload.y;
                 }
                 return;
             }
 
-            if (offsetY > lastScrollY.current && offsetY > 50) {
-                if (!isShrunk.current) {
-                    isShrunk.current = true;
-                    Animated.parallel([
-                        Animated.timing(scaleAnim, { toValue: 0.8, duration: 150, useNativeDriver: true }),
-                        Animated.timing(translateYAnim, { toValue: TAB_BAR_HEIGHT * 0.1, duration: 150, useNativeDriver: true }),
-                    ]).start();
-                }
-            } else if (offsetY < lastScrollY.current || offsetY <= 50) {
-                if (isShrunk.current) {
-                    isShrunk.current = false;
-                    Animated.parallel([
-                        Animated.timing(scaleAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
-                        Animated.timing(translateYAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-                    ]).start();
-                }
+            // Numeric offset handling (continuous scroll from Search/Watchlist)
+            const offsetY = typeof payload === 'number' ? payload : 0;
+            if (offsetY <= 50) {
+                lastScrollY.current = offsetY;
+                animateTabBar(false);
+                return;
+            }
+
+            const diff = offsetY - lastScrollY.current;
+            if (diff > 8) {
+                animateTabBar(true);
+            } else if (diff < -8) {
+                animateTabBar(false);
             }
             lastScrollY.current = offsetY;
         });
+
         return () => sub.remove();
     }, [scaleAnim, translateYAnim]);
+
+    useEffect(() => {
+        // Always reset / expand tab bar on route navigation
+        if (isShrunk.current) {
+            isShrunk.current = false;
+            Animated.parallel([
+                Animated.timing(scaleAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
+                Animated.timing(translateYAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+            ]).start();
+        }
+        lastScrollY.current = 0;
+    }, [pathname, scaleAnim, translateYAnim]);
 
     // Hide dock when user is on aichat
     if (pathname === '/aichat') {
@@ -276,6 +293,9 @@ export default function TabLayout() {
 
             {/* Sibling: Completely outside BlurTargetView to prevent native Dimezis recursion */}
             <CustomTabBar targetRef={targetRef} targetReady={targetReady} />
+
+            {/* Global Context Quick Action Sheet */}
+            <MediaQuickActionSheet />
 
             {/* Status-bar edge: content scrolls under a frosted fade instead of a hard cut */}
             <GradientBlur

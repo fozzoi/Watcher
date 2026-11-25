@@ -29,7 +29,7 @@ const paletteCache = new Map<string, ExtractedPalette>();
 // therefore share ONE image download instead of racing two of them.
 const inFlight = new Map<string, Promise<ExtractedPalette | null>>();
 
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+export function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   r /= 255;
   g /= 255;
   b /= 255;
@@ -58,7 +58,7 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   return [h * 360, s, l];
 }
 
-function hslToHex(h: number, s: number, l: number): string {
+export function hslToHex(h: number, s: number, l: number): string {
   s = Math.max(0, Math.min(1, s));
   l = Math.max(0, Math.min(1, l));
   const c = (1 - Math.abs(2 * l - 1)) * s;
@@ -96,6 +96,16 @@ function hslToHex(h: number, s: number, l: number): string {
 
   const toHex = (val: number) => Math.round((val + m) * 255).toString(16).padStart(2, '0');
   return '#' + toHex(r) + toHex(g) + toHex(b);
+}
+
+export function hexToHsl(hex: string): [number, number, number] {
+  if (!hex || typeof hex !== 'string') return [0, 0, 0];
+  const clean = hex.replace('#', '');
+  if (clean.length < 6) return [0, 0, 0];
+  const r = parseInt(clean.substring(0, 2), 16);
+  const g = parseInt(clean.substring(2, 4), 16);
+  const b = parseInt(clean.substring(4, 6), 16);
+  return rgbToHsl(r, g, b);
 }
 
 /**
@@ -350,34 +360,46 @@ export function useImagePalette(imageUrl?: string | null): {
   loading: boolean;
   failed: boolean;
 } {
-  const [palette, setPalette] = useState<ExtractedPalette | null>(() => {
-    return imageUrl && paletteCache.has(imageUrl) ? paletteCache.get(imageUrl)! : null;
-  });
-  const [failed, setFailed] = useState(false);
+  const [paletteState, setPaletteState] = useState<{
+    url: string | null | undefined;
+    palette: ExtractedPalette | null;
+    failed: boolean;
+  }>(() => ({
+    url: imageUrl,
+    palette: imageUrl && paletteCache.has(imageUrl) ? paletteCache.get(imageUrl)! : null,
+    failed: false,
+  }));
+
+  // Synchronously sync state during render when imageUrl changes (prevents cascading re-renders)
+  let currentPalette = paletteState.palette;
+  let currentFailed = paletteState.failed;
+
+  if (paletteState.url !== imageUrl) {
+    const cached = imageUrl && paletteCache.has(imageUrl) ? paletteCache.get(imageUrl)! : null;
+    currentPalette = cached;
+    currentFailed = false;
+    setPaletteState({
+      url: imageUrl,
+      palette: cached,
+      failed: false,
+    });
+  }
 
   useEffect(() => {
-    setFailed(false);
+    if (!imageUrl) return;
 
-    if (!imageUrl) {
-      setPalette(null);
-      return;
-    }
-
-    const cached = paletteCache.get(imageUrl);
-    if (cached) {
-      setPalette(cached);
-      return;
-    }
-
-    // New, uncached image: clear any stale palette while the new one extracts.
-    setPalette(null);
+    // Already cached in memory; no async extraction needed
+    if (paletteCache.has(imageUrl)) return;
 
     let isMounted = true;
 
     extractPaletteFromUrl(imageUrl).then((result) => {
       if (!isMounted) return;
-      setPalette(result);
-      if (!result) setFailed(true);
+      setPaletteState({
+        url: imageUrl,
+        palette: result,
+        failed: !result,
+      });
     });
 
     return () => {
@@ -385,7 +407,7 @@ export function useImagePalette(imageUrl?: string | null): {
     };
   }, [imageUrl]);
 
-  const loading = Boolean(imageUrl) && !palette && !failed;
+  const loading = Boolean(imageUrl) && !currentPalette && !currentFailed;
 
-  return { palette, loading, failed };
+  return { palette: currentPalette, loading, failed: currentFailed };
 }

@@ -1,8 +1,9 @@
 // src/components/shared/MovieCard.tsx
 import React, { memo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { getImageUrl } from '../../tmdb';
 import QuickAddButton from './QuickAddButton';
 import { EXPLORE_CARD_WIDTH, SEARCH_CARD_WIDTH, GAP_SIZE } from '../explore/ExploreConstants';
@@ -14,10 +15,11 @@ interface MovieCardProps {
   isSearchMode?: boolean;
   isAdded?: boolean;
   toggleWatchlist?: (item: any) => void;
+  onLongPress?: () => void;
 }
 
 const MovieCard = memo(
-  ({ item, onPress, isSearchMode = false, isAdded, toggleWatchlist }: MovieCardProps) => {
+  ({ item, onPress, isSearchMode = false, isAdded, toggleWatchlist, onLongPress }: MovieCardProps) => {
     const { colors, isDark } = useAppTheme();
     if (!item || !item.id) return null;
 
@@ -32,6 +34,15 @@ const MovieCard = memo(
       <TouchableOpacity
         activeOpacity={0.9}
         onPress={onPress}
+        onLongPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          if (onLongPress) {
+            onLongPress();
+          } else {
+            DeviceEventEmitter.emit('open_media_quick_action', item);
+          }
+        }}
+        delayLongPress={320}
         style={{
           width: cardWidth,
           marginRight: isSearchMode ? 0 : GAP_SIZE,

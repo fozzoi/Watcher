@@ -18,7 +18,7 @@ import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { flushPendingCloudProgressSync, getProgress, saveProgress, WatchProgress } from '../src/utils/progress';
+import { flushPendingCloudProgressSync, flushPendingProgress, getProgress, saveProgress, saveProgressDebounced, WatchProgress } from '../src/utils/progress';
 import { getPlayerPreferences, savePlayerPreferences } from '../src/utils/playerPreferences';
 import type { PlayerProvider, VideoFitMode } from '../src/utils/playerPreferences';
 import { findAdjacentEpisode, parseEpisodePosition, parseSeasonEpisodeCounts } from '../src/utils/playerEpisodes';
@@ -736,6 +736,7 @@ export default function Player() {
   };
 
   const flushProgress = async () => {
+    await flushPendingProgress();
     const { position, duration } = latestPositionRef.current;
     const saved = progressRef.current;
     if (!saved && position <= 0) {
@@ -748,13 +749,18 @@ export default function Player() {
     await flushPendingCloudProgressSync();
   };
 
-  const handleSaveProgress = async (position = 0, duration = 0, completed?: boolean) => {
+  const handleSaveProgress = async (position = 0, duration = 0, completed?: boolean, debounced = false) => {
     const isDone = completed !== undefined ? completed : (duration > 0 && ((position / duration >= 0.9) || (duration - position <= 60 && position >= 30)));
-    await saveProgress({
+    const progressData = {
       tmdbId, mediaType, title, poster,
       lastSeason: season, lastEpisode: episode,
       position, duration, completed: isDone, updatedAt: Date.now(), sourceKey,
-    });
+    };
+    if (debounced && !isDone) {
+      await saveProgressDebounced(progressData, 5000);
+    } else {
+      await saveProgress(progressData);
+    }
   };
 
   const handleExit = () => {
@@ -914,7 +920,7 @@ export default function Player() {
                   position: pos, duration: dur, updatedAt: Date.now(),
                 };
                 latestPositionRef.current = { position: pos, duration: dur };
-                void handleSaveProgress(pos, dur);
+                void handleSaveProgress(pos, dur, undefined, true);
               }
             } catch {
               // Ignore non-progress messages

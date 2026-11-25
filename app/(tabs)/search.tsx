@@ -4,7 +4,7 @@ import {
   ScrollView, TouchableOpacity, TextInput, 
   Keyboard, Text, BackHandler,
   LayoutAnimation, Platform, UIManager, Dimensions,
-  ToastAndroid
+  ToastAndroid, DeviceEventEmitter
 } from "react-native";
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -427,9 +427,7 @@ export default function Index() {
                 scrollEventThrottle={16}
                 onScroll={(e) => {
                     const y = e.nativeEvent.contentOffset.y;
-                    import('react-native').then(({ DeviceEventEmitter }) => {
-                        DeviceEventEmitter.emit('exploreScroll', y);
-                    });
+                    DeviceEventEmitter.emit('exploreScroll', y);
                 }}
             >
                 <View style={styles.resultsHeader}>

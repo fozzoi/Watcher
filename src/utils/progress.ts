@@ -201,6 +201,57 @@ export const saveProgress = async (progress: WatchProgress & { sourceKey?: strin
   return operation;
 };
 
+// --- Debounced Progress Writing ---
+let pendingDebouncedProgress: (WatchProgress & { sourceKey?: string }) | null = null;
+let progressDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let lastProgressSaveTime = 0;
+
+/**
+ * Saves progress with debouncing (default 5000ms interval) during continuous playback.
+ * If completed is true, saves immediately.
+ */
+export const saveProgressDebounced = async (
+  progress: WatchProgress & { sourceKey?: string },
+  intervalMs: number = 5000,
+): Promise<void> => {
+  pendingDebouncedProgress = progress;
+
+  if (progress.completed) {
+    await flushPendingProgress();
+    return;
+  }
+
+  const now = Date.now();
+  if (now - lastProgressSaveTime >= intervalMs) {
+    await flushPendingProgress();
+    return;
+  }
+
+  if (!progressDebounceTimer) {
+    const remainingTime = Math.max(100, intervalMs - (now - lastProgressSaveTime));
+    progressDebounceTimer = setTimeout(() => {
+      progressDebounceTimer = null;
+      void flushPendingProgress();
+    }, remainingTime);
+  }
+};
+
+/**
+ * Immediately flushes any debounced progress to disk (called on pause, exit, backgrounding).
+ */
+export const flushPendingProgress = async (): Promise<void> => {
+  if (progressDebounceTimer) {
+    clearTimeout(progressDebounceTimer);
+    progressDebounceTimer = null;
+  }
+  if (pendingDebouncedProgress) {
+    const toSave = pendingDebouncedProgress;
+    pendingDebouncedProgress = null;
+    lastProgressSaveTime = Date.now();
+    await saveProgress(toSave);
+  }
+};
+
 // Get progress for a specific item
 export const getProgress = async (
   tmdbId: number,

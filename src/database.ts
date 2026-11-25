@@ -35,6 +35,14 @@ const notifySavedItemsUiListeners = (type: SavedItemType) => {
 
 export const initDb = () => {
   try {
+    // Enable Write-Ahead Logging (WAL) and performance optimizations for mobile SQLite
+    db.execSync(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+      PRAGMA cache_size = -64000;
+      PRAGMA temp_store = MEMORY;
+    `);
+
     db.execSync(`
       CREATE TABLE IF NOT EXISTS saved_items (
         id TEXT PRIMARY KEY,

@@ -62,6 +62,8 @@ import { getUserPreferences } from '../../src/userPreferences';
 import SkeletonHero from '../../src/components/explore/SkeletonHero';
 import HeroSection, { heroScroll$ } from '../../src/components/explore/HeroSection';
 import GenreFilter from '../../src/components/explore/GenreFilter';
+import ContinueWatchingShelf from '../../src/components/explore/ContinueWatchingShelf';
+import ExploreAmbientMeshBackdrop from '../../src/components/explore/ExploreAmbientMeshBackdrop';
 import MediaCarousel from '../../src/components/shared/MediaCarousel';
 import RankedTop10Carousel from '../../src/components/explore/RankedTop10Carousel';
 import SpotlightCarousel from '../../src/components/explore/SpotlightCarousel';
@@ -70,6 +72,7 @@ import SearchResultsList from '../../src/components/search/SearchResultsList';
 import SearchEmptyState from '../../src/components/search/SearchEmptyState';
 import { HORIZONTAL_MARGIN, GENRE_DATA, POPULAR_FRANCHISE_COLLECTIONS } from '../../src/components/explore/ExploreConstants';
 import { useAppTheme, shadows } from '../../src/theme';
+import { getAllProgress, WatchProgress } from '../../src/utils/progress';
 
 /* =========================================================================
    PERFORMANCE HELPERS (Aligned with Movie & Cast Detail Pages)
@@ -102,8 +105,8 @@ type ExploreSection = {
   eyebrow?: string;
 };
 
-const emitExploreScroll = (y: number) => {
-  DeviceEventEmitter.emit('exploreScroll', y);
+const emitExploreScroll = (payload: number | { isShrunk: boolean; y?: number }) => {
+  DeviceEventEmitter.emit('exploreScroll', payload);
 };
 
 const updateHeroScrollOut = (isOut: boolean) => {
@@ -559,6 +562,27 @@ const ExplorePage = () => {
 
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
   const [forYouShelves, setForYouShelves] = useState<ForYouShelf[]>(() => getForYouShelvesSync());
+  const [continueWatchingItems, setContinueWatchingItems] = useState<WatchProgress[]>([]);
+
+  const loadContinueWatching = useCallback(async () => {
+    try {
+      const all = await getAllProgress();
+      const unfinished = all.filter(
+        (item) => !item.completed && ((item.position && item.position > 15) || (item.lastEpisode && item.lastEpisode > 1))
+      );
+      setContinueWatchingItems(unfinished);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadContinueWatching();
+    const sub = DeviceEventEmitter.addListener('watcher_watch_progress_changed', () => {
+      void loadContinueWatching();
+    });
+    return () => sub.remove();
+  }, [loadContinueWatching]);
 
   // Progressive Idle Staging: Tier 0 (Immediate Launch) -> Tier 1 (200ms)
   // -> Tier 2 lead (500ms) -> Tier 2 rest (850ms).
@@ -624,7 +648,7 @@ const ExplorePage = () => {
   useEffect(() => {
     if (isExpanded) {
       searchBarTranslateY.value = withTiming(0, { duration: 150 });
-      DeviceEventEmitter.emit('exploreScroll', 0);
+      DeviceEventEmitter.emit('exploreScroll', { isShrunk: false, y: 0 });
       isTabBarShrunkShared.value = false;
       isBarHidden.value = false;
     }
@@ -803,11 +827,12 @@ const ExplorePage = () => {
 
   useFocusEffect(
     useCallback(() => {
-      DeviceEventEmitter.emit('exploreScroll', 0);
+      DeviceEventEmitter.emit('exploreScroll', { isShrunk: false, y: 0 });
       isTabBarShrunkShared.value = false;
       searchBarTranslateY.value = withTiming(0, { duration: 150 });
       isBarHidden.value = false;
       syncSavedStore();
+      void loadContinueWatching();
       if (pendingCacheRefreshRef.current) {
         pendingCacheRefreshRef.current = false;
         fetchContent(selectedGenre, true);
@@ -1150,10 +1175,10 @@ const ExplorePage = () => {
       // This eliminates the 12px bridge spam that caused initial scroll micro-stutter.
       if (currentY > 50 && diff > 8 && !isTabBarShrunkShared.value) {
         isTabBarShrunkShared.value = true;
-        runOnJS(emitExploreScroll)(currentY);
-      } else if ((currentY <= 50 || diff < -8) && isTabBarShrunkShared.value) {
+        runOnJS(emitExploreScroll)({ isShrunk: true, y: currentY });
+      } else if (diff < -8 && isTabBarShrunkShared.value) {
         isTabBarShrunkShared.value = false;
-        runOnJS(emitExploreScroll)(currentY);
+        runOnJS(emitExploreScroll)({ isShrunk: false, y: currentY });
       }
 
       // Pause hero autoplay and animations when scrolled completely off-screen (> 450px)
@@ -1169,11 +1194,15 @@ const ExplorePage = () => {
         runOnJS(advanceStagesOnScroll)();
       }
 
-      // 1. Always reveal search bar at the top
+      // 1. Always reveal search bar and expand tab bar at the top
       if (currentY <= 15) {
         if (isBarHidden.value) {
           isBarHidden.value = false;
           searchBarTranslateY.value = withTiming(0, { duration: 180 });
+        }
+        if (isTabBarShrunkShared.value) {
+          isTabBarShrunkShared.value = false;
+          runOnJS(emitExploreScroll)({ isShrunk: false, y: currentY });
         }
         return;
       }
@@ -1203,6 +1232,9 @@ const ExplorePage = () => {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle={statusBarTheme} />
+
+      {/* Dynamic Animated Ambient Mesh Aurora (Flows from above search bar & behind hero, scrolls with feed) */}
+      <ExploreAmbientMeshBackdrop scrollY={lastScrollY} initialItem={trendingToday[0]} />
 
       {/* Main Smooth ScrollView with Progressive Tier Mounts (Matched with Detail Page) */}
       <Animated.ScrollView
@@ -1259,6 +1291,16 @@ const ExplorePage = () => {
           </View>
         ) : !(contentLoading && !rawContent) && (
           <>
+            {/* 🍿 Continue Watching Shelf (Unfinished items with direct 1-tap resume) */}
+            {selectedGenre === 0 && continueWatchingItems.length > 0 && (
+              <ContinueWatchingShelf
+                items={continueWatchingItems}
+                onRemoveItem={(id) =>
+                  setContinueWatchingItems((prev) => prev.filter((p) => p.tmdbId !== id))
+                }
+              />
+            )}
+
             {/* TIER 0: Immediate Mount (First shelf below hero) */}
             {tier0Sections.map((item) => (
               <ExploreSectionItem

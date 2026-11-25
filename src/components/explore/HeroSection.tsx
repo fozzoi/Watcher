@@ -11,9 +11,10 @@ import { HERO_HEIGHT, HORIZONTAL_MARGIN } from './ExploreConstants';
 import { observable } from '@legendapp/state';
 import { useSelector } from '@legendapp/state/react';
 import { useAppTheme } from '../../theme';
-import { warmPaletteForMedia } from '../../utils/colorExtractor';
+import { warmPaletteForMedia, useImagePalette } from '../../utils/colorExtractor';
 
 export const heroScroll$ = observable({ isScrolledOut: false });
+export const heroActiveItem$ = observable<{ item: TMDBResult | null }>({ item: null });
 
 const MAX_SLIDES = 8;
 const AUTOPLAY_MS = 5000;
@@ -187,6 +188,16 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
   const isScrolledOut = useSelector(() => heroScroll$.isScrolledOut.get());
   const paused = userPaused || dragging || isScrolledOut;
   const activeIndex = slides.length ? Math.min(index, slides.length - 1) : 0;
+  const activeSlide = slides[activeIndex];
+  const imagePath = activeSlide ? (activeSlide.poster_path || activeSlide.backdrop_path || null) : null;
+  const activePosterUrl = imagePath ? getImageUrl(imagePath, 'w500') : null;
+  const { palette } = useImagePalette(activePosterUrl);
+
+  useEffect(() => {
+    if (slides.length > 0) {
+      heroActiveItem$.item.set(slides[activeIndex] || null);
+    }
+  }, [slides, activeIndex]);
 
   useEffect(() => { setIndex((p) => Math.min(p, Math.max(0, slides.length - 1))); }, [slides.length]);
 
