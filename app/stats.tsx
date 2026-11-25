@@ -21,7 +21,7 @@ import {
   batchSaveMediaCastCacheSync,
   CompactCastActor 
 } from '../src/database';
-import { getMediaCredits } from '../src/tmdb';
+import { getMediaCredits, getTmdbApiBaseUrl } from '../src/tmdb';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useAppTheme, ACCENT_COLOR, palette } from '../src/theme';
 
@@ -303,7 +303,7 @@ export default function StatsPage() {
             const chunk = missing.slice(i, i + BATCH_SIZE);
             let batchSucceeded = false;
             try {
-              const resp = await fetch('https://watcher-api-rho.vercel.app/api/tmdb', {
+              const resp = await fetch(getTmdbApiBaseUrl(), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

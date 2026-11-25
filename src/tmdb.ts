@@ -22,7 +22,19 @@ const isAndroid = Platform?.OS === 'android';
 // 1. GLOBAL CONFIGURATION & SETUP
 // ==========================================
 
-const API_BASE_URL = "https://watcher-api-rho.vercel.app/api/tmdb";
+export const VERCEL_TMDB_API_BASE_URL = "https://watcher-api-rho.vercel.app/api/tmdb";
+export const CF_TMDB_API_BASE_URL =
+  process.env.EXPO_PUBLIC_CF_TMDB_API_URL || "https://watcher-cf.anuanoopthoppilanu.workers.dev/api/tmdb";
+
+/**
+ * Returns TMDB API base URL based on platform.
+ * Android routes to Cloudflare Worker, while other platforms remain on Vercel.
+ */
+export const getTmdbApiBaseUrl = (): string => {
+  return isAndroid ? (process.env.EXPO_PUBLIC_CF_TMDB_API_URL || CF_TMDB_API_BASE_URL) : VERCEL_TMDB_API_BASE_URL;
+};
+
+const API_BASE_URL = getTmdbApiBaseUrl();
 
 export type RequestPriority = 'high' | 'low';
 
