@@ -192,7 +192,13 @@ const WorldCinemaHub = memo(({ langData, savedIds, toggleWatchlist }: WorldCinem
       {/* Tappable Header to View All */}
       <TouchableOpacity activeOpacity={0.7} onPress={handleViewAll} style={styles.headerRow}>
         <View style={styles.titleWithIcon}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>World Cinema</Text>
+          <Text
+            style={[styles.sectionTitle, { color: colors.text }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            World Cinema
+          </Text>
           <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
         </View>
         <Text style={[styles.langCounter, { color: colors.textSecondary }]}>{availableLangs.length} Languages</Text>
@@ -279,17 +285,22 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   titleWithIcon: {
+    flex: 1,
+    flexShrink: 1,
+    marginRight: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
   sectionTitle: {
+    flexShrink: 1,
     color: '#FAFAFA',
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: -0.3,
   },
   langCounter: {
+    flexShrink: 0,
     color: '#9B9BA3',
     fontSize: 12,
     fontWeight: '600',
@@ -365,9 +376,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     gap: 4,
-    filter: [
-      { dropShadow: { offsetX: 0, offsetY: 1, standardDeviation: 3, color: 'rgba(0, 0, 0, 0.35)' } },
-    ],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 2,
   },
   ratingText: {
     fontSize: 11.5,

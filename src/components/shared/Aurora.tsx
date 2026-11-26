@@ -1,5 +1,5 @@
 // src/components/shared/Aurora.tsx
-import React, { memo, useMemo, useState, useCallback } from 'react';
+import React, { memo, useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -14,6 +14,9 @@ import {
   useFrameCallback,
   useDerivedValue,
 } from 'react-native-reanimated';
+
+const RENDER_SCALE = 0.25;
+const TARGET_FRAME_STEP_SEC = 1 / 24; // ~24fps keeps slow aurora drift fluid with 75-80% fewer GPU redraws
 
 /**
  * Aurora SkSL Runtime Effect Shader
@@ -226,7 +229,11 @@ export const Aurora = memo(function Aurora({
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     if (width > 0 && height > 0) {
-      setLayout({ width, height });
+      setLayout((prev) =>
+        Math.round(prev.width) === Math.round(width) && Math.round(prev.height) === Math.round(height)
+          ? prev
+          : { width, height }
+      );
     }
   }, []);
 
@@ -239,16 +246,39 @@ export const Aurora = memo(function Aurora({
     }
   }, []);
 
-  // Continuous frame timer running 100% on C++ UI thread via Reanimated
-  const clock = useSharedValue(0);
+  // Downscaled offscreen resolution scaled smoothly back up by GPU bilinear filtering (16x fewer pixels)
+  const scaledDims = useMemo(() => {
+    const sw = Math.max(1, Math.round(layout.width * RENDER_SCALE));
+    const sh = Math.max(1, Math.round(layout.height * RENDER_SCALE));
+    return {
+      width: sw,
+      height: sh,
+      resolution: [sw, sh] as [number, number],
+      scaleX: layout.width / sw,
+      scaleY: layout.height / sh,
+      left: (layout.width - sw) / 2,
+      top: (layout.height - sh) / 2,
+    };
+  }, [layout.width, layout.height]);
 
-  useFrameCallback((frameInfo) => {
-    if (paused) return;
+  // Continuous frame timer running on C++ UI thread, throttled & completely deactivated when paused
+  const clock = useSharedValue(0);
+  const accumDt = useSharedValue(0);
+
+  const frameCallback = useFrameCallback((frameInfo) => {
     const dt = frameInfo.timeSincePreviousFrame
       ? Math.min(0.05, frameInfo.timeSincePreviousFrame / 1000)
       : 1 / 60;
-    clock.value += dt * speed;
-  });
+    accumDt.value += dt;
+    if (accumDt.value >= TARGET_FRAME_STEP_SEC) {
+      clock.value += accumDt.value * speed;
+      accumDt.value = 0;
+    }
+  }, !paused && time === undefined);
+
+  useEffect(() => {
+    frameCallback.setActive(!paused && time === undefined);
+  }, [frameCallback, paused, time]);
 
   // Parse color stops into normalized RGB vectors
   const parsedColors = useMemo(() => {
@@ -279,10 +309,21 @@ export const Aurora = memo(function Aurora({
     };
   }, [colorStops]);
 
+  const amp = Math.max(0, amplitude);
+  const blnd = Math.max(0, Math.min(1, blend));
+  const hgt = Math.max(0, Math.min(1, height));
+  const scl = Math.max(0.1, scale);
+  const glw = Math.max(0, glow);
+  const brt = Math.max(0, brightness);
+  const lyrs = Math.max(1, Math.min(3, layers));
+  const flp = direction === 'bottom' ? 1.0 : 0.0;
+  const opc = Math.max(0, Math.min(1, opacity));
+  const lm = lightMode ? 1.0 : 0.0;
+
   // Reactive SkSL uniforms
   const uniforms = useDerivedValue(() => {
     return {
-      uResolution: [layout.width, layout.height],
+      uResolution: scaledDims.resolution,
       uTime: time !== undefined ? time * speed * 0.1 : clock.value,
       uColor0: parsedColors.c0,
       uColor1: parsedColors.c1,
@@ -290,40 +331,32 @@ export const Aurora = memo(function Aurora({
       uColor3: parsedColors.c3,
       uColor4: parsedColors.c4,
       uStopCount: parsedColors.count,
-      uAmplitude: Math.max(0, amplitude),
-      uBlend: Math.max(0, Math.min(1, blend)),
-      uHeight: Math.max(0, Math.min(1, height)),
-      uScale: Math.max(0.1, scale),
-      uGlow: Math.max(0, glow),
-      uBrightness: Math.max(0, brightness),
-      uLayers: Math.max(1, Math.min(3, layers)),
-      uFlip: direction === 'bottom' ? 1.0 : 0.0,
-      uOpacity: Math.max(0, Math.min(1, opacity)),
-      uLightMode: lightMode ? 1.0 : 0.0,
+      uAmplitude: amp,
+      uBlend: blnd,
+      uHeight: hgt,
+      uScale: scl,
+      uGlow: glw,
+      uBrightness: brt,
+      uLayers: lyrs,
+      uFlip: flp,
+      uOpacity: opc,
+      uLightMode: lm,
     };
-  }, [
-    layout.width,
-    layout.height,
-    time,
-    speed,
-    clock,
-    parsedColors,
-    amplitude,
-    blend,
-    height,
-    scale,
-    glow,
-    brightness,
-    layers,
-    direction,
-    opacity,
-    lightMode,
-  ]);
+  }, [scaledDims, time, speed, clock, parsedColors, amp, blnd, hgt, scl, glw, brt, lyrs, flp, opc, lm]);
 
   return (
     <View style={[styles.container, style]} onLayout={onLayout} pointerEvents="none">
       {effect && layout.width > 0 && layout.height > 0 ? (
-        <Canvas style={StyleSheet.absoluteFill}>
+        <Canvas
+          style={{
+            position: 'absolute',
+            left: scaledDims.left,
+            top: scaledDims.top,
+            width: scaledDims.width,
+            height: scaledDims.height,
+            transform: [{ scaleX: scaledDims.scaleX }, { scaleY: scaledDims.scaleY }],
+          }}
+        >
           <Fill>
             <Shader source={effect} uniforms={uniforms} />
           </Fill>

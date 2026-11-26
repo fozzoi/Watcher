@@ -11,7 +11,7 @@ import { HERO_HEIGHT, HORIZONTAL_MARGIN } from './ExploreConstants';
 import { observable } from '@legendapp/state';
 import { useSelector } from '@legendapp/state/react';
 import { useAppTheme } from '../../theme';
-import { warmPaletteForMedia, useImagePalette, extractPaletteFromUrl } from '../../utils/colorExtractor';
+import { warmPaletteForMedia, extractPaletteFromUrl } from '../../utils/colorExtractor';
 
 export const heroScroll$ = observable({ isScrolledOut: false });
 export interface HeroCarouselState {
@@ -48,6 +48,7 @@ type Props = {
   items: TMDBResult[];
   toggleWatchlist: (item: TMDBResult) => void;
   isLoading?: boolean;
+  pausedExternal?: boolean;
 };
 
 // ── Liquid indicator ─────────────────────────────────────────────────────────
@@ -182,7 +183,7 @@ const FilmLayer = memo(function FilmLayer({ item, active, shouldRender, reduceMo
 });
 
 // ── Section ──────────────────────────────────────────────────────────────────
-export default memo(function HeroSection({ items, toggleWatchlist, isLoading = false }: Props) {
+export default memo(function HeroSection({ items, toggleWatchlist, isLoading = false, pausedExternal = false }: Props) {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const width = Math.max(1, screenWidth - HORIZONTAL_MARGIN * 2);
@@ -194,12 +195,8 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [reduceMotion, setReduceMotion] = useState(true);
   const isScrolledOut = useSelector(() => heroScroll$.isScrolledOut.get());
-  const paused = userPaused || dragging || isScrolledOut;
+  const paused = userPaused || dragging || isScrolledOut || pausedExternal;
   const activeIndex = slides.length ? Math.min(index, slides.length - 1) : 0;
-  const activeSlide = slides[activeIndex];
-  const imagePath = activeSlide ? (activeSlide.poster_path || activeSlide.backdrop_path || null) : null;
-  const activePosterUrl = imagePath ? getImageUrl(imagePath, 'w500') : null;
-  const { palette } = useImagePalette(activePosterUrl);
 
   useEffect(() => {
     if (slides.length > 0) {
@@ -209,9 +206,12 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
     }
   }, [slides, activeIndex]);
 
+  // Warm palette & w92 thumbnail only for active + immediate next slide instead of decoding all 8 at mount
   useEffect(() => {
     if (!slides || slides.length === 0) return;
-    slides.forEach((item) => {
+    const indicesToWarm = [activeIndex, (activeIndex + 1) % slides.length];
+    indicesToWarm.forEach((idx) => {
+      const item = slides[idx];
       const path = item?.poster_path || item?.backdrop_path;
       if (path) {
         const thumbUrl = getImageUrl(path, 'w92');
@@ -219,7 +219,7 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
         extractPaletteFromUrl(thumbUrl);
       }
     });
-  }, [slides]);
+  }, [slides, activeIndex]);
 
   useEffect(() => { setIndex((p) => Math.min(p, Math.max(0, slides.length - 1))); }, [slides.length]);
 
@@ -280,7 +280,7 @@ export default memo(function HeroSection({ items, toggleWatchlist, isLoading = f
             item={item}
             active={i === activeIndex}
             shouldRender={isNearby}
-            reduceMotion={reduceMotion || !focused || !foreground || isScrolledOut}
+            reduceMotion={reduceMotion || !focused || !foreground || isScrolledOut || pausedExternal}
             width={width}
             height={HERO_HEIGHT}
             onToggle={toggleWatchlist}

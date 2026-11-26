@@ -145,7 +145,13 @@ const SpotlightCarousel = memo(
     return (
       <View style={styles.sectionContainer}>
         <View style={styles.headerRow}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+          <Text
+            style={[styles.sectionTitle, { color: colors.text }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {title}
+          </Text>
         </View>
 
         <LegendList
@@ -188,6 +194,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
+    flex: 1,
+    flexShrink: 1,
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: -0.3,

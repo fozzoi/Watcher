@@ -8,10 +8,13 @@ import {
   ScrollView,
   FlatList,
   StatusBar,
+  Platform,
 } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
+import { useSelector } from '@legendapp/state/react';
+import { savedStore$ } from '../../state/savedState';
 import { useAppTheme } from '../../theme';
 import { getSavedItems, getExploreContentCacheSync } from '../../database';
 import { getForYouShelvesSync } from '../../services/tasteProfile';
@@ -42,24 +45,14 @@ const SearchEmptyState = memo(
   }: SearchEmptyStateProps) => {
     const { colors } = useAppTheme();
     const router = useRouter();
+    const savedIds = useSelector(() => savedStore$.savedIds.get());
 
-    const [localTrending, setLocalTrending] = useState<any[]>(() => {
-      if (trendingItems && trendingItems.length > 0) return trendingItems;
-      const cached = getExploreContentCacheSync(0);
-      return cached?.trendingMovies || cached?.heroMovies || [];
-    });
+    const [localTrending, setLocalTrending] = useState<any[]>(() =>
+      trendingItems && trendingItems.length > 0 ? trendingItems : []
+    );
 
-    useEffect(() => {
-      if (trendingItems && trendingItems.length > 0) {
-        setLocalTrending(trendingItems);
-      } else if (localTrending.length === 0) {
-        getTrendingToday('all', 1)
-          .then((items) => {
-            if (items && items.length > 0) setLocalTrending(items);
-          })
-          .catch(() => {});
-      }
-    }, [trendingItems]);
+    // Defer heavy card rails slightly so the search overlay + keyboard open instantaneously on frame 1
+    const [railsReady, setRailsReady] = useState(false);
 
     // Personalized search suggestions derived from user's taste, library & history
     const [personalizedSuggestions, setPersonalizedSuggestions] = useState<
@@ -67,51 +60,90 @@ const SearchEmptyState = memo(
     >([]);
 
     useEffect(() => {
-      const suggestions: Array<{ label: string; icon: any; query: string }> = [];
-
-      try {
-        // 1. User's saved favorite artists
-        const artists = getSavedItems('artist') || [];
-        artists.slice(0, 3).forEach((a: any) => {
-          const name = a.name || a.title;
-          if (name && !suggestions.some((s) => s.query.toLowerCase() === name.toLowerCase())) {
-            suggestions.push({
-              label: name,
-              icon: 'person-outline',
-              query: name,
-            });
-          }
-        });
-
-        // 2. Personalized Taste Shelves
-        const shelves = getForYouShelvesSync() || [];
-        shelves.slice(0, 2).forEach((s) => {
-          if (s.title && !suggestions.some((sug) => sug.query.toLowerCase() === s.title.toLowerCase())) {
-            suggestions.push({
-              label: s.title,
-              icon: 'sparkles-outline',
-              query: s.title,
-            });
-          }
-        });
-
-        // 3. User's recent watch history
-        const history = getSavedItems('history') || [];
-        history.slice(0, 2).forEach((h: any) => {
-          const title = h.title || h.name;
-          if (title && !suggestions.some((s) => s.query.toLowerCase() === title.toLowerCase())) {
-            suggestions.push({
-              label: title,
-              icon: 'film-outline',
-              query: title,
-            });
-          }
-        });
-      } catch (err) {
-        console.warn('Error extracting user search suggestions:', err);
+      if (trendingItems && trendingItems.length > 0) {
+        setLocalTrending(trendingItems);
       }
+    }, [trendingItems]);
 
-      setPersonalizedSuggestions(suggestions);
+    useEffect(() => {
+      let cancelled = false;
+
+      // Defer SQLite reads & heavy card rails until after the open transition & keyboard animation settle
+      const rafId = requestAnimationFrame(() => {
+        if (cancelled) return;
+
+        if ((!trendingItems || trendingItems.length === 0) && localTrending.length === 0) {
+          const cached = getExploreContentCacheSync(0);
+          const fallback = cached?.trendingMovies || cached?.heroMovies || [];
+          if (fallback.length > 0) {
+            setLocalTrending(fallback);
+          } else {
+            getTrendingToday('all', 1)
+              .then((items) => {
+                if (!cancelled && items && items.length > 0) setLocalTrending(items);
+              })
+              .catch(() => {});
+          }
+        }
+
+        const suggestions: Array<{ label: string; icon: any; query: string }> = [];
+        try {
+          // 1. User's saved favorite artists
+          const artists = getSavedItems('artist') || [];
+          artists.slice(0, 3).forEach((a: any) => {
+            const name = a.name || a.title;
+            if (name && !suggestions.some((s) => s.query.toLowerCase() === name.toLowerCase())) {
+              suggestions.push({
+                label: name,
+                icon: 'person-outline',
+                query: name,
+              });
+            }
+          });
+
+          // 2. Personalized Taste Shelves
+          const shelves = getForYouShelvesSync() || [];
+          shelves.slice(0, 2).forEach((s) => {
+            const cleanTitle = (s.title || '').replace(/^Because You Follow\s+/i, 'More from ');
+            if (cleanTitle && !suggestions.some((sug) => sug.query.toLowerCase() === cleanTitle.toLowerCase())) {
+              suggestions.push({
+                label: cleanTitle,
+                icon: 'sparkles-outline',
+                query: cleanTitle,
+              });
+            }
+          });
+
+          // 3. User's recent watch history
+          const history = getSavedItems('history') || [];
+          history.slice(0, 2).forEach((h: any) => {
+            const title = h.title || h.name;
+            if (title && !suggestions.some((s) => s.query.toLowerCase() === title.toLowerCase())) {
+              suggestions.push({
+                label: title,
+                icon: 'film-outline',
+                query: title,
+              });
+            }
+          });
+        } catch (err) {
+          console.warn('Error extracting user search suggestions:', err);
+        }
+
+        if (!cancelled && suggestions.length > 0) {
+          setPersonalizedSuggestions(suggestions);
+        }
+      });
+
+      const timer = setTimeout(() => {
+        if (!cancelled) setRailsReady(true);
+      }, 150);
+
+      return () => {
+        cancelled = true;
+        cancelAnimationFrame(rafId);
+        clearTimeout(timer);
+      };
     }, []);
 
     // Dynamic TMDB trending query chips
@@ -245,7 +277,7 @@ const SearchEmptyState = memo(
         )}
 
         {/* PERSONALIZED RECOMMENDATION CARDS RAIL */}
-        {personalizedItems && personalizedItems.length > 0 && (
+        {railsReady && personalizedItems && personalizedItems.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.titleWithIcon}>
@@ -256,14 +288,19 @@ const SearchEmptyState = memo(
 
             <FlatList
               horizontal
-              data={personalizedItems.slice(0, 10)}
+              data={personalizedItems.slice(0, 8)}
               keyExtractor={(item) => `search-rec-${item.id}`}
               showsHorizontalScrollIndicator={false}
               nestedScrollEnabled={true}
+              initialNumToRender={3}
+              maxToRenderPerBatch={3}
+              windowSize={3}
+              removeClippedSubviews={Platform.OS === 'android'}
               contentContainerStyle={styles.horizontalCardsContent}
               renderItem={({ item }) => (
                 <MovieCard
                   item={item}
+                  isAdded={savedIds ? savedIds.has(Number(item.id ?? item.media_id)) : false}
                   onPress={() => handleCardPress(item)}
                   toggleWatchlist={toggleWatchlist}
                 />
@@ -302,7 +339,7 @@ const SearchEmptyState = memo(
         </View>
 
         {/* TMDB TRENDING NOW CARDS RAIL */}
-        {localTrending.length > 0 && (
+        {railsReady && localTrending.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.titleWithIcon}>
@@ -313,14 +350,19 @@ const SearchEmptyState = memo(
 
             <FlatList
               horizontal
-              data={localTrending.slice(0, 10)}
+              data={localTrending.slice(0, 8)}
               keyExtractor={(item) => `search-trending-${item.id}`}
               showsHorizontalScrollIndicator={false}
               nestedScrollEnabled={true}
+              initialNumToRender={3}
+              maxToRenderPerBatch={3}
+              windowSize={3}
+              removeClippedSubviews={Platform.OS === 'android'}
               contentContainerStyle={styles.horizontalCardsContent}
               renderItem={({ item }) => (
                 <MovieCard
                   item={item}
+                  isAdded={savedIds ? savedIds.has(Number(item.id ?? item.media_id)) : false}
                   onPress={() => handleCardPress(item)}
                   toggleWatchlist={toggleWatchlist}
                 />

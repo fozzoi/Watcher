@@ -23,11 +23,11 @@ const MediaCarousel = memo(
     const router = useRouter();
     const { colors } = useAppTheme();
 
-    // Limit horizontal shelf items to top 15 to prevent memory bloat and excessive off-screen render
+    // Limit horizontal shelf items to top 10 to keep memory footprint lean and scrolls buttery-smooth
     const validData = useMemo(() => {
       if (!Array.isArray(data)) return [];
       const filtered = data.filter((item: any) => Boolean(item && item.id && (item.poster_path || item.backdrop_path)));
-      return filtered.slice(0, 15);
+      return filtered.slice(0, 10);
     }, [data]);
 
     const handleViewAll = useCallback(() => {
@@ -78,7 +78,13 @@ const MediaCarousel = memo(
     return (
       <View style={styles.sectionContainer}>
         <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+          <Text
+            style={[styles.sectionTitle, { color: colors.text }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {title}
+          </Text>
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={handleViewAll}
@@ -134,11 +140,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: HORIZONTAL_MARGIN,
   },
   sectionTitle: {
+    flex: 1,
+    flexShrink: 1,
+    marginRight: 12,
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: -0.3,
   },
   viewAllBtn: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 4,

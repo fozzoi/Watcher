@@ -131,6 +131,9 @@ const ViewAllPage = () => {
     } else {
       setPage(1);
       setHasMore(true);
+      if (data.length < 20) {
+        fetchContent(1, filters, false);
+      }
     }
     return () => {
       fetchReqIdRef.current += 1;

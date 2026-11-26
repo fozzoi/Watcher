@@ -1,6 +1,8 @@
 import React, { memo } from 'react';
 import { View, Text, ScrollView, FlatList, TouchableOpacity, Image, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSelector } from '@legendapp/state/react';
+import { savedStore$ } from '../../state/savedState';
 import { getImageUrl } from '../../tmdb';
 import MovieCard from '../shared/MovieCard';
 import { HORIZONTAL_MARGIN } from '../explore/ExploreConstants';
@@ -15,12 +17,17 @@ interface SearchResultsListProps {
   toggleWatchlist: (item: any) => void;
 }
 
-const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds, toggleWatchlist }: SearchResultsListProps) => {
+const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds: propSavedIds, toggleWatchlist }: SearchResultsListProps) => {
   const router = useRouter();
   const { colors } = useAppTheme();
   const collections = (tmdbResults || []).filter(r => r.media_type === 'collection');
   const movies = (tmdbResults || []).filter(r => r.media_type !== 'collection');
   const isShrunkRef = React.useRef(false);
+
+  // Reactively track watchlist status so search results immediately show active watchlist state
+  // and re-render reactively when an item is added or removed.
+  const reactiveSavedIds = useSelector(() => savedStore$.savedIds.get());
+  const effectiveSavedIds = propSavedIds || reactiveSavedIds;
 
   const handleScroll = (e: any) => {
     const y = e.nativeEvent.contentOffset.y;
@@ -111,13 +118,15 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
           <>
             <Text style={[styles.searchHeading, { color: colors.text }]}>Movies & Shows</Text>
             <View style={styles.searchResultsGrid}>
-              {movies.map((result: any) => (
-                <MovieCard
-                  key={result.id}
-                  item={result}
-                  isSearchMode={true}
-                  isAdded={savedIds ? savedIds.has(Number(result.id)) : false}
-                  toggleWatchlist={toggleWatchlist}
+              {movies.map((result: any) => {
+                const isAdded = effectiveSavedIds ? effectiveSavedIds.has(Number(result.id ?? result.media_id)) : false;
+                return (
+                  <MovieCard
+                    key={result.id}
+                    item={result}
+                    isSearchMode={true}
+                    isAdded={isAdded}
+                    toggleWatchlist={toggleWatchlist}
                   onPress={() => {
                     const mType = result.media_type || (result.first_air_date ? 'tv' : 'movie');
                     logTasteEvent({
@@ -142,8 +151,9 @@ const SearchResultsList = memo(({ peopleResults = [], tmdbResults = [], savedIds
                     });
                   }}
                 />
-              ))}
-            </View>
+              );
+            })}
+          </View>
           </>
         )}
       </ScrollView>

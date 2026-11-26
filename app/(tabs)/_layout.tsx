@@ -297,12 +297,10 @@ export default function TabLayout() {
             {/* Global Context Quick Action Sheet */}
             <MediaQuickActionSheet />
 
-            {/* Status-bar edge: content scrolls under a frosted fade instead of a hard cut */}
+            {/* Status-bar edge: soft scrim fade (avoids double MaskedView+dimezisBlurView pass over live feed) */}
             <GradientBlur
                 position="top"
-                height={insets.top + 50}
-                // intensity={70}
-                blurTarget={targetReady ? targetRef : null}
+                height={insets.top + 44}
             />
         </View>
     );

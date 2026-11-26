@@ -207,7 +207,7 @@ export const ContinueWatchingShelf = memo(function ContinueWatchingShelf({
         snapToInterval={CARD_WIDTH + 14}
         snapToAlignment="start"
       >
-        {items.map((item) => (
+        {items.slice(0, 10).map((item) => (
           <ContinueWatchingCard
             key={`cw-${item.tmdbId}-${item.lastSeason}-${item.lastEpisode}`}
             item={item}

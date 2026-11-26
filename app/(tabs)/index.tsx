@@ -18,6 +18,7 @@ import {
   Keyboard,
   TextInput,
   DeviceEventEmitter,
+  Platform,
 } from 'react-native';
 
 import { LoadingIndicator as SharedLoadingIndicator } from '../../src/components/shared/LoadingIndicator';
@@ -119,6 +120,9 @@ const updateHeroScrollOut = (isOut: boolean) => {
    MICRO-RENDERED SUB-COMPONENTS (Isolated State & Zero Root Re-renders)
    ========================================================================= */
 
+const EMPTY_SECTIONS: ExploreSection[] = [];
+const sectionKeyExtractor = (item: ExploreSection) => item.key;
+
 interface ExploreHeaderProps {
   contentLoading: boolean;
   rawContent: any;
@@ -126,6 +130,7 @@ interface ExploreHeaderProps {
   selectedGenre: number;
   onSelectGenre: (genreId: number) => void;
   toggleWatchlist: (item: any) => void;
+  isSearchExpanded?: boolean;
 }
 
 const ExploreHeader = memo(
@@ -136,6 +141,7 @@ const ExploreHeader = memo(
     selectedGenre,
     onSelectGenre,
     toggleWatchlist,
+    isSearchExpanded = false,
   }: ExploreHeaderProps) => {
     if (contentLoading && !rawContent) {
       return (
@@ -150,6 +156,7 @@ const ExploreHeader = memo(
         <HeroSection
           items={heroItems && heroItems.length ? heroItems : (rawContent?.heroMovies || rawContent?.trendingMovies || [])}
           toggleWatchlist={toggleWatchlist}
+          pausedExternal={isSearchExpanded}
         />
         <GenreFilter selectedGenre={selectedGenre} onSelectGenre={onSelectGenre} />
       </View>
@@ -159,7 +166,8 @@ const ExploreHeader = memo(
     prev.contentLoading === next.contentLoading &&
     prev.rawContent === next.rawContent &&
     prev.heroItems === next.heroItems &&
-    prev.selectedGenre === next.selectedGenre
+    prev.selectedGenre === next.selectedGenre &&
+    prev.isSearchExpanded === next.isSearchExpanded
 );
 
 const ExploreSectionItem = memo(
@@ -678,8 +686,8 @@ const ExplorePage = () => {
   }, [isExpanded]);
 
   useEffect(() => {
-    bgOpacity.value = withTiming(isExpanded ? 1 : 0, { duration: 180 });
-    searchWidthAnim.value = withTiming(isExpanded ? 1 : 0, { duration: 180 });
+    bgOpacity.value = withTiming(isExpanded ? 1 : 0, { duration: 140 });
+    searchWidthAnim.value = withTiming(isExpanded ? 1 : 0, { duration: 140 });
   }, [isExpanded]);
 
   const animatedBgStyle = useAnimatedStyle(() => ({
@@ -998,7 +1006,7 @@ const ExplorePage = () => {
         title,
         type: 'trendingtv',
         layout: 'standard',
-        data: rawContent.trendingTV.slice(0, 15),
+        data: rawContent.trendingTV.slice(0, 10),
       });
     }
 
@@ -1019,10 +1027,10 @@ const ExplorePage = () => {
       if (featuredActor) {
         sections.push({
           key: `actor-${featuredActor.actorId}`,
-          title: `Spotlight: ${featuredActor.actorName}`,
+          title: `More from ${featuredActor.actorName}`,
           type: `actor-${featuredActor.actorId}`,
           layout: 'standard',
-          data: featuredActor.items.slice(0, 15),
+          data: featuredActor.items.slice(0, 10),
         });
       }
     }
@@ -1034,26 +1042,30 @@ const ExplorePage = () => {
     if (!rawContent || selectedGenre !== 0 || becauseYouWatched.length === 0) return null;
     const primaryRec = becauseYouWatched[0];
     if (!primaryRec?.items?.length) return null;
-    // 6. Personalized "Because You Watched"
+    // 6. Personalized "More like [Title]"
+    const targetType = primaryRec.sourceId
+      ? `similar/${primaryRec.sourceMediaType || 'movie'}/${primaryRec.sourceId}`
+      : 'trendingmovies';
     return {
       key: 'byw-primary',
-      title: `Because You Watched ${primaryRec.sourceTitle}`,
-      type: 'becauseyouwatched',
+      title: `More like ${primaryRec.sourceTitle}`,
+      type: targetType,
       layout: 'standard',
-      data: primaryRec.items.slice(0, 15),
+      data: primaryRec.items.slice(0, 10),
     };
-  }, [becauseYouWatched, selectedGenre]);
+  }, [becauseYouWatched, selectedGenre, rawContent]);
 
   const secondaryShelfSection = useMemo<ExploreSection | null>(() => {
     if (!rawContent || selectedGenre !== 0 || forYouShelves.length <= 1) return null;
     const todayStr = new Date().toISOString().split('T')[0];
     const secondaryShelf = forYouShelves[1];
-    const items = (secondaryShelf.items || []).filter((item: any) => isMediaReleased(item, todayStr)).slice(0, 15);
+    const items = (secondaryShelf.items || []).filter((item: any) => isMediaReleased(item, todayStr)).slice(0, 10);
     if (items.length === 0) return null;
-    // 7. Secondary Taste Profile Collection ("Your Sweet Spot")
+    const normalizedTitle = (secondaryShelf.title || '').replace(/^Because You Follow\s+/i, 'More from ');
+    // 7. Secondary Taste Profile Collection ("Your Sweet Spot" / "More from [Actor]")
     return {
       key: `foryou-${secondaryShelf.shelfId}`,
-      title: secondaryShelf.title,
+      title: normalizedTitle,
       type: `foryou-${secondaryShelf.shelfId}`,
       layout: 'standard',
       eyebrow: secondaryShelf.subtitle || undefined,
@@ -1075,7 +1087,7 @@ const ExplorePage = () => {
         title: selectedGenreName ? `Trending in ${selectedGenreName}` : 'Trending Movies',
         type: 'popular',
         layout: 'standard',
-        data: rawContent.popularMovies.slice(0, 15),
+        data: rawContent.popularMovies.slice(0, 10),
       });
     }
 
@@ -1089,7 +1101,7 @@ const ExplorePage = () => {
         title: 'In Theaters Now',
         type: 'nowplaying',
         layout: 'standard',
-        data: (nowPlayingReleased.length > 0 ? nowPlayingReleased : rawContent.nowPlaying).slice(0, 15),
+        data: (nowPlayingReleased.length > 0 ? nowPlayingReleased : rawContent.nowPlaying).slice(0, 10),
       });
     }
 
@@ -1100,7 +1112,7 @@ const ExplorePage = () => {
         title: selectedGenreName ? `Top Rated ${selectedGenreName}` : 'All-Time Masterpieces',
         type: 'toprated',
         layout: 'standard',
-        data: rawContent.topRated.slice(0, 15),
+        data: rawContent.topRated.slice(0, 10),
       });
     }
 
@@ -1111,7 +1123,7 @@ const ExplorePage = () => {
         title: 'Nostalgic Hits',
         type: 'nostalgia',
         layout: 'standard',
-        data: rawContent.nostalgia.slice(0, 15),
+        data: rawContent.nostalgia.slice(0, 10),
       });
     }
 
@@ -1122,7 +1134,7 @@ const ExplorePage = () => {
         title: 'Animated Favorites',
         type: 'animatedmovies',
         layout: 'standard',
-        data: rawContent.animatedMovies.slice(0, 15),
+        data: rawContent.animatedMovies.slice(0, 10),
       });
     }
 
@@ -1133,7 +1145,7 @@ const ExplorePage = () => {
         title: 'Coming Soon to Theaters',
         type: 'upcoming',
         layout: 'standard',
-        data: rawContent.upcoming.slice(0, 15),
+        data: rawContent.upcoming.slice(0, 10),
       });
     }
 
@@ -1155,25 +1167,40 @@ const ExplorePage = () => {
     [topSection, spotlightSection, midSections, bywSection, secondaryShelfSection, tailSections]
   );
 
-  // Tier slicing (matching Progressive Staging pattern)
-  const tier0Sections = useMemo(() => exploreSections.slice(0, 1), [exploreSections]);
-  const tier1Sections = useMemo(() => exploreSections.slice(1, 4), [exploreSections]);
-  const tier2Sections = useMemo(() => exploreSections.slice(4), [exploreSections]);
-  const tier2LeadSections = useMemo(() => tier2Sections.slice(0, 4), [tier2Sections]);
-  const tier2LateSections = useMemo(() => tier2Sections.slice(4), [tier2Sections]);
+  // Progressive staging combined with FlatList virtualization:
+  // Keeps initial mount tiny while FlatList unmounts/clips off-screen shelves on scroll.
+  const visibleSections = useMemo(() => {
+    if (!rawContent) return EMPTY_SECTIONS;
+    if (renderStage === 0) return exploreSections.slice(0, 1);
+    if (renderStage === 1) return exploreSections.slice(0, 4);
+    return exploreSections;
+  }, [rawContent, exploreSections, renderStage]);
 
   const handleExploreAll = useCallback((item: ExploreSection) => {
     router.push({
       pathname: '/viewall',
       params: {
         title: item.title,
-        type: 'foryou-saga-all',
+        type: item.type,
       },
     });
   }, [router]);
 
-  const handleOpenSearch = useCallback(() => setIsExpanded(true), []);
-  const handleCloseSearch = useCallback(() => setIsExpanded(false), []);
+  const handleOpenSearch = useCallback(() => {
+    bgOpacity.value = withTiming(1, { duration: 140 });
+    searchWidthAnim.value = withTiming(1, { duration: 140 });
+    setIsExpanded(true);
+  }, [bgOpacity, searchWidthAnim]);
+
+  const handleCloseSearch = useCallback(() => {
+    bgOpacity.value = withTiming(0, { duration: 140 });
+    searchWidthAnim.value = withTiming(0, { duration: 140 });
+    setIsExpanded(false);
+  }, [bgOpacity, searchWidthAnim]);
+
+  const handleRemoveContinueWatching = useCallback((id: number) => {
+    setContinueWatchingItems((prev) => prev.filter((p) => p.tmdbId !== id));
+  }, []);
 
   // Stable references for the memoized search controller — the previous
   // inline `|| []` fallbacks allocated a new array every render, which broke
@@ -1252,40 +1279,38 @@ const ExplorePage = () => {
   // dark theme background => white icons, light theme background => dark icons.
   const statusBarTheme = isDark ? 'light-content' : 'dark-content';
 
-  return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar translucent backgroundColor="transparent" barStyle={statusBarTheme} />
+  const renderExploreSection = useCallback(
+    ({ item }: { item: ExploreSection }) => (
+      <ExploreSectionItem
+        item={item}
+        toggleWatchlist={handleToggleWatchlist}
+        onExploreAll={handleExploreAll}
+      />
+    ),
+    [handleToggleWatchlist, handleExploreAll]
+  );
 
-      {/* Dynamic Animated Ambient Mesh Aurora (Flows from above search bar & behind hero, scrolls with feed) */}
-      <ExploreAmbientMeshBackdrop scrollY={lastScrollY} items={trendingToday} initialItem={trendingToday[0]} />
+  const handleEmptyRetry = useCallback(() => {
+    fetchContent(selectedGenre, true);
+    if (trendingToday.length === 0) {
+      getTrendingToday('all', 1, { priority: 'high', forceRefresh: true })
+        .then((res) => res && setTrendingToday(res.slice(0, 10)))
+        .catch(() => null);
+    }
+  }, [fetchContent, selectedGenre, trendingToday.length]);
 
-      {/* Main Smooth ScrollView with Progressive Tier Mounts (Matched with Detail Page) */}
-      <Animated.ScrollView
-        style={[styles.feed, animatedFeedStyle as any]}
-        contentContainerStyle={styles.scrollContent}
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
-        showsVerticalScrollIndicator={false}
-        overScrollMode="never"
-        keyboardDismissMode="on-drag"
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[colors.primary]}
-            progressBackgroundColor={colors.surfaceContainer}
-            progressViewOffset={(StatusBar.currentHeight || insets.top) + 72}
-          />
-        }
-      >
-          <ExploreHeader
-            contentLoading={contentLoading}
-            rawContent={rawContent}
-            heroItems={trendingToday.length ? trendingToday : undefined}
-            selectedGenre={selectedGenre}
-            onSelectGenre={handleSelectGenre}
-            toggleWatchlist={handleToggleWatchlist}
-          />
+  const listHeader = useMemo(
+    () => (
+      <>
+        <ExploreHeader
+          contentLoading={contentLoading}
+          rawContent={rawContent}
+          heroItems={trendingToday.length ? trendingToday : undefined}
+          selectedGenre={selectedGenre}
+          onSelectGenre={handleSelectGenre}
+          toggleWatchlist={handleToggleWatchlist}
+          isSearchExpanded={isExpanded}
+        />
 
         {!contentLoading && !rawContent ? (
           <View style={styles.stateErrorContainer}>
@@ -1298,79 +1323,92 @@ const ExplorePage = () => {
             </Text>
             <TouchableOpacity
               style={[styles.stateRetryButton, { backgroundColor: colors.primary }]}
-              onPress={() => {
-                fetchContent(selectedGenre, true);
-                if (trendingToday.length === 0) {
-                  getTrendingToday('all', 1, { priority: 'high', forceRefresh: true })
-                    .then((res) => res && setTrendingToday(res.slice(0, 10)))
-                    .catch(() => null);
-                }
-              }}
+              onPress={handleEmptyRetry}
               activeOpacity={0.8}
             >
               <Ionicons name="refresh" size={16} color={colors.onPrimary} />
               <Text style={[styles.stateRetryText, { color: colors.onPrimary }]}>Retry</Text>
             </TouchableOpacity>
           </View>
-        ) : !(contentLoading && !rawContent) && (
-          <>
-            {/* 🍿 Continue Watching Shelf (Unfinished items with direct 1-tap resume) */}
-            {selectedGenre === 0 && continueWatchingItems.length > 0 && (
-              <ContinueWatchingShelf
-                items={continueWatchingItems}
-                onRemoveItem={(id) =>
-                  setContinueWatchingItems((prev) => prev.filter((p) => p.tmdbId !== id))
-                }
-              />
-            )}
-
-            {/* TIER 0: Immediate Mount (First shelf below hero) */}
-            {tier0Sections.map((item) => (
-              <ExploreSectionItem
-                key={item.key}
-                item={item}
-                toggleWatchlist={handleToggleWatchlist}
-                onExploreAll={handleExploreAll}
-              />
-            ))}
-
-            {/* TIER 1: Post-Transition Mount (~200ms) */}
-            {renderStage >= 1 &&
-              tier1Sections.map((item) => (
-                <ExploreSectionItem
-                  key={item.key}
-                  item={item}
-                  toggleWatchlist={handleToggleWatchlist}
-                  onExploreAll={handleExploreAll}
-                />
-              ))}
-
-            {/* TIER 2: Lead shelves (~500ms or on early scroll) */}
-            {renderStage >= 2 &&
-              tier2LeadSections.map((item) => (
-                <ExploreSectionItem
-                  key={item.key}
-                  item={item}
-                  toggleWatchlist={handleToggleWatchlist}
-                  onExploreAll={handleExploreAll}
-                />
-              ))}
-
-            {/* TIER 3: Late shelves (~850ms or on early scroll) */}
-            {renderStage >= 3 &&
-              tier2LateSections.map((item) => (
-                <ExploreSectionItem
-                  key={item.key}
-                  item={item}
-                  toggleWatchlist={handleToggleWatchlist}
-                  onExploreAll={handleExploreAll}
-                />
-              ))}
-          </>
+        ) : (
+          !(contentLoading && !rawContent) &&
+          selectedGenre === 0 &&
+          continueWatchingItems.length > 0 && (
+            <ContinueWatchingShelf
+              items={continueWatchingItems}
+              onRemoveItem={handleRemoveContinueWatching}
+            />
+          )
         )}
+      </>
+    ),
+    [
+      contentLoading,
+      rawContent,
+      trendingToday,
+      selectedGenre,
+      handleSelectGenre,
+      handleToggleWatchlist,
+      isExpanded,
+      colors.textSecondary,
+      colors.text,
+      colors.primary,
+      colors.onPrimary,
+      exploreError,
+      handleEmptyRetry,
+      continueWatchingItems,
+      handleRemoveContinueWatching,
+    ]
+  );
 
-        <View style={styles.feedEndSpacer} />
-      </Animated.ScrollView>
+  const listFooter = useMemo(() => <View style={styles.feedEndSpacer} />, []);
+
+  const refreshControlEl = useMemo(
+    () => (
+      <RefreshControl
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        colors={[colors.primary]}
+        progressBackgroundColor={colors.surfaceContainer}
+        progressViewOffset={(StatusBar.currentHeight || insets.top) + 72}
+      />
+    ),
+    [refreshing, onRefresh, colors.primary, colors.surfaceContainer, insets.top]
+  );
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={statusBarTheme} />
+
+      {/* Dynamic Animated Ambient Mesh Aurora (Flows from above search bar & behind hero, scrolls with feed) */}
+      <ExploreAmbientMeshBackdrop
+        scrollY={lastScrollY}
+        items={trendingToday}
+        initialItem={trendingToday[0]}
+        isSearchExpanded={isExpanded}
+      />
+
+      {/* Virtualized Feed (Prevents holding 13+ unvirtualized carousels & 130+ cards live off-screen) */}
+      <Animated.FlatList<ExploreSection>
+        style={[styles.feed, animatedFeedStyle as any]}
+        contentContainerStyle={styles.scrollContent}
+        data={visibleSections}
+        keyExtractor={sectionKeyExtractor}
+        renderItem={renderExploreSection}
+        ListHeaderComponent={listHeader}
+        ListFooterComponent={listFooter}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        overScrollMode="never"
+        keyboardDismissMode="on-drag"
+        initialNumToRender={2}
+        maxToRenderPerBatch={2}
+        updateCellsBatchingPeriod={50}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+        refreshControl={refreshControlEl}
+      />
 
       {/* Jetpack Compose LoadingIndicator in the Middle of the Screen when Genre / Content is Loading */}
       {!isExpanded && contentLoading && (
@@ -1445,7 +1483,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 24,
     height: 48,
-    ...shadows.md,
+    ...(Platform.OS === 'ios' ? shadows.md : {}),
   },
   searchInput: {
     flex: 1,

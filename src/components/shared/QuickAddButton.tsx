@@ -2,6 +2,7 @@
 import React, { memo, useCallback } from 'react';
 import { TouchableOpacity, StyleSheet } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import * as Haptics from 'expo-haptics';
 
 import { useSelector } from '@legendapp/state/react';
 import { savedStore$, toggleWatchlistGlobal } from '../../state/savedState';
@@ -45,8 +46,11 @@ const QuickAddButton = memo(
     const isAdded = propIsAdded !== undefined ? propIsAdded : reactiveIsAdded;
 
     const handlePress = useCallback(
-      (e: any) => {
-        e.stopPropagation();
+      (e?: any) => {
+        if (e && typeof e.stopPropagation === 'function') {
+          e.stopPropagation();
+        }
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
         if (onPress) {
           onPress();
         } else if (item) {
@@ -60,7 +64,7 @@ const QuickAddButton = memo(
       <TouchableOpacity
         activeOpacity={0.85}
         onPress={handlePress}
-        style={[styles.wrapper, plain ? styles.plain : styles.chip]}
+        style={[styles.wrapper,styles.plain]}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         accessibilityRole="button"
         accessibilityLabel={isAdded ? 'Remove from watchlist' : 'Add to watchlist'}
@@ -68,8 +72,9 @@ const QuickAddButton = memo(
       >
         <MaterialIcons
           name={isAdded ? 'favorite' : 'favorite-outline'}
-          size={22}
+          size={25}
           color={isAdded ? colors.primary : '#FFFFFF'}
+          style={styles.iconShadow}
         />
       </TouchableOpacity>
     );
@@ -86,18 +91,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Bare icon over artwork — dark halo keeps white legible on bright posters.
-  plain: {
-    filter: [
-      {
-        dropShadow: {
-          offsetX: 0,
-          offsetY: 1,
-          standardDeviation: 2.5,
-          color: 'rgba(0, 0, 0, 0.65)',
-        },
-      },
-    ],
+  // Bare icon over artwork — textShadow halo stays fast without per-card elevation layers.
+  plain: {},
+  iconShadow: {
+    textShadowColor: 'rgba(0, 0, 0, 0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   // Inline chip (hero) — dark frosted circle behind the white icon.
   chip: {

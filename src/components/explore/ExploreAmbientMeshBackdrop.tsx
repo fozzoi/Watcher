@@ -1,11 +1,13 @@
 // src/components/explore/ExploreAmbientMeshBackdrop.tsx
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useState, useCallback, useEffect } from 'react';
 import {
   StyleSheet,
   StatusBar,
   useWindowDimensions,
   Platform,
+  AppState,
 } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useAnimatedStyle,
@@ -15,7 +17,7 @@ import { useSelector } from '@legendapp/state/react';
 import { useAppTheme } from '../../theme';
 import { useImagePalette, hexToHsl, hslToHex } from '../../utils/colorExtractor';
 import { getImageUrl } from '../../tmdb';
-import { heroCarousel$, heroActiveItem$ } from './HeroSection';
+import { heroCarousel$, heroActiveItem$, heroScroll$ } from './HeroSection';
 import { HERO_HEIGHT } from './ExploreConstants';
 import Aurora from '../shared/Aurora';
 
@@ -58,15 +60,35 @@ export interface ExploreAmbientMeshBackdropProps {
   items?: any[];
   initialItem?: any;
   scrollY?: SharedValue<number>;
+  isSearchExpanded?: boolean;
 }
 
 export const ExploreAmbientMeshBackdrop = memo(function ExploreAmbientMeshBackdrop({
   items,
   initialItem,
   scrollY,
+  isSearchExpanded = false,
 }: ExploreAmbientMeshBackdropProps) {
-  const { colors, isDark } = useAppTheme();
+  const { colors, isDark, ambientTheming } = useAppTheme();
   const { width: screenWidth } = useWindowDimensions();
+
+  const isScrolledOut = useSelector(() => heroScroll$.isScrolledOut.get());
+  const [isFocused, setIsFocused] = useState(true);
+  const [isForeground, setIsForeground] = useState(AppState.currentState === 'active');
+
+  useFocusEffect(
+    useCallback(() => {
+      setIsFocused(true);
+      return () => setIsFocused(false);
+    }, [])
+  );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      setIsForeground(state === 'active');
+    });
+    return () => sub.remove();
+  }, []);
 
   const heroCarouselState = useSelector(() => heroCarousel$.get());
   const heroItem = useSelector(() => heroActiveItem$.item.get());
@@ -99,7 +121,7 @@ export const ExploreAmbientMeshBackdrop = memo(function ExploreAmbientMeshBackdr
   }, [shades]);
 
   const topInset = StatusBar.currentHeight || (Platform.OS === 'ios' ? 44 : 28);
-  const totalBackdropHeight = Math.round(HERO_HEIGHT + topInset + 140);
+  const totalBackdropHeight = Math.round(HERO_HEIGHT + topInset);
 
   // Synchronized scroll: scrolls naturally with page content on UI thread
   const animatedScrollStyle = useAnimatedStyle(() => {
@@ -108,6 +130,12 @@ export const ExploreAmbientMeshBackdrop = memo(function ExploreAmbientMeshBackdr
       transform: [{ translateY: -y }],
     };
   });
+
+  if (ambientTheming === false) {
+    return null;
+  }
+
+  const shouldPause = !isFocused || !isForeground || isScrolledOut || isSearchExpanded;
 
   return (
     <Animated.View
@@ -124,16 +152,17 @@ export const ExploreAmbientMeshBackdrop = memo(function ExploreAmbientMeshBackdr
       {/* Native GPU Aurora Shader: fluid, organic northern lights hanging from top */}
       <Aurora
         colorStops={auroraColorStops}
-        amplitude={1.1}
+        amplitude={1.0}
         blend={0.55}
-        height={0.82}
-        speed={0.75}
-        scale={1.05}
-        glow={0.7}
-        brightness={1.0}
-        layers={2}
+        height={0.75}
+        speed={0.65}
+        scale={1.0}
+        glow={0.6}
+        brightness={0.95}
+        layers={1}
         direction="top"
         lightMode={!isDark}
+        paused={shouldPause}
         style={StyleSheet.absoluteFill}
       />
 

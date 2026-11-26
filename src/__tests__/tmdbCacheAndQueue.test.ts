@@ -45,6 +45,7 @@ jest.mock('../userPreferences', () => ({
 }));
 
 jest.mock('../database', () => ({
+  getSavedItems: jest.fn(() => []),
   getForYouCachedShelves: jest.fn(() => []),
   getExploreContentCacheEntrySync: jest.fn((genreId: number = 0) => mockExploreCache.get(genreId) ?? null),
   saveExploreContentCacheSync: jest.fn((genreId: number, data: any) => {
@@ -499,6 +500,28 @@ describe('TMDB caching, priority queue, and error handling', () => {
     );
     expect(shelves).toHaveLength(1);
     expect(shelves[0].sourceTitle).toBe('Suits');
+    expect(shelves[0].sourceId).toBe(37680);
+    expect(shelves[0].sourceMediaType).toBe('tv');
+  });
+
+  test('fetchMoreContentByType resolves similar/movie/{id} to correct TMDB recommendations endpoint', async () => {
+    const tmdb = require('../tmdb') as typeof import('../tmdb');
+
+    mockAxiosGet.mockResolvedValueOnce({
+      data: {
+        results: [{ id: 550, title: 'Fight Club', poster_path: '/fc.jpg', vote_average: 8.4 }],
+      },
+    });
+
+    const results = await tmdb.fetchMoreContentByType('similar/movie/157336', 1);
+
+    expect(mockAxiosGet).toHaveBeenCalledWith(
+      '/movie/157336/recommendations',
+      expect.objectContaining({ params: expect.objectContaining({ page: 1 }) }),
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0].title).toBe('Fight Club');
+    expect(results[0].media_type).toBe('movie');
   });
 
   test('fetchPersonalisedDiscoveryContent skips network when Explore cache <30m and preserves cache when offline', async () => {

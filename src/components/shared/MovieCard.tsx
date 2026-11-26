@@ -149,9 +149,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     gap: 4,
-    filter: [
-      { dropShadow: { offsetX: 0, offsetY: 1, standardDeviation: 3, color: 'rgba(0, 0, 0, 0.35)' } },
-    ],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 2,
   },
   ratingText: {
     fontSize: 11.5,

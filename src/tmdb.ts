@@ -9,6 +9,7 @@ import {
   getTmdbResponseCacheSync,
   saveTmdbResponseCacheSync,
   clearTmdbResponseCacheSync,
+  getSavedItems,
 } from './database';
 import { getUserPreferences } from './userPreferences';
 import { withApiAuth } from './apiAuth';
@@ -1123,20 +1124,32 @@ export const getNostalgicMovies = async (
 
 // ─── "Because you watched X" ─────────────────────────────────────────────────
 
-export const getSimilarForHistory = async (history: any[]): Promise<{ sourceTitle: string; items: any[] }[]> => {
+export const getSimilarForHistory = async (
+  history: any[],
+): Promise<{ sourceId: number; sourceMediaType: "movie" | "tv"; sourceTitle: string; items: any[] }[]> => {
   const recent = history.slice(0, 2); // last 2 watched
   const results = await Promise.all(
     recent.map(async (item) => {
       try {
         const mediaType: "movie" | "tv" = item.media_type === 'tv' || item.first_air_date ? 'tv' : 'movie';
-        const similar = await getSimilarMedia(Number(item.id), mediaType, 1, { priority: 'low' });
-        return { sourceTitle: item.title || item.name || '', items: similar.slice(0, 10) };
+        const sourceId = Number(item.id || item.tmdbId);
+        if (!sourceId || isNaN(sourceId)) return null;
+        const similar = await getSimilarMedia(sourceId, mediaType, 1, { priority: 'low' });
+        return {
+          sourceId,
+          sourceMediaType: mediaType,
+          sourceTitle: item.title || item.name || '',
+          items: similar.slice(0, 10),
+        };
       } catch {
         return null;
       }
     })
   );
-  return results.filter((r): r is { sourceTitle: string; items: any[] } => r !== null && r.items.length > 0);
+  return results.filter(
+    (r): r is { sourceId: number; sourceMediaType: "movie" | "tv"; sourceTitle: string; items: any[] } =>
+      r !== null && r.items.length > 0
+  );
 };
 
 // ==========================================
@@ -1444,9 +1457,23 @@ export const getSimilarMedia = async (
   page: number = 1,
   options?: TmdbRequestOptions,
 ): Promise<TMDBResult[]> => {
+  if (!id || isNaN(id) || id <= 0) return [];
+  const targetMediaType = mediaType === 'tv' ? 'tv' : 'movie';
   try {
-    const data = await fetchWithCache(`/${mediaType}/${id}/recommendations`, { page }, options);
-    return (data.results || []).map((item: any) => ({ ...formatBasicItemData(item), media_type: mediaType }));
+    const data = await fetchWithCache(`/${targetMediaType}/${id}/recommendations`, { page }, options);
+    const results = (data.results || []).map((item: any) => ({
+      ...formatBasicItemData(item),
+      media_type: item.media_type || targetMediaType,
+    }));
+    if (results.length > 0 || page > 1) {
+      return results;
+    }
+    // Fallback to /similar if recommendations has 0 results on page 1
+    const similarData = await fetchWithCache(`/${targetMediaType}/${id}/similar`, { page }, options);
+    return (similarData.results || []).map((item: any) => ({
+      ...formatBasicItemData(item),
+      media_type: item.media_type || targetMediaType,
+    }));
   } catch (error) {
     if (options?.throwOnError) throw error;
     return [];
@@ -2166,10 +2193,28 @@ export const fetchMoreContentByType = async (
   options?: TmdbRequestOptions,
 ): Promise<TMDBResult[]> => {
   if (type.startsWith('genre/')) { return await getMoviesByGenre(parseInt(type.split('/')[1]), page, options); }
-  if (type.startsWith('similar/')) { const [mediaType, id] = type.split('/').slice(1); return await getSimilarMedia(parseInt(id), mediaType as "movie" | "tv", page, options); }
+  if (type.startsWith('similar/')) {
+    const parts = type.split('/').slice(1);
+    const mediaType = parts[0] === 'tv' ? 'tv' : 'movie';
+    const id = parseInt(parts[1]);
+    if (isNaN(id) || id <= 0) return [];
+    return await getSimilarMedia(id, mediaType, page, options);
+  }
+  if (type === 'becauseyouwatched') {
+    try {
+      const history = getSavedItems('history');
+      if (history && history.length > 0) {
+        const shelves = await getSimilarForHistory(history);
+        if (shelves.length > 0 && shelves[0].items.length > 0) {
+          const first = shelves[0];
+          return await getSimilarMedia(first.sourceId, first.sourceMediaType, page, options);
+        }
+      }
+    } catch { }
+  }
   if (type.startsWith('lang-movies-')) { return await getLanguageMovies(type.replace('lang-movies-', ''), page, undefined, options); }
   if (type.startsWith('lang-tv-')) { return await getLanguageTV(type.replace('lang-tv-', ''), page, undefined, options); }
-  if (type === 'world-cinema' || type === 'lang' || type === 'lang-all') {
+  if (type === 'world-cinema' || type === 'world_hub' || type === 'lang' || type === 'lang-all') {
     const prefs = await getUserPreferences();
     const userLangs = (prefs.languages && prefs.languages.length > 0) ? prefs.languages : ['en', 'hi', 'ko'];
     const settled = await Promise.allSettled(
@@ -2218,10 +2263,10 @@ export const fetchMoreContentByType = async (
       return [];
     }
   }
-  if (type === 'foryou-saga-all') {
+  if (type === 'foryou-saga-all' || type === 'spotlight') {
     try {
       const cached = getForYouCachedShelves();
-      const sagaShelf = cached.find((s) => s.shelfId === 'saga-all');
+      const sagaShelf = cached.find((s) => s.shelfId === 'saga-all' || (s as any).shelf_id === 'saga-all');
       return sagaShelf?.items || [];
     } catch { return []; }
   }
@@ -2237,12 +2282,25 @@ export const fetchMoreContentByType = async (
       }
     }
   }
+  if (type.startsWith('foryou-')) {
+    const rawShelfId = type.replace('foryou-', '');
+    try {
+      const cached = getForYouCachedShelves();
+      const matchingShelf = cached.find((s) => s.shelfId === rawShelfId || (s as any).shelf_id === rawShelfId);
+      if (matchingShelf?.items?.length) {
+        return matchingShelf.items;
+      }
+    } catch { }
+  }
 
   switch (type.toLowerCase()) {
+    case 'popular':
+    case 'ranked':
     case 'trendingmovies': return await getTrendingMovies(page, undefined, options);
     case 'trendingtv': return await getTrendingTV(page, undefined, options);
     case 'toprated': return await getTopRated(page, undefined, options);
     case 'regional': return await getRegionalMovies('IN', page, undefined, options);
+    case 'nowplaying':
     case 'upcoming': return await getUpcomingMovies(page, options);
     case 'hiddengems': return await getHiddenGems(page, undefined, options);
     case 'nostalgia': return await getNostalgicMovies(page, undefined, options);

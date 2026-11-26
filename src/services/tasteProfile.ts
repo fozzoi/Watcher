@@ -475,7 +475,7 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
       console.warn('Franchise saga shelf generation warning:', e);
     }
 
-    // --- Shelf 2: "Because You Follow [Person]" ---
+    // --- Shelf 2: "More from [Person]" ---
     for (const person of topPeople) {
       try {
         let movies: TMDBResult[] = await discoverMovies({
@@ -497,7 +497,7 @@ export async function generateForYouShelves(): Promise<ForYouShelf[]> {
         if (unwatched.length >= 3) {
           shelves.push({
             shelf_id: `person-${person.id}`,
-            title: `Because You Follow ${person.name}`,
+            title: `More from ${person.name}`,
             subtitle: `Critically acclaimed works starring or directed by ${person.name}`,
             items: unwatched.slice(0, 15),
             sort_order: sortOrder++,
